@@ -3,6 +3,8 @@ import { Building, Euro, Users } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { AMENITIES } from "./amenities";
+
 export const metadata: Metadata = {
   title: "Meeting Rooms · NATO Edge 26",
   description: "Book a meeting room for NATO Edge 26 (17–19 November 2026).",
@@ -52,6 +54,13 @@ export default async function RoomsListingPage(): Promise<JSX.Element> {
                 <Euro className="h-4 w-4 shrink-0" aria-hidden />
                 from {formatPrice(room.price1h, room.currency)}
               </span>
+            </div>
+            <div className="mt-3 flex items-center gap-3 border-gray-100 border-t pt-3 text-gray-400">
+              {AMENITIES.map(({ icon: AmenityIcon, label }) => (
+                <span key={label} title={label} aria-label={label}>
+                  <AmenityIcon className="h-4 w-4 shrink-0" aria-hidden />
+                </span>
+              ))}
             </div>
           </Link>
         ))}

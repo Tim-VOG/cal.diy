@@ -2,20 +2,14 @@
 
 import type { DurationHours } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import type { RoomAvailability } from "@calcom/features/ne26-rooms/services/RoomAvailabilityService";
-import { Building, Cable, Clock, Euro, GlassWater, Monitor, Users } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { Building, Clock, Euro, Users } from "lucide-react";
 import { useMemo, useState } from "react";
+
+import { AMENITIES } from "../amenities";
 
 const TZ = "Europe/Brussels";
 const MS_PER_HOUR = 60 * 60 * 1000;
 const DURATIONS: DurationHours[] = [1, 2, 3];
-
-// Amenities are common to every room for the event (static for now).
-const AMENITIES: { icon: LucideIcon; label: string }[] = [
-  { icon: Monitor, label: "Screen" },
-  { icon: Cable, label: "Wired cable for screen sharing" },
-  { icon: GlassWater, label: "Water fountain" },
-];
 
 function formatTime(iso: string): string {
   return new Intl.DateTimeFormat("en-GB", {
