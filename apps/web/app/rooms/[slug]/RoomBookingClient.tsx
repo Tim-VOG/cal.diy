@@ -2,7 +2,7 @@
 
 import type { DurationHours } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import type { RoomAvailability } from "@calcom/features/ne26-rooms/services/RoomAvailabilityService";
-import { Building, Clock, Euro, Users } from "lucide-react";
+import { Building, Clock, Euro, Scaling, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { AMENITIES } from "../amenities";
@@ -87,10 +87,16 @@ export default function RoomBookingClient({ availability }: { availability: Room
           <Building className="h-6 w-6 shrink-0" aria-hidden />
           {room.name}
         </h1>
-        <p className="mt-2 flex items-center gap-1.5 text-gray-600 text-sm">
-          <Users className="h-4 w-4 shrink-0" aria-hidden />
-          Up to {room.capacity} people
-        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-600 text-sm">
+          <span className="flex items-center gap-1.5">
+            <Users className="h-4 w-4 shrink-0" aria-hidden />
+            Up to {room.capacity} people
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Scaling className="h-4 w-4 shrink-0" aria-hidden />
+            {room.surface} m²
+          </span>
+        </div>
 
         {/* Amenities */}
         <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2">

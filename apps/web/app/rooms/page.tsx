@@ -1,5 +1,5 @@
 import { getRoomAvailabilityService } from "@calcom/features/ne26-rooms/di/RoomAvailabilityService.container";
-import { Building, Euro, Users } from "lucide-react";
+import { Building, Euro, Scaling, Users } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -46,10 +46,16 @@ export default async function RoomsListingPage(): Promise<JSX.Element> {
               {room.name}
             </h2>
             <div className="mt-4 flex items-center justify-between text-sm">
-              <span className="flex items-center gap-1.5 text-gray-500">
-                <Users className="h-4 w-4 shrink-0" aria-hidden />
-                Up to {room.capacity}
-              </span>
+              <div className="flex items-center gap-3 text-gray-500">
+                <span className="flex items-center gap-1.5">
+                  <Users className="h-4 w-4 shrink-0" aria-hidden />
+                  {room.capacity}
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <Scaling className="h-4 w-4 shrink-0" aria-hidden />
+                  {room.surface} m²
+                </span>
+              </div>
               <span className="flex items-center gap-1 font-medium text-[#000643]">
                 <Euro className="h-4 w-4 shrink-0" aria-hidden />
                 from {formatPrice(room.price1h, room.currency)}
