@@ -18,6 +18,8 @@ export interface CreateResourceBookingWithSlotsInput {
   currency?: string;
   status?: ResourceBookingStatus;
   holdExpiresAt?: Date | null;
+  /** Add-on lines, with prices already frozen by the caller. */
+  addOns?: { addOnId: number; quantity: number; unitPrice: number; lineTotal: number }[];
 }
 
 export class ResourceBookingRepository {
@@ -64,6 +66,18 @@ export class ResourceBookingRepository {
             slotStart,
           })),
         });
+
+        if (input.addOns?.length) {
+          await tx.bookingAddOn.createMany({
+            data: input.addOns.map((addOn) => ({
+              bookingId: booking.id,
+              addOnId: addOn.addOnId,
+              quantity: addOn.quantity,
+              unitPrice: addOn.unitPrice,
+              lineTotal: addOn.lineTotal,
+            })),
+          });
+        }
 
         return booking;
       });
