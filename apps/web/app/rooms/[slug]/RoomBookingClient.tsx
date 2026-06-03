@@ -2,11 +2,20 @@
 
 import type { DurationHours } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import type { RoomAvailability } from "@calcom/features/ne26-rooms/services/RoomAvailabilityService";
+import { Building, Cable, Clock, Euro, GlassWater, Monitor, Users } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
 const TZ = "Europe/Brussels";
 const MS_PER_HOUR = 60 * 60 * 1000;
 const DURATIONS: DurationHours[] = [1, 2, 3];
+
+// Amenities are common to every room for the event (static for now).
+const AMENITIES: { icon: LucideIcon; label: string }[] = [
+  { icon: Monitor, label: "Screen" },
+  { icon: Cable, label: "Wired cable for screen sharing" },
+  { icon: GlassWater, label: "Water fountain" },
+];
 
 function formatTime(iso: string): string {
   return new Intl.DateTimeFormat("en-GB", {
@@ -80,10 +89,24 @@ export default function RoomBookingClient({ availability }: { availability: Room
         <a href="/rooms" className="text-gray-500 text-sm hover:text-[#000643]">
           ← All rooms
         </a>
-        <h1 className="mt-2 font-bold text-2xl text-[#000643]">{room.name}</h1>
-        <p className="mt-1 text-gray-600 text-sm">
-          Up to {room.capacity} people{room.description ? ` · ${room.description}` : ""}
+        <h1 className="mt-2 flex items-center gap-2 font-bold text-2xl text-[#000643]">
+          <Building className="h-6 w-6 shrink-0" aria-hidden />
+          {room.name}
+        </h1>
+        <p className="mt-2 flex items-center gap-1.5 text-gray-600 text-sm">
+          <Users className="h-4 w-4 shrink-0" aria-hidden />
+          Up to {room.capacity} people
         </p>
+
+        {/* Amenities */}
+        <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2">
+          {AMENITIES.map(({ icon: AmenityIcon, label }) => (
+            <span key={label} className="flex items-center gap-1.5 text-gray-600 text-sm">
+              <AmenityIcon className="h-4 w-4 shrink-0 text-[#000643]" aria-hidden />
+              {label}
+            </span>
+          ))}
+        </div>
 
         {/* Day selector */}
         <div className="mt-6 flex gap-2">
@@ -103,7 +126,10 @@ export default function RoomBookingClient({ availability }: { availability: Room
         </div>
 
         {/* Start times */}
-        <h2 className="mt-6 font-semibold text-gray-500 text-sm uppercase tracking-wide">Start time</h2>
+        <h2 className="mt-6 flex items-center gap-1.5 font-semibold text-gray-500 text-sm uppercase tracking-wide">
+          <Clock className="h-4 w-4 shrink-0" aria-hidden />
+          Start time
+        </h2>
         <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
           {day?.starts.map((s) => {
             const isAvailable = s.availableDurations.length > 0;
@@ -149,12 +175,17 @@ export default function RoomBookingClient({ availability }: { availability: Room
         <h2 className="font-semibold text-gray-500 text-sm uppercase tracking-wide">Your selection</h2>
         {selectedStartUtc && selectedDuration && endIso ? (
           <div className="mt-3 space-y-1 text-sm">
-            <p className="font-medium">{room.name}</p>
+            <p className="flex items-center gap-1.5 font-medium">
+              <Building className="h-4 w-4 shrink-0 text-[#000643]" aria-hidden />
+              {room.name}
+            </p>
             <p>{formatDayLabel(selectedDate)}</p>
-            <p>
+            <p className="flex items-center gap-1.5">
+              <Clock className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
               {formatTime(selectedStartUtc)} – {formatTime(endIso)} ({selectedDuration}h)
             </p>
-            <p className="mt-3 font-bold text-[#000643] text-lg">
+            <p className="mt-3 flex items-center gap-1 font-bold text-[#000643] text-lg">
+              <Euro className="h-5 w-5 shrink-0" aria-hidden />
               {total !== null ? formatPrice(total, room.currency) : ""}
             </p>
           </div>

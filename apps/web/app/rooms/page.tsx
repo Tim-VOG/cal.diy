@@ -1,4 +1,5 @@
 import { getRoomAvailabilityService } from "@calcom/features/ne26-rooms/di/RoomAvailabilityService.container";
+import { Building, Euro, Users } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -38,11 +39,17 @@ export default async function RoomsListingPage(): Promise<JSX.Element> {
             <span className="self-start rounded-full bg-[#000643]/10 px-2.5 py-0.5 font-medium text-[#000643] text-xs">
               {CATEGORY_LABEL[room.category] ?? room.category}
             </span>
-            <h2 className="mt-3 font-semibold text-lg">{room.name}</h2>
-            {room.description ? <p className="mt-1 text-gray-600 text-sm">{room.description}</p> : null}
-            <div className="mt-4 flex items-end justify-between">
-              <span className="text-gray-500 text-sm">Up to {room.capacity} people</span>
-              <span className="font-medium text-[#000643] text-sm">
+            <h2 className="mt-3 flex items-center gap-2 font-semibold text-lg">
+              <Building className="h-5 w-5 shrink-0 text-[#000643]" aria-hidden />
+              {room.name}
+            </h2>
+            <div className="mt-4 flex items-center justify-between text-sm">
+              <span className="flex items-center gap-1.5 text-gray-500">
+                <Users className="h-4 w-4 shrink-0" aria-hidden />
+                Up to {room.capacity}
+              </span>
+              <span className="flex items-center gap-1 font-medium text-[#000643]">
+                <Euro className="h-4 w-4 shrink-0" aria-hidden />
                 from {formatPrice(room.price1h, room.currency)}
               </span>
             </div>
