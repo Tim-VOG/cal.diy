@@ -33,8 +33,26 @@ export class ResourceBookingRepository {
    * the display layer may briefly lie under a race, the database never does.
    */
   async createWithSlots(input: CreateResourceBookingWithSlotsInput) {
+    const now = new Date();
     try {
       return await this.prismaClient.$transaction(async (tx) => {
+        // Reclaim abandoned holds: a PENDING booking whose hold has expired no
+        // longer protects its slots, but its ResourceSlot rows still occupy the
+        // unique index. Delete the expired ones covering any requested slot
+        // (cascades their slots) so the new booking can take them.
+        const expiredHolds = await tx.resourceBooking.findMany({
+          where: {
+            resourceId: input.resourceId,
+            status: ResourceBookingStatus.PENDING,
+            holdExpiresAt: { lt: now },
+            slots: { some: { slotStart: { in: input.slotStarts } } },
+          },
+          select: { id: true },
+        });
+        if (expiredHolds.length > 0) {
+          await tx.resourceBooking.deleteMany({ where: { id: { in: expiredHolds.map((b) => b.id) } } });
+        }
+
         const booking = await tx.resourceBooking.create({
           data: {
             resourceId: input.resourceId,
