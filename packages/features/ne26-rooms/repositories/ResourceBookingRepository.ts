@@ -2,7 +2,7 @@ import { ErrorCode } from "@calcom/lib/errorCodes";
 import { ErrorWithCode } from "@calcom/lib/errors";
 import type { PrismaClient } from "@calcom/prisma";
 import { Prisma } from "@calcom/prisma/client";
-import type { ResourceBookingStatus } from "@calcom/prisma/enums";
+import { ResourceBookingStatus } from "@calcom/prisma/enums";
 
 export interface CreateResourceBookingWithSlotsInput {
   resourceId: number;
@@ -76,5 +76,26 @@ export class ResourceBookingRepository {
       }
       throw e;
     }
+  }
+
+  /**
+   * Atomic hour starts currently occupied for a room: confirmed bookings, plus
+   * pending ones whose hold has not yet expired. An expired pending hold frees
+   * its slots for display (the row stays until cleanup but no longer blocks).
+   */
+  async findActiveSlotStarts(resourceId: number, now: Date): Promise<Date[]> {
+    const slots = await this.prismaClient.resourceSlot.findMany({
+      where: {
+        resourceId,
+        booking: {
+          OR: [
+            { status: ResourceBookingStatus.CONFIRMED },
+            { status: ResourceBookingStatus.PENDING, holdExpiresAt: { gt: now } },
+          ],
+        },
+      },
+      select: { slotStart: true },
+    });
+    return slots.map((slot) => slot.slotStart);
   }
 }
