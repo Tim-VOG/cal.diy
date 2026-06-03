@@ -1,7 +1,10 @@
 "use client";
 
 import type { DurationHours } from "@calcom/features/ne26-rooms/lib/eventSchedule";
+import { computeAddOnLine } from "@calcom/features/ne26-rooms/lib/pricing";
 import type { RoomAvailability } from "@calcom/features/ne26-rooms/services/RoomAvailabilityService";
+import { AddOnPriceType } from "@calcom/prisma/enums";
+import { trpc } from "@calcom/trpc/react";
 import { Building, Clock, Euro, Scaling, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -11,54 +14,72 @@ const TZ = "Europe/Brussels";
 const MS_PER_HOUR = 60 * 60 * 1000;
 const DURATIONS: DurationHours[] = [1, 2, 3];
 
+export interface PublicAddOn {
+  id: number;
+  name: string;
+  slug: string;
+  description: string | null;
+  price: number;
+  currency: string;
+  priceType: AddOnPriceType;
+  vatRate: number;
+}
+
 function formatTime(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: TZ,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(iso));
+  return new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false }).format(
+    new Date(iso)
+  );
 }
 
 function formatDayLabel(date: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: TZ,
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  }).format(new Date(`${date}T12:00:00.000Z`));
+  return new Intl.DateTimeFormat("en-GB", { timeZone: TZ, weekday: "short", day: "numeric", month: "short" }).format(
+    new Date(`${date}T12:00:00.000Z`)
+  );
 }
 
 function formatPrice(cents: number, currency: string): string {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(cents / 100);
 }
 
-type CellState = "selected" | "available" | "disabled";
+function priceHint(addOn: PublicAddOn): string {
+  const price = formatPrice(addOn.price, addOn.currency);
+  if (addOn.priceType === AddOnPriceType.PER_PERSON) return `${price} / person`;
+  if (addOn.priceType === AddOnPriceType.PER_HOUR) return `${price} / hour`;
+  return price;
+}
 
+type CellState = "selected" | "available" | "disabled";
 const CELL_BASE = "rounded-lg border px-4 py-2 text-sm font-medium transition";
 const CELL_CLASS: Record<CellState, string> = {
   selected: "border-[#000643] bg-[#000643] text-white",
   available: "border-gray-200 bg-white text-black hover:border-[#000643]",
   disabled: "cursor-not-allowed border-gray-100 bg-gray-100 text-gray-300",
 };
-
 function cellState(isSelected: boolean, isEnabled: boolean): CellState {
   if (isSelected) return "selected";
   if (isEnabled) return "available";
   return "disabled";
 }
 
-export default function RoomBookingClient({ availability }: { availability: RoomAvailability }): JSX.Element {
+export default function RoomBookingClient({
+  availability,
+  addOns,
+  isAuthed,
+}: {
+  availability: RoomAvailability;
+  addOns: PublicAddOn[];
+  isAuthed: boolean;
+}): JSX.Element {
   const { room, days } = availability;
-  const priceForDuration: Record<DurationHours, number> = {
-    1: room.price1h,
-    2: room.price2h,
-    3: room.price3h,
-  };
+  const priceForDuration: Record<DurationHours, number> = { 1: room.price1h, 2: room.price2h, 3: room.price3h };
+  const addOnsBySlug = useMemo(() => new Map(addOns.map((a) => [a.slug, a])), [addOns]);
 
   const [selectedDate, setSelectedDate] = useState(days[0]?.date ?? "");
   const [selectedStartUtc, setSelectedStartUtc] = useState<string | null>(null);
   const [selectedDuration, setSelectedDuration] = useState<DurationHours | null>(null);
+  const [selectedAddOns, setSelectedAddOns] = useState<Record<string, number>>({});
+
+  const createBooking = trpc.viewer.rooms.createBooking.useMutation();
 
   const day = useMemo(() => days.find((d) => d.date === selectedDate), [days, selectedDate]);
   const selectedStart = useMemo(
@@ -70,11 +91,41 @@ export default function RoomBookingClient({ availability }: { availability: Room
     selectedStartUtc && selectedDuration
       ? new Date(new Date(selectedStartUtc).getTime() + selectedDuration * MS_PER_HOUR).toISOString()
       : null;
-  const total = selectedDuration ? priceForDuration[selectedDuration] : null;
+
+  const addOnTotal = selectedDuration
+    ? Object.entries(selectedAddOns).reduce((sum, [slug, quantity]) => {
+        const addOn = addOnsBySlug.get(slug);
+        if (!addOn) return sum;
+        return sum + computeAddOnLine(addOn.priceType, addOn.price, quantity, selectedDuration).lineTotal;
+      }, 0)
+    : 0;
+  const total = selectedDuration ? priceForDuration[selectedDuration] + addOnTotal : null;
+  const canBook = Boolean(selectedStartUtc && selectedDuration) && !createBooking.isPending;
+  const booking = createBooking.data;
 
   function pickStart(startUtc: string, availableDurations: DurationHours[]): void {
     setSelectedStartUtc(startUtc);
     setSelectedDuration(availableDurations[0] ?? null);
+    createBooking.reset();
+  }
+
+  function toggleAddOn(slug: string, checked: boolean): void {
+    setSelectedAddOns((prev) => {
+      const next = { ...prev };
+      if (checked) next[slug] = 1;
+      else delete next[slug];
+      return next;
+    });
+  }
+
+  function submit(): void {
+    if (!selectedStartUtc || !selectedDuration) return;
+    createBooking.mutate({
+      slug: room.slug,
+      startUtc: selectedStartUtc,
+      durationHours: selectedDuration,
+      addOns: Object.entries(selectedAddOns).map(([slug, quantity]) => ({ slug, quantity })),
+    });
   }
 
   return (
@@ -98,7 +149,6 @@ export default function RoomBookingClient({ availability }: { availability: Room
           </span>
         </div>
 
-        {/* Amenities */}
         <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2">
           {AMENITIES.map(({ icon: AmenityIcon, label }) => (
             <span key={label} className="flex items-center gap-1.5 text-gray-600 text-sm">
@@ -118,6 +168,7 @@ export default function RoomBookingClient({ availability }: { availability: Room
                 setSelectedDate(d.date);
                 setSelectedStartUtc(null);
                 setSelectedDuration(null);
+                createBooking.reset();
               }}
               className={`${CELL_BASE} ${CELL_CLASS[cellState(d.date === selectedDate, true)]}`}>
               {formatDayLabel(d.date)}
@@ -168,39 +219,107 @@ export default function RoomBookingClient({ availability }: { availability: Room
             </div>
           </>
         ) : null}
+
+        {/* Add-ons */}
+        {addOns.length > 0 ? (
+          <>
+            <h2 className="mt-6 font-semibold text-gray-500 text-sm uppercase tracking-wide">Add-ons</h2>
+            <div className="mt-2 space-y-2">
+              {addOns.map((addOn) => {
+                const selected = addOn.slug in selectedAddOns;
+                return (
+                  <div
+                    key={addOn.slug}
+                    className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={(e) => toggleAddOn(addOn.slug, e.target.checked)}
+                        className="h-4 w-4 accent-[#000643]"
+                      />
+                      <span>
+                        <span className="font-medium">{addOn.name}</span>
+                        <span className="ml-2 text-gray-400">{priceHint(addOn)}</span>
+                      </span>
+                    </label>
+                    {selected && addOn.priceType === AddOnPriceType.PER_PERSON ? (
+                      <input
+                        type="number"
+                        min={1}
+                        value={selectedAddOns[addOn.slug]}
+                        onChange={(e) =>
+                          setSelectedAddOns((prev) => ({ ...prev, [addOn.slug]: Math.max(1, Number(e.target.value)) }))
+                        }
+                        aria-label={`${addOn.name} quantity`}
+                        className="w-16 rounded border border-gray-200 px-2 py-1 text-right"
+                      />
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
       </div>
 
       {/* Summary panel */}
       <aside className="h-fit rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <h2 className="font-semibold text-gray-500 text-sm uppercase tracking-wide">Your selection</h2>
-        {selectedStartUtc && selectedDuration && endIso ? (
-          <div className="mt-3 space-y-1 text-sm">
-            <p className="flex items-center gap-1.5 font-medium">
-              <Building className="h-4 w-4 shrink-0 text-[#000643]" aria-hidden />
-              {room.name}
-            </p>
-            <p>{formatDayLabel(selectedDate)}</p>
-            <p className="flex items-center gap-1.5">
-              <Clock className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
-              {formatTime(selectedStartUtc)} – {formatTime(endIso)} ({selectedDuration}h)
-            </p>
-            <p className="mt-3 flex items-center gap-1 font-bold text-[#000643] text-lg">
-              <Euro className="h-5 w-5 shrink-0" aria-hidden />
-              {total !== null ? formatPrice(total, room.currency) : ""}
+
+        {booking ? (
+          <div className="mt-3 space-y-2 text-sm">
+            <p className="font-semibold text-[#000643]">Slot held ✓</p>
+            <p className="text-gray-600">Reference {booking.uid.slice(0, 8)}</p>
+            <p className="font-bold text-[#000643] text-lg">{formatPrice(booking.amountTotal, booking.currency)}</p>
+            <p className="text-gray-500 text-xs">
+              Held until {formatTime(new Date(booking.holdExpiresAt).toISOString())}. Payment is the next step.
             </p>
           </div>
         ) : (
-          <p className="mt-3 text-gray-500 text-sm">Pick a start time and duration to see the price.</p>
-        )}
+          <>
+            {selectedStartUtc && selectedDuration && endIso ? (
+              <div className="mt-3 space-y-1 text-sm">
+                <p className="flex items-center gap-1.5 font-medium">
+                  <Building className="h-4 w-4 shrink-0 text-[#000643]" aria-hidden />
+                  {room.name}
+                </p>
+                <p>{formatDayLabel(selectedDate)}</p>
+                <p className="flex items-center gap-1.5">
+                  <Clock className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
+                  {formatTime(selectedStartUtc)} – {formatTime(endIso)} ({selectedDuration}h)
+                </p>
+                <p className="mt-3 flex items-center gap-1 font-bold text-[#000643] text-lg">
+                  <Euro className="h-5 w-5 shrink-0" aria-hidden />
+                  {total !== null ? formatPrice(total, room.currency) : ""}
+                </p>
+              </div>
+            ) : (
+              <p className="mt-3 text-gray-500 text-sm">Pick a start time and duration to see the price.</p>
+            )}
 
-        <button
-          type="button"
-          disabled={!selectedStartUtc || !selectedDuration}
-          className="mt-5 w-full rounded-lg bg-[#000643] px-4 py-2.5 font-semibold text-sm text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-          title="Add-ons, login and payment arrive in the next step">
-          Continue
-        </button>
-        <p className="mt-2 text-center text-gray-400 text-xs">Add-ons & payment come in the next step.</p>
+            {createBooking.error ? (
+              <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-red-700 text-sm">{createBooking.error.message}</p>
+            ) : null}
+
+            {isAuthed ? (
+              <button
+                type="button"
+                disabled={!canBook}
+                onClick={submit}
+                className="mt-5 w-full rounded-lg bg-[#000643] px-4 py-2.5 font-semibold text-sm text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
+                {createBooking.isPending ? "Holding…" : "Continue"}
+              </button>
+            ) : (
+              <a
+                href={`/auth/login?callbackUrl=/rooms/${room.slug}`}
+                className="mt-5 block w-full rounded-lg bg-[#000643] px-4 py-2.5 text-center font-semibold text-sm text-white transition hover:opacity-90">
+                Log in to book
+              </a>
+            )}
+            <p className="mt-2 text-center text-gray-400 text-xs">Payment comes in the next step.</p>
+          </>
+        )}
       </aside>
     </div>
   );

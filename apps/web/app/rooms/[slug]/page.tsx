@@ -1,8 +1,12 @@
+import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
+import { getAddOnRepository } from "@calcom/features/ne26-rooms/di/AddOnRepository.container";
 import { getRoomAvailabilityService } from "@calcom/features/ne26-rooms/di/RoomAvailabilityService.container";
 import type { RoomAvailability } from "@calcom/features/ne26-rooms/services/RoomAvailabilityService";
 import { ErrorCode } from "@calcom/lib/errorCodes";
 import { ErrorWithCode } from "@calcom/lib/errors";
+import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
+import { cookies, headers } from "next/headers";
 import { notFound } from "next/navigation";
 import RoomBookingClient from "./RoomBookingClient";
 
@@ -31,5 +35,9 @@ export default async function RoomDetailPage({ params }: { params: Params }): Pr
   const { slug } = await params;
   const data = await loadRoom(slug);
   if (!data) notFound();
-  return <RoomBookingClient availability={data} />;
+
+  const addOns = await getAddOnRepository().findManyActive();
+  const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
+
+  return <RoomBookingClient availability={data} addOns={addOns} isAuthed={Boolean(session?.user?.id)} />;
 }
