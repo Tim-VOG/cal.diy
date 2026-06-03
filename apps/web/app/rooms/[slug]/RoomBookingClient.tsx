@@ -48,6 +48,12 @@ function priceHint(addOn: PublicAddOn): string {
   return price;
 }
 
+function addOnSuffix(priceType: AddOnPriceType, quantity: number): string {
+  if (priceType === AddOnPriceType.PER_PERSON) return ` × ${quantity}`;
+  if (priceType === AddOnPriceType.PER_HOUR) return ` × ${quantity}h`;
+  return "";
+}
+
 type CellState = "selected" | "available" | "disabled";
 const CELL_BASE = "rounded-lg border px-4 py-2 text-sm font-medium transition";
 const CELL_CLASS: Record<CellState, string> = {
@@ -102,6 +108,25 @@ export default function RoomBookingClient({
   const total = selectedDuration ? priceForDuration[selectedDuration] + addOnTotal : null;
   const canBook = Boolean(selectedStartUtc && selectedDuration) && !createBooking.isPending;
   const booking = createBooking.data;
+
+  // Per-line cost breakdown for the summary (room + each selected add-on).
+  const addOnLines: { slug: string; label: string; lineTotal: number }[] = [];
+  if (selectedDuration != null) {
+    for (const [slug, quantity] of Object.entries(selectedAddOns)) {
+      const addOn = addOnsBySlug.get(slug);
+      if (!addOn) continue;
+      const line = computeAddOnLine(addOn.priceType, addOn.price, quantity, selectedDuration);
+      addOnLines.push({
+        slug,
+        label: `${addOn.name}${addOnSuffix(addOn.priceType, line.quantity)}`,
+        lineTotal: line.lineTotal,
+      });
+    }
+  }
+
+  function setQuantity(slug: string, quantity: number): void {
+    setSelectedAddOns((prev) => ({ ...prev, [slug]: Math.max(1, quantity) }));
+  }
 
   function pickStart(startUtc: string, availableDurations: DurationHours[]): void {
     setSelectedStartUtc(startUtc);
@@ -244,16 +269,29 @@ export default function RoomBookingClient({
                       </span>
                     </label>
                     {selected && addOn.priceType === AddOnPriceType.PER_PERSON ? (
-                      <input
-                        type="number"
-                        min={1}
-                        value={selectedAddOns[addOn.slug]}
-                        onChange={(e) =>
-                          setSelectedAddOns((prev) => ({ ...prev, [addOn.slug]: Math.max(1, Number(e.target.value)) }))
-                        }
-                        aria-label={`${addOn.name} quantity`}
-                        className="w-16 rounded border border-gray-200 px-2 py-1 text-right"
-                      />
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center rounded-lg border border-gray-200">
+                          <button
+                            type="button"
+                            onClick={() => setQuantity(addOn.slug, selectedAddOns[addOn.slug] - 1)}
+                            disabled={selectedAddOns[addOn.slug] <= 1}
+                            aria-label={`Fewer ${addOn.name}`}
+                            className="px-2.5 py-1 text-[#000643] text-lg leading-none disabled:cursor-not-allowed disabled:text-gray-300">
+                            −
+                          </button>
+                          <span className="w-8 text-center font-medium text-sm tabular-nums">
+                            {selectedAddOns[addOn.slug]}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setQuantity(addOn.slug, selectedAddOns[addOn.slug] + 1)}
+                            aria-label={`More ${addOn.name}`}
+                            className="px-2.5 py-1 text-[#000643] text-lg leading-none">
+                            +
+                          </button>
+                        </div>
+                        <span className="text-gray-400 text-xs">people</span>
+                      </div>
                     ) : null}
                   </div>
                 );
@@ -289,10 +327,27 @@ export default function RoomBookingClient({
                   <Clock className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
                   {formatTime(selectedStartUtc)} – {formatTime(endIso)} ({selectedDuration}h)
                 </p>
-                <p className="mt-3 flex items-center gap-1 font-bold text-[#000643] text-lg">
-                  <Euro className="h-5 w-5 shrink-0" aria-hidden />
-                  {total !== null ? formatPrice(total, room.currency) : ""}
-                </p>
+
+                {/* Cost breakdown: room + each add-on, then total. */}
+                <div className="mt-3 space-y-1 border-gray-100 border-t pt-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Room · {selectedDuration}h</span>
+                    <span>{formatPrice(priceForDuration[selectedDuration], room.currency)}</span>
+                  </div>
+                  {addOnLines.map((line) => (
+                    <div key={line.slug} className="flex justify-between">
+                      <span className="text-gray-600">{line.label}</span>
+                      <span>{formatPrice(line.lineTotal, room.currency)}</span>
+                    </div>
+                  ))}
+                  <div className="mt-1 flex items-center justify-between border-gray-100 border-t pt-2 font-bold text-[#000643]">
+                    <span className="flex items-center gap-1">
+                      <Euro className="h-4 w-4 shrink-0" aria-hidden />
+                      Total
+                    </span>
+                    <span>{total !== null ? formatPrice(total, room.currency) : ""}</span>
+                  </div>
+                </div>
               </div>
             ) : (
               <p className="mt-3 text-gray-500 text-sm">Pick a start time and duration to see the price.</p>
