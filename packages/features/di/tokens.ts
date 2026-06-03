@@ -61,6 +61,8 @@ export const DI_TOKENS = {
   ASSIGNMENT_REASON_REPOSITORY_MODULE: Symbol("AssignmentReasonRepositoryModule"),
   CREDENTIAL_REPOSITORY: Symbol("CredentialRepository"),
   CREDENTIAL_REPOSITORY_MODULE: Symbol("CredentialRepositoryModule"),
+  RESOURCE_BOOKING_REPOSITORY: Symbol("ResourceBookingRepository"),
+  RESOURCE_BOOKING_REPOSITORY_MODULE: Symbol("ResourceBookingRepositoryModule"),
   DESTINATION_CALENDAR_REPOSITORY: Symbol("DestinationCalendarRepository"),
   DESTINATION_CALENDAR_REPOSITORY_MODULE: Symbol("DestinationCalendarRepositoryModule"),
   MANAGED_EVENT_REASSIGNMENT_SERVICE: Symbol("ManagedEventReassignmentService"),

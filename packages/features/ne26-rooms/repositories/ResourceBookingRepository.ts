@@ -1,0 +1,80 @@
+import { ErrorCode } from "@calcom/lib/errorCodes";
+import { ErrorWithCode } from "@calcom/lib/errors";
+import type { PrismaClient } from "@calcom/prisma";
+import { Prisma } from "@calcom/prisma/client";
+import type { ResourceBookingStatus } from "@calcom/prisma/enums";
+
+export interface CreateResourceBookingWithSlotsInput {
+  resourceId: number;
+  startTime: Date;
+  endTime: Date;
+  durationMinutes: number;
+  /** Atomic 1h slot starts covering [startTime, endTime). Computed by the caller. */
+  slotStarts: Date[];
+  bookerEmail: string;
+  bookerName: string;
+  bookerUserId?: number | null;
+  amountTotal: number;
+  currency?: string;
+  status?: ResourceBookingStatus;
+  holdExpiresAt?: Date | null;
+}
+
+export class ResourceBookingRepository {
+  constructor(private prismaClient: PrismaClient) {}
+
+  /**
+   * Persist a booking and its atomic 1h slots in a single transaction. The
+   * @@unique([resourceId, slotStart]) index makes any colliding slot insert
+   * fail with P2002, rolling back the whole booking. This is the DB-level
+   * guarantee that two confirmed/held bookings can never share a room+hour —
+   * the display layer may briefly lie under a race, the database never does.
+   */
+  async createWithSlots(input: CreateResourceBookingWithSlotsInput) {
+    try {
+      return await this.prismaClient.$transaction(async (tx) => {
+        const booking = await tx.resourceBooking.create({
+          data: {
+            resourceId: input.resourceId,
+            startTime: input.startTime,
+            endTime: input.endTime,
+            durationMinutes: input.durationMinutes,
+            bookerEmail: input.bookerEmail,
+            bookerName: input.bookerName,
+            bookerUserId: input.bookerUserId ?? null,
+            amountTotal: input.amountTotal,
+            currency: input.currency,
+            status: input.status,
+            holdExpiresAt: input.holdExpiresAt ?? null,
+          },
+          select: {
+            id: true,
+            uid: true,
+            status: true,
+            startTime: true,
+            endTime: true,
+            amountTotal: true,
+          },
+        });
+
+        await tx.resourceSlot.createMany({
+          data: input.slotStarts.map((slotStart) => ({
+            resourceId: input.resourceId,
+            bookingId: booking.id,
+            slotStart,
+          })),
+        });
+
+        return booking;
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        throw new ErrorWithCode(
+          ErrorCode.BookingConflict,
+          "This time slot is no longer available for the selected room."
+        );
+      }
+      throw e;
+    }
+  }
+}
