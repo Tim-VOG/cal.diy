@@ -508,6 +508,10 @@ model User {
   oAuthClients                   OAuthClient[]
   holidaySettings                UserHolidaySettings?
 
+  // NE26 Rooms: technical owner of rooms (Couche 1) and exhibitor bookings
+  resourcesOwned   Resource[]        @relation("ResourceOwner")
+  resourceBookings ResourceBooking[] @relation("ResourceBooker")
+
   autoOptInFeatures Boolean @default(false)
 
   @@unique([email])
@@ -2848,4 +2852,141 @@ model AttributeSyncFieldMapping {
 
   @@unique([integrationAttributeSyncId, attributeId])
   @@index([integrationAttributeSyncId])
+}
+
+// ============================================================================
+// NE26 Rooms — bookable meeting-room resources (VO Group / NATO Edge 26)
+// 9 rooms must be bookable in PARALLEL on the same time slot, which Cal.com's
+// "user = one calendar" model can't do. These models are independent of the
+// existing Booking/EventType tables. See BRIEF_TECHNIQUE_NE26_ROOMS.md.
+// ============================================================================
+
+enum ResourceCategory {
+  PREMIUM
+  INTERMEDIATE
+  ENTRY
+}
+
+enum ResourceBookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum AddOnPriceType {
+  FLAT
+  PER_PERSON
+  PER_HOUR
+}
+
+model Resource {
+  id          Int               @id @default(autoincrement())
+  name        String
+  slug        String            @unique
+  category    ResourceCategory
+  capacity    Int
+  // Floor area in square metres.
+  surface     Int
+  // Price per duration in the smallest currency unit (cents); not necessarily
+  // proportional (a 3h package can be cheaper than 3x the 1h price).
+  price1h     Int
+  price2h     Int
+  price3h     Int
+  currency    String            @default("EUR")
+  description String?
+  isActive    Boolean           @default(true)
+  // Technical user backing this room for the availability engine (Couche 1).
+  owner       User?             @relation("ResourceOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  ownerUserId Int?
+  bookings    ResourceBooking[]
+  slots       ResourceSlot[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([ownerUserId])
+  @@index([isActive])
+}
+
+model ResourceBooking {
+  id              Int                   @id @default(autoincrement())
+  uid             String                @unique @default(uuid())
+  resource        Resource              @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  resourceId      Int
+  startTime       DateTime
+  endTime         DateTime
+  // 60 | 120 | 180. Number of atomic 1h slots = durationMinutes / 60.
+  durationMinutes Int
+  // Exhibitor account (nullable: SetNull keeps the paid booking if the account is removed).
+  booker          User?                 @relation("ResourceBooker", fields: [bookerUserId], references: [id], onDelete: SetNull)
+  bookerUserId    Int?
+  bookerEmail     String
+  bookerName      String
+  status          ResourceBookingStatus @default(PENDING)
+  // PENDING hold expiry: a non-confirmed booking past this time can be released (§4.4).
+  holdExpiresAt   DateTime?
+  // Total in cents = the room's price for the chosen duration + sum(add-on lineTotals).
+  amountTotal     Int
+  currency        String                @default("EUR")
+  stripePaymentId String?
+  invoiceNumber   String?               @unique
+  invoicePdfUrl   String?
+  slots           ResourceSlot[]
+  addOns          BookingAddOn[]
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([resourceId])
+  @@index([bookerUserId])
+  @@index([status])
+  @@index([startTime, endTime])
+  @@index([status, holdExpiresAt])
+}
+
+// One row per booked atomic 1h slot. THE anti-double-booking guarantee:
+// the DB physically rejects a second confirmed/held slot on the same room+hour,
+// which correctly handles overlapping 1/2/3h durations (brief §4.3 Option A).
+model ResourceSlot {
+  id         Int             @id @default(autoincrement())
+  resource   Resource        @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  resourceId Int
+  booking    ResourceBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId  Int
+  // Start of the atomic hour, stored in UTC.
+  slotStart  DateTime
+
+  @@unique([resourceId, slotStart], name: "no_double_booking")
+  @@index([bookingId])
+}
+
+model AddOn {
+  id            Int            @id @default(autoincrement())
+  name          String
+  slug          String         @unique
+  description   String?
+  // Unit price in cents.
+  price         Int
+  currency      String         @default("EUR")
+  priceType     AddOnPriceType
+  // VAT rate in basis points (2100 = 21%). Catering may differ from room rental.
+  vatRate       Int            @default(2100)
+  isActive      Boolean        @default(true)
+  bookingAddOns BookingAddOn[]
+
+  @@index([isActive])
+}
+
+model BookingAddOn {
+  id        Int             @id @default(autoincrement())
+  booking   ResourceBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId Int
+  addOn     AddOn           @relation(fields: [addOnId], references: [id])
+  addOnId   Int
+  // Quantity, e.g. number of covers for PER_PERSON catering.
+  quantity  Int             @default(1)
+  // Unit price frozen at order time (cents) — never reference the live AddOn price.
+  unitPrice Int
+  lineTotal Int
+
+  @@index([bookingId])
+  @@index([addOnId])
 }
