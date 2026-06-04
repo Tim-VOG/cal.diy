@@ -23,6 +23,13 @@ export interface InvoiceModel {
   totalVat: number;
   totalTtc: number;
   currency: string;
+  /** Legal mention when zero-rated (reverse charge / exemption), else null. */
+  vatMention: string | null;
+}
+
+export interface VatTreatmentInput {
+  zeroRated: boolean;
+  mention: string | null;
 }
 
 export interface InvoiceInput {
@@ -44,28 +51,23 @@ function splitTtc(totalTtc: number, vatRateBp: number): { ht: number; vat: numbe
  * (the buyer paid amountTotal via Stripe), so HT and VAT are derived from each
  * line's TTC. The room line's TTC is amountTotal minus the add-on lines.
  */
-export function buildInvoiceModel(input: InvoiceInput): InvoiceModel {
+export function buildInvoiceModel(input: InvoiceInput, vat?: VatTreatmentInput): InvoiceModel {
   const addOnsTtc = input.addOns.reduce((sum, a) => sum + a.lineTotal, 0);
   const roomTtc = input.amountTotal - addOnsTtc;
+  const zeroRated = vat?.zeroRated ?? false;
 
-  const lines: InvoiceLine[] = [];
-  const room = splitTtc(roomTtc, ROOM_VAT_RATE_BP);
-  lines.push({
-    label: `${input.roomName} — meeting room rental (${input.durationMinutes / 60}h)`,
-    totalTtc: roomTtc,
-    vatRate: ROOM_VAT_RATE_BP,
-    ht: room.ht,
-    vat: room.vat,
-  });
+  // Zero-rated (reverse charge / exemption): no VAT, HT equals the amount paid.
+  const lineFor = (label: string, ttc: number, baseRate: number): InvoiceLine => {
+    if (zeroRated) return { label, totalTtc: ttc, vatRate: 0, ht: ttc, vat: 0 };
+    const split = splitTtc(ttc, baseRate);
+    return { label, totalTtc: ttc, vatRate: baseRate, ht: split.ht, vat: split.vat };
+  };
+
+  const lines: InvoiceLine[] = [
+    lineFor(`${input.roomName} — meeting room rental (${input.durationMinutes / 60}h)`, roomTtc, ROOM_VAT_RATE_BP),
+  ];
   for (const addOn of input.addOns) {
-    const split = splitTtc(addOn.lineTotal, addOn.vatRate);
-    lines.push({
-      label: addOn.quantity > 1 ? `${addOn.name} × ${addOn.quantity}` : addOn.name,
-      totalTtc: addOn.lineTotal,
-      vatRate: addOn.vatRate,
-      ht: split.ht,
-      vat: split.vat,
-    });
+    lines.push(lineFor(addOn.quantity > 1 ? `${addOn.name} × ${addOn.quantity}` : addOn.name, addOn.lineTotal, addOn.vatRate));
   }
 
   const byRate = new Map<number, { base: number; vat: number }>();
@@ -86,5 +88,6 @@ export function buildInvoiceModel(input: InvoiceInput): InvoiceModel {
     totalVat: lines.reduce((s, l) => s + l.vat, 0),
     totalTtc: lines.reduce((s, l) => s + l.totalTtc, 0),
     currency: input.currency,
+    vatMention: zeroRated ? (vat?.mention ?? null) : null,
   };
 }

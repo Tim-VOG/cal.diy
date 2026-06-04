@@ -27,7 +27,7 @@ export interface CreateBookingInput {
   slug: string;
   startUtc: Date;
   durationHours: DurationHours;
-  booker: { userId: number; email: string; name: string };
+  booker: { userId: number; email: string; name: string; country?: string; vatNumber?: string };
   addOns?: { slug: string; quantity: number }[];
 }
 
@@ -78,6 +78,8 @@ export class ResourceBookingService {
       bookerUserId: input.booker.userId,
       bookerEmail: input.booker.email,
       bookerName: input.booker.name,
+      bookerCountry: input.booker.country ?? null,
+      bookerVatNumber: input.booker.vatNumber ?? null,
       amountTotal,
       currency: room.currency,
       status: ResourceBookingStatus.PENDING,

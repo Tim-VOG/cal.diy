@@ -2921,6 +2921,10 @@ model ResourceBooking {
   bookerUserId    Int?
   bookerEmail     String
   bookerName      String
+  // Buyer billing country (ISO-3166 alpha-2) and intra-EU VAT number, captured at
+  // booking to drive the invoice VAT treatment (reverse charge / exemption).
+  bookerCountry   String?
+  bookerVatNumber String?
   status          ResourceBookingStatus @default(PENDING)
   // PENDING hold expiry: a non-confirmed booking past this time can be released (§4.4).
   holdExpiresAt   DateTime?
@@ -2993,17 +2997,23 @@ model BookingAddOn {
 
 // Singleton issuer/company details for NE26 invoices (admin-editable).
 model Ne26InvoiceSettings {
-  id           Int      @id @default(1)
-  legalName    String   @default("VO EUROPE SA")
-  vatNumber    String   @default("")
-  addressLine1 String   @default("")
-  addressLine2 String   @default("")
-  postalCode   String   @default("")
-  city         String   @default("")
-  country      String   @default("Belgium")
-  iban         String   @default("")
-  bic          String   @default("")
-  contactEmail String   @default("")
-  legalFooter  String   @default("")
-  updatedAt    DateTime @updatedAt
+  id                     Int      @id @default(1)
+  legalName              String   @default("VO EUROPE SA")
+  vatNumber              String   @default("")
+  addressLine1           String   @default("")
+  addressLine2           String   @default("")
+  postalCode             String   @default("")
+  city                   String   @default("")
+  country                String   @default("Belgium")
+  iban                   String   @default("")
+  bic                    String   @default("")
+  contactEmail           String   @default("")
+  legalFooter            String   @default("")
+  // VAT-by-country matrix (admin-configurable). When enabled, lines are zero-rated
+  // for that buyer type and the mention is printed. Belgian VAT applies otherwise.
+  euReverseChargeEnabled Boolean  @default(false)
+  euReverseChargeMention String   @default("VAT reverse charge - Article 196 of Council Directive 2006/112/EC")
+  nonEuExemptEnabled     Boolean  @default(false)
+  nonEuExemptMention     String   @default("VAT not applicable - supply outside the scope of EU VAT")
+  updatedAt              DateTime @updatedAt
 }

@@ -4,6 +4,7 @@ import { buildInvoiceModel } from "../lib/invoice";
 import { renderInvoicePdf } from "../lib/invoicePdf";
 import { saveInvoicePdf } from "../lib/invoiceStorage";
 import { sendInvoiceEmail } from "../lib/mailer";
+import { resolveVatTreatment } from "../lib/vat";
 import type { InvoiceSettingsRepository } from "../repositories/InvoiceSettingsRepository";
 import type { ResourceBookingRepository } from "../repositories/ResourceBookingRepository";
 
@@ -24,21 +25,28 @@ export class InvoiceService {
     const booking = await this.deps.resourceBookingRepository.findByUidForInvoice(uid);
     if (!booking || booking.status !== ResourceBookingStatus.CONFIRMED || booking.invoiceNumber) return;
 
-    const model = buildInvoiceModel({
-      amountTotal: booking.amountTotal,
-      currency: booking.currency,
-      roomName: booking.resource.name,
-      durationMinutes: booking.durationMinutes,
-      addOns: booking.addOns.map((a) => ({
-        name: a.addOn.name,
-        quantity: a.quantity,
-        lineTotal: a.lineTotal,
-        vatRate: a.addOn.vatRate,
-      })),
-    });
+    const issuer = await this.deps.invoiceSettingsRepository.get();
+    const vat = resolveVatTreatment(
+      { country: booking.bookerCountry, vatNumber: booking.bookerVatNumber },
+      issuer
+    );
+    const model = buildInvoiceModel(
+      {
+        amountTotal: booking.amountTotal,
+        currency: booking.currency,
+        roomName: booking.resource.name,
+        durationMinutes: booking.durationMinutes,
+        addOns: booking.addOns.map((a) => ({
+          name: a.addOn.name,
+          quantity: a.quantity,
+          lineTotal: a.lineTotal,
+          vatRate: a.addOn.vatRate,
+        })),
+      },
+      vat
+    );
 
     const invoiceNumber = await this.deps.resourceBookingRepository.allocateInvoiceNumber();
-    const issuer = await this.deps.invoiceSettingsRepository.get();
     const pdf = await renderInvoicePdf(
       model,
       {

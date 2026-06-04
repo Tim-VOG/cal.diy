@@ -5,7 +5,20 @@ import { trpc } from "@calcom/trpc/react";
 import Link from "next/link";
 import { useState } from "react";
 
-const FIELDS: { key: keyof InvoiceSettings; label: string; full?: boolean; textarea?: boolean }[] = [
+type StringSettingKey =
+  | "legalName"
+  | "vatNumber"
+  | "addressLine1"
+  | "addressLine2"
+  | "postalCode"
+  | "city"
+  | "country"
+  | "iban"
+  | "bic"
+  | "contactEmail"
+  | "legalFooter";
+
+const FIELDS: { key: StringSettingKey; label: string; full?: boolean; textarea?: boolean }[] = [
   { key: "legalName", label: "Legal name" },
   { key: "vatNumber", label: "VAT number" },
   { key: "addressLine1", label: "Address line 1", full: true },
@@ -59,6 +72,49 @@ export default function InvoiceSettingsForm({ initial }: { initial: InvoiceSetti
             )}
           </label>
         ))}
+
+        {/* VAT-by-country matrix */}
+        <div className="mt-2 border-gray-100 border-t pt-4 sm:col-span-2">
+          <h2 className="font-semibold text-[#000643] text-sm uppercase tracking-wide">VAT by country</h2>
+          <p className="mt-1 text-gray-500 text-xs">
+            Belgian buyers always get standard Belgian VAT. Enable the rules below only if your accountant
+            confirms they apply (mind the place-of-supply rules for room rental at a Belgian event).
+          </p>
+
+          <label className="mt-3 flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={form.euReverseChargeEnabled}
+              onChange={(e) => setForm((f) => ({ ...f, euReverseChargeEnabled: e.target.checked }))}
+              className="h-4 w-4 accent-[#000643]"
+            />
+            <span className="font-medium text-sm">EU reverse charge (buyer in another EU country with a VAT number)</span>
+          </label>
+          <input
+            type="text"
+            className={inputClass}
+            value={form.euReverseChargeMention}
+            onChange={(e) => setForm((f) => ({ ...f, euReverseChargeMention: e.target.value }))}
+            placeholder="Legal mention printed on the invoice"
+          />
+
+          <label className="mt-4 flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={form.nonEuExemptEnabled}
+              onChange={(e) => setForm((f) => ({ ...f, nonEuExemptEnabled: e.target.checked }))}
+              className="h-4 w-4 accent-[#000643]"
+            />
+            <span className="font-medium text-sm">Non-EU exemption (buyer outside the EU)</span>
+          </label>
+          <input
+            type="text"
+            className={inputClass}
+            value={form.nonEuExemptMention}
+            onChange={(e) => setForm((f) => ({ ...f, nonEuExemptMention: e.target.value }))}
+            placeholder="Legal mention printed on the invoice"
+          />
+        </div>
 
         <div className="flex items-center gap-3 sm:col-span-2">
           <button

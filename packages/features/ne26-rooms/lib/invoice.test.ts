@@ -28,4 +28,16 @@ describe("buildInvoiceModel", () => {
     // two distinct VAT rates present
     expect(m.vatBreakdown.map((v) => v.vatRate)).toEqual([1200, 2100]);
   });
+
+  it("zero-rates every line and carries the mention when reverse-charged", () => {
+    const m = buildInvoiceModel(
+      { amountTotal: 35000, currency: "EUR", roomName: "Suite 1", durationMinutes: 60, addOns: [] },
+      { zeroRated: true, mention: "VAT reverse charge" }
+    );
+    expect(m.totalTtc).toBe(35000);
+    expect(m.totalHt).toBe(35000); // HT == amount paid, no VAT
+    expect(m.totalVat).toBe(0);
+    expect(m.lines.every((l) => l.vatRate === 0 && l.vat === 0)).toBe(true);
+    expect(m.vatMention).toBe("VAT reverse charge");
+  });
 });

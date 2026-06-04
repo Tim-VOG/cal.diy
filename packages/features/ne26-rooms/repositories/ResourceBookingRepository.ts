@@ -14,6 +14,8 @@ export interface CreateResourceBookingWithSlotsInput {
   bookerEmail: string;
   bookerName: string;
   bookerUserId?: number | null;
+  bookerCountry?: string | null;
+  bookerVatNumber?: string | null;
   amountTotal: number;
   currency?: string;
   status?: ResourceBookingStatus;
@@ -62,6 +64,8 @@ export class ResourceBookingRepository {
             bookerEmail: input.bookerEmail,
             bookerName: input.bookerName,
             bookerUserId: input.bookerUserId ?? null,
+            bookerCountry: input.bookerCountry ?? null,
+            bookerVatNumber: input.bookerVatNumber ?? null,
             amountTotal: input.amountTotal,
             currency: input.currency,
             status: input.status,
@@ -198,6 +202,8 @@ export class ResourceBookingRepository {
         durationMinutes: true,
         bookerName: true,
         bookerEmail: true,
+        bookerCountry: true,
+        bookerVatNumber: true,
         amountTotal: true,
         currency: true,
         invoiceNumber: true,

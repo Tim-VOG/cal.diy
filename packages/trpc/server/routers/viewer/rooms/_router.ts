@@ -28,7 +28,13 @@ export const roomsRouter = router({
       slug: input.slug,
       startUtc: new Date(input.startUtc),
       durationHours: input.durationHours,
-      booker: { userId: ctx.user.id, email: ctx.user.email, name: ctx.user.name ?? ctx.user.email },
+      booker: {
+        userId: ctx.user.id,
+        email: ctx.user.email,
+        name: ctx.user.name ?? ctx.user.email,
+        country: input.country,
+        vatNumber: input.vatNumber,
+      },
       addOns: input.addOns,
     });
 

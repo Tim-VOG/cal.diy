@@ -144,6 +144,11 @@ export async function renderInvoicePdf(
   textRight("Total incl. VAT", colHt, y, 11, bold, NAVY);
   textRight(money(model.totalTtc, model.currency), colTtc, y, 11, bold, NAVY);
 
+  if (model.vatMention) {
+    y -= 24;
+    text(model.vatMention, left, y, 8, font, GREY);
+  }
+
   // Footer
   const bankLine = issuer.iban ? `IBAN ${issuer.iban}${issuer.bic ? ` · BIC ${issuer.bic}` : ""}` : "";
   const footer = issuer.legalFooter || `${issuer.legalName} - NATO Edge 26 - rooms.vo-eu.be`;

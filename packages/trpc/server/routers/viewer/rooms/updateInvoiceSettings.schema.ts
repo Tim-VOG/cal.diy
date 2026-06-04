@@ -12,6 +12,10 @@ export const ZUpdateInvoiceSettingsInputSchema = z.object({
   bic: z.string().max(20),
   contactEmail: z.string().max(200),
   legalFooter: z.string().max(500),
+  euReverseChargeEnabled: z.boolean(),
+  euReverseChargeMention: z.string().max(300),
+  nonEuExemptEnabled: z.boolean(),
+  nonEuExemptMention: z.string().max(300),
 });
 
 export type TUpdateInvoiceSettingsInputSchema = z.infer<typeof ZUpdateInvoiceSettingsInputSchema>;

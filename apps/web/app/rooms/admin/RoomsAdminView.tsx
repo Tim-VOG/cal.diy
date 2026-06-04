@@ -135,12 +135,13 @@ export default function RoomsAdminView({ rows }: { rows: AdminBookingRow[] }): J
               <th className="px-3 py-2">Booker</th>
               <th className="px-3 py-2">Add-ons</th>
               <th className="px-3 py-2 text-right">Amount</th>
+              <th className="px-3 py-2">Invoice</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td className="px-3 py-6 text-center text-gray-400" colSpan={6}>
+                <td className="px-3 py-6 text-center text-gray-400" colSpan={7}>
                   No bookings
                 </td>
               </tr>
@@ -165,6 +166,19 @@ export default function RoomsAdminView({ rows }: { rows: AdminBookingRow[] }): J
                   </td>
                   <td className="px-3 py-2 text-gray-600">{addOnsLabel(r) || "—"}</td>
                   <td className="px-3 py-2 text-right font-medium">{fmtMoney(r.amountTotal, r.currency)}</td>
+                  <td className="px-3 py-2">
+                    {r.invoiceNumber ? (
+                      <a
+                        href={`/rooms/invoice/${r.uid}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[#000643] underline hover:opacity-80">
+                        {r.invoiceNumber}
+                      </a>
+                    ) : (
+                      <span className="text-gray-300">—</span>
+                    )}
+                  </td>
                 </tr>
               ))
             )}

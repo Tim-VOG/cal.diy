@@ -12,6 +12,10 @@ const settingsSelect = {
   bic: true,
   contactEmail: true,
   legalFooter: true,
+  euReverseChargeEnabled: true,
+  euReverseChargeMention: true,
+  nonEuExemptEnabled: true,
+  nonEuExemptMention: true,
 } as const;
 
 export interface InvoiceSettings {
@@ -26,6 +30,10 @@ export interface InvoiceSettings {
   bic: string;
   contactEmail: string;
   legalFooter: string;
+  euReverseChargeEnabled: boolean;
+  euReverseChargeMention: string;
+  nonEuExemptEnabled: boolean;
+  nonEuExemptMention: string;
 }
 
 export class InvoiceSettingsRepository {
