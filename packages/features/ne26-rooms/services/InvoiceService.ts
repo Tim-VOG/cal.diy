@@ -1,7 +1,7 @@
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
 import { buildInvoiceModel } from "../lib/invoice";
 import { renderInvoicePdf } from "../lib/invoicePdf";
-import { saveInvoicePdf } from "../lib/invoiceStorage";
+import { readInvoicePdf, saveInvoicePdf } from "../lib/invoiceStorage";
 import { sendInvoiceEmail } from "../lib/mailer";
 import { resolveVatTreatment } from "../lib/vat";
 import type { InvoiceSettingsRepository } from "../repositories/InvoiceSettingsRepository";
@@ -72,6 +72,27 @@ export class InvoiceService {
       amountLabel: `${(booking.amountTotal / 100).toFixed(2)} ${booking.currency}`,
       pdf,
     });
+  }
+
+  /**
+   * Re-send an already-issued invoice email (admin action, e.g. the booker lost
+   * it). Reads the stored PDF and re-sends; no-op if the booking has no invoice
+   * or the PDF is missing. Returns true if an email was sent.
+   */
+  async resendInvoice(uid: string): Promise<boolean> {
+    const booking = await this.deps.resourceBookingRepository.findByUidForInvoice(uid);
+    if (!booking?.invoiceNumber) return false;
+    const pdf = await readInvoicePdf(uid, "invoice");
+    if (!pdf) return false;
+    await sendInvoiceEmail({
+      to: booking.bookerEmail,
+      bookerName: booking.bookerName,
+      invoiceNumber: booking.invoiceNumber,
+      roomName: booking.resource.name,
+      amountLabel: `${(booking.amountTotal / 100).toFixed(2)} ${booking.currency}`,
+      pdf,
+    });
+    return true;
   }
 
   /**

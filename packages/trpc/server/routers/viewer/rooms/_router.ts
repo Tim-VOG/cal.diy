@@ -1,5 +1,6 @@
 import authedProcedure, { authedAdminProcedure } from "../../../procedures/authedProcedure";
 import { router } from "../../../trpc";
+import { ZBookingUidInputSchema } from "./bookingUid.schema";
 import { ZCreateBookingInputSchema } from "./createBooking.schema";
 import { ZIssueCreditNoteInputSchema } from "./issueCreditNote.schema";
 import { ZPreviewVatInputSchema } from "./previewVat.schema";
@@ -56,6 +57,37 @@ export const roomsRouter = router({
     const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
     const issued = await getInvoiceService().issueCreditNote(input.uid);
     return { issued };
+  }),
+
+  // Admin-only: confirm a PENDING booking paid outside Stripe (e.g. bank
+  // transfer), then issue its invoice (best-effort).
+  confirmBookingManually: authedAdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
+    const { getResourceBookingService } = await import(
+      "@calcom/features/ne26-rooms/di/ResourceBookingService.container"
+    );
+    const confirmed = await getResourceBookingService().confirmManually(input.uid);
+    if (confirmed) {
+      const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
+      await getInvoiceService().issueInvoice(input.uid);
+    }
+    return { confirmed };
+  }),
+
+  // Admin-only: cancel a PENDING booking without a credit note (test/no-show)
+  // and free its slots. Paid bookings must use the credit-note flow instead.
+  cancelPendingBooking: authedAdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
+    const { getResourceBookingService } = await import(
+      "@calcom/features/ne26-rooms/di/ResourceBookingService.container"
+    );
+    const cancelled = await getResourceBookingService().cancelPending(input.uid);
+    return { cancelled };
+  }),
+
+  // Admin-only: re-send an already-issued invoice email to the booker.
+  resendInvoice: authedAdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
+    const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
+    const sent = await getInvoiceService().resendInvoice(input.uid);
+    return { sent };
   }),
 
   // Create a PENDING NE26 room booking with a temporary hold, then open a Stripe

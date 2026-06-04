@@ -184,6 +184,38 @@ export class ResourceBookingRepository {
     });
   }
 
+  /**
+   * Admin: confirm a PENDING booking that was paid outside Stripe (e.g. bank
+   * transfer). Scoped to PENDING so it's idempotent and never revives a
+   * cancelled booking. Its slots already exist, so no re-insert is needed.
+   */
+  async confirmManuallyByUid(uid: string): Promise<number> {
+    const result = await this.prismaClient.resourceBooking.updateMany({
+      where: { uid, status: ResourceBookingStatus.PENDING },
+      data: { status: ResourceBookingStatus.CONFIRMED },
+    });
+    return result.count;
+  }
+
+  /**
+   * Admin: cancel a PENDING booking without a credit note (test booking, unpaid
+   * no-show) and free its atomic slots. Scoped to PENDING — a paid/CONFIRMED
+   * booking must go through the credit-note flow instead. Returns rows updated.
+   */
+  async cancelPendingByUid(uid: string): Promise<number> {
+    return this.prismaClient.$transaction(async (tx) => {
+      const result = await tx.resourceBooking.updateMany({
+        where: { uid, status: ResourceBookingStatus.PENDING },
+        data: { status: ResourceBookingStatus.CANCELLED },
+      });
+      if (result.count > 0) {
+        const booking = await tx.resourceBooking.findUnique({ where: { uid }, select: { id: true } });
+        if (booking) await tx.resourceSlot.deleteMany({ where: { bookingId: booking.id } });
+      }
+      return result.count;
+    });
+  }
+
   /** A single booking with everything the admin detail view shows. */
   findByUidForAdmin(uid: string) {
     return this.prismaClient.resourceBooking.findUnique({

@@ -152,6 +152,18 @@ export class ResourceBookingService {
     return count > 0;
   }
 
+  /** Admin: confirm a PENDING booking paid outside Stripe. Idempotent. */
+  async confirmManually(uid: string): Promise<boolean> {
+    const count = await this.deps.resourceBookingRepository.confirmManuallyByUid(uid);
+    return count > 0;
+  }
+
+  /** Admin: cancel a PENDING booking (no credit note) and free its slots. */
+  async cancelPending(uid: string): Promise<boolean> {
+    const count = await this.deps.resourceBookingRepository.cancelPendingByUid(uid);
+    return count > 0;
+  }
+
   /** Persist billing details collected by Stripe Checkout (before confirming). */
   async applyCheckoutBilling(input: {
     bookingUid: string;

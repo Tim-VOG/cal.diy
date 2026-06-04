@@ -6,6 +6,7 @@ import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
+import BookingActions from "./BookingActions";
 
 export const metadata: Metadata = {
   title: "Booking · NATO Edge 26 admin",
@@ -135,6 +136,14 @@ export default async function AdminBookingDetailPage({
             )}
           </Row>
         </Card>
+      </div>
+
+      <div className="mt-4">
+        <BookingActions
+          uid={booking.uid}
+          status={booking.status}
+          hasInvoice={Boolean(booking.invoiceNumber)}
+        />
       </div>
 
       <div className="mt-4">
