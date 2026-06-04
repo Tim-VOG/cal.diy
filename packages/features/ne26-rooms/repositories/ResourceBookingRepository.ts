@@ -161,4 +161,27 @@ export class ResourceBookingRepository {
     });
     return result.count;
   }
+
+  /** All bookings with room + add-on details, for the admin dashboard. */
+  findAllWithDetails() {
+    return this.prismaClient.resourceBooking.findMany({
+      orderBy: [{ startTime: "asc" }, { createdAt: "asc" }],
+      select: {
+        uid: true,
+        status: true,
+        startTime: true,
+        endTime: true,
+        durationMinutes: true,
+        bookerName: true,
+        bookerEmail: true,
+        amountTotal: true,
+        currency: true,
+        stripePaymentId: true,
+        invoiceNumber: true,
+        createdAt: true,
+        resource: { select: { name: true, slug: true, category: true } },
+        addOns: { select: { quantity: true, lineTotal: true, addOn: { select: { name: true } } } },
+      },
+    });
+  }
 }
