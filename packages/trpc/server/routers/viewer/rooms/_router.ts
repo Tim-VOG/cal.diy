@@ -2,6 +2,7 @@ import authedProcedure, { authedAdminProcedure } from "../../../procedures/authe
 import { router } from "../../../trpc";
 import { ZCreateBookingInputSchema } from "./createBooking.schema";
 import { ZIssueCreditNoteInputSchema } from "./issueCreditNote.schema";
+import { ZPreviewVatInputSchema } from "./previewVat.schema";
 import { ZUpdateBillingProfileInputSchema } from "./updateBillingProfile.schema";
 import { ZUpdateInvoiceSettingsInputSchema } from "./updateInvoiceSettings.schema";
 
@@ -12,6 +13,20 @@ export const roomsRouter = router({
       "@calcom/features/ne26-rooms/di/Ne26BillingProfileRepository.container"
     );
     return getNe26BillingProfileRepository().findByUserId(ctx.user.id);
+  }),
+
+  // VAT recap for a live room selection, from the buyer's saved country/VAT —
+  // shown on our page before the Stripe redirect.
+  previewVat: authedProcedure.input(ZPreviewVatInputSchema).query(async ({ ctx, input }) => {
+    const { getRoomVatPreviewService } = await import(
+      "@calcom/features/ne26-rooms/di/RoomVatPreviewService.container"
+    );
+    return getRoomVatPreviewService().preview({
+      userId: ctx.user.id,
+      slug: input.slug,
+      durationHours: input.durationHours,
+      addOns: input.addOns,
+    });
   }),
 
   // Create or update the signed-in exhibitor's billing profile (reused at checkout).

@@ -3,11 +3,11 @@
 import type { DurationHours } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { computeAddOnLine } from "@calcom/features/ne26-rooms/lib/pricing";
 import type { RoomAvailability } from "@calcom/features/ne26-rooms/services/RoomAvailabilityService";
+import type { VatPreview } from "@calcom/features/ne26-rooms/services/RoomVatPreviewService";
 import { AddOnPriceType } from "@calcom/prisma/enums";
 import { trpc } from "@calcom/trpc/react";
 import { Building, Clock, Euro, Scaling, Users } from "lucide-react";
 import { useMemo, useState } from "react";
-
 import { AMENITIES } from "../amenities";
 
 const TZ = "Europe/Brussels";
@@ -39,15 +39,21 @@ interface BookingResult {
 }
 
 function formatTime(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false }).format(
-    new Date(iso)
-  );
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: TZ,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(iso));
 }
 
 function formatDayLabel(date: string): string {
-  return new Intl.DateTimeFormat("en-GB", { timeZone: TZ, weekday: "short", day: "numeric", month: "short" }).format(
-    new Date(`${date}T12:00:00.000Z`)
-  );
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: TZ,
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).format(new Date(`${date}T12:00:00.000Z`));
 }
 
 function formatPrice(cents: number, currency: string): string {
@@ -146,6 +152,52 @@ function AddOnList({
   );
 }
 
+function vatPct(bp: number): string {
+  return `${bp / 100}%`;
+}
+
+// VAT recap derived from the buyer's saved billing profile. The total charged
+// (TTC) is unchanged — this only breaks it down. Without a saved country we
+// can't resolve VAT here, so we point the buyer to their billing details.
+function VatRecap({ vat }: { vat: VatPreview }): JSX.Element {
+  if (!vat.hasBuyerCountry) {
+    return (
+      <p className="mt-2 text-gray-400 text-xs">
+        VAT is calculated at payment.{" "}
+        <a href="/rooms/account" className="underline hover:text-[#000643]">
+          Add your billing details
+        </a>{" "}
+        to preview it.
+      </p>
+    );
+  }
+  if (vat.zeroRated) {
+    return (
+      <div className="mt-2 text-gray-500 text-xs">
+        <div className="flex justify-between">
+          <span>VAT (0%)</span>
+          <span>{formatPrice(0, vat.currency)}</span>
+        </div>
+        {vat.mention ? <p className="mt-1 text-gray-400">{vat.mention}</p> : null}
+      </div>
+    );
+  }
+  return (
+    <div className="mt-2 space-y-0.5 text-gray-500 text-xs">
+      <div className="flex justify-between">
+        <span>Excl. VAT</span>
+        <span>{formatPrice(vat.totalHt, vat.currency)}</span>
+      </div>
+      {vat.vatBreakdown.map((v) => (
+        <div key={v.vatRate} className="flex justify-between">
+          <span>incl. VAT {vatPct(v.vatRate)}</span>
+          <span>{formatPrice(v.vat, vat.currency)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function SelectionSummary({
   room,
   selectedDate,
@@ -155,6 +207,7 @@ function SelectionSummary({
   roomPrice,
   addOnLines,
   total,
+  vat,
   isAuthed,
   booking,
   errorMessage,
@@ -170,6 +223,7 @@ function SelectionSummary({
   roomPrice: number | null;
   addOnLines: CostLine[];
   total: number | null;
+  vat: VatPreview | undefined;
   isAuthed: boolean;
   booking: BookingResult | undefined;
   errorMessage: string | null;
@@ -185,7 +239,9 @@ function SelectionSummary({
         <div className="mt-3 space-y-2 text-sm">
           <p className="font-semibold text-[#000643]">Slot held — redirecting to payment…</p>
           <p className="text-gray-600">Reference {booking.uid.slice(0, 8)}</p>
-          <p className="font-bold text-[#000643] text-lg">{formatPrice(booking.amountTotal, booking.currency)}</p>
+          <p className="font-bold text-[#000643] text-lg">
+            {formatPrice(booking.amountTotal, booking.currency)}
+          </p>
         </div>
       ) : (
         <>
@@ -220,6 +276,7 @@ function SelectionSummary({
                   </span>
                   <span>{total !== null ? formatPrice(total, room.currency) : ""}</span>
                 </div>
+                {isAuthed && vat ? <VatRecap vat={vat} /> : null}
               </div>
             </div>
           ) : (
@@ -262,7 +319,11 @@ export default function RoomBookingClient({
   isAuthed: boolean;
 }): JSX.Element {
   const { room, days } = availability;
-  const priceForDuration: Record<DurationHours, number> = { 1: room.price1h, 2: room.price2h, 3: room.price3h };
+  const priceForDuration: Record<DurationHours, number> = {
+    1: room.price1h,
+    2: room.price2h,
+    3: room.price3h,
+  };
   const addOnsBySlug = useMemo(() => new Map(addOns.map((a) => [a.slug, a])), [addOns]);
 
   const [selectedDate, setSelectedDate] = useState(days[0]?.date ?? "");
@@ -289,12 +350,25 @@ export default function RoomBookingClient({
       const addOn = addOnsBySlug.get(slug);
       if (!addOn) continue;
       const line = computeAddOnLine(addOn.priceType, addOn.price, quantity, selectedDuration);
-      addOnLines.push({ slug, label: `${addOn.name}${addOnSuffix(addOn.priceType, line.quantity)}`, lineTotal: line.lineTotal });
+      addOnLines.push({
+        slug,
+        label: `${addOn.name}${addOnSuffix(addOn.priceType, line.quantity)}`,
+        lineTotal: line.lineTotal,
+      });
     }
   }
   const addOnTotal = addOnLines.reduce((sum, line) => sum + line.lineTotal, 0);
   const total = selectedDuration ? priceForDuration[selectedDuration] + addOnTotal : null;
   const canBook = Boolean(selectedStartUtc && selectedDuration) && !createBooking.isPending;
+
+  const addOnsPayload = useMemo(
+    () => Object.entries(selectedAddOns).map(([slug, quantity]) => ({ slug, quantity })),
+    [selectedAddOns]
+  );
+  const vatPreview = trpc.viewer.rooms.previewVat.useQuery(
+    { slug: room.slug, durationHours: (selectedDuration ?? 1) as DurationHours, addOns: addOnsPayload },
+    { enabled: isAuthed && Boolean(selectedStartUtc) && selectedDuration != null }
+  );
 
   function pickStart(startUtc: string, availableDurations: DurationHours[]): void {
     setSelectedStartUtc(startUtc);
@@ -424,7 +498,12 @@ export default function RoomBookingClient({
           </>
         ) : null}
 
-        <AddOnList addOns={addOns} selected={selectedAddOns} onToggle={toggleAddOn} onSetQuantity={setQuantity} />
+        <AddOnList
+          addOns={addOns}
+          selected={selectedAddOns}
+          onToggle={toggleAddOn}
+          onSetQuantity={setQuantity}
+        />
       </div>
 
       <SelectionSummary
@@ -436,6 +515,7 @@ export default function RoomBookingClient({
         roomPrice={selectedDuration ? priceForDuration[selectedDuration] : null}
         addOnLines={addOnLines}
         total={total}
+        vat={vatPreview.data}
         isAuthed={isAuthed}
         booking={createBooking.data}
         errorMessage={createBooking.error?.message ?? null}
