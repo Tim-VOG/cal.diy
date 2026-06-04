@@ -64,7 +64,9 @@ export default async function BookedPage({ params }: { params: Params }): Promis
       <div className="mt-6 space-y-1 rounded-lg bg-gray-50 p-4 text-left text-sm">
         <p className="font-semibold">{booking.resource.name}</p>
         <p>{formatRange(booking.startTime, booking.endTime)}</p>
-        <p className="font-bold text-[#000643]">{amount}</p>
+        <p className="font-bold text-[#000643]">
+          {amount} <span className="font-normal text-gray-500 text-xs">excl. VAT</span>
+        </p>
         <p className="text-gray-500 text-xs">Reference {booking.uid.slice(0, 8)}</p>
       </div>
 

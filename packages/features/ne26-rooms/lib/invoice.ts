@@ -33,41 +33,47 @@ export interface VatTreatmentInput {
 }
 
 export interface InvoiceInput {
+  /** HT (excl. VAT) total = room HT + add-on HT lines. */
   amountTotal: number;
   currency: string;
   roomName: string;
   durationMinutes: number;
+  /** Add-on lineTotal is HT (excl. VAT). */
   addOns: { name: string; quantity: number; lineTotal: number; vatRate: number }[];
 }
 
-/** Split a VAT-inclusive amount into HT + VAT for a given rate (basis points). */
-function splitTtc(totalTtc: number, vatRateBp: number): { ht: number; vat: number } {
-  const ht = Math.round((totalTtc * 10000) / (10000 + vatRateBp));
-  return { ht, vat: totalTtc - ht };
-}
-
 /**
- * Build the invoice breakdown from a booking. Prices are treated as VAT-inclusive
- * (the buyer paid amountTotal via Stripe), so HT and VAT are derived from each
- * line's TTC. The room line's TTC is amountTotal minus the add-on lines.
+ * Build the invoice breakdown from a booking. Prices are treated as VAT-EXCLUSIVE
+ * (HT): each line's VAT is added on top at its rate, and TTC = HT + VAT. The room
+ * line's HT is amountTotal minus the add-on HT lines. Zero-rated (reverse charge
+ * / exemption) keeps VAT at 0, so TTC = HT.
  */
 export function buildInvoiceModel(input: InvoiceInput, vat?: VatTreatmentInput): InvoiceModel {
-  const addOnsTtc = input.addOns.reduce((sum, a) => sum + a.lineTotal, 0);
-  const roomTtc = input.amountTotal - addOnsTtc;
+  const addOnsHt = input.addOns.reduce((sum, a) => sum + a.lineTotal, 0);
+  const roomHt = input.amountTotal - addOnsHt;
   const zeroRated = vat?.zeroRated ?? false;
 
-  // Zero-rated (reverse charge / exemption): no VAT, HT equals the amount paid.
-  const lineFor = (label: string, ttc: number, baseRate: number): InvoiceLine => {
-    if (zeroRated) return { label, totalTtc: ttc, vatRate: 0, ht: ttc, vat: 0 };
-    const split = splitTtc(ttc, baseRate);
-    return { label, totalTtc: ttc, vatRate: baseRate, ht: split.ht, vat: split.vat };
+  const lineFor = (label: string, ht: number, baseRate: number): InvoiceLine => {
+    if (zeroRated) return { label, totalTtc: ht, vatRate: 0, ht, vat: 0 };
+    const vatAmount = Math.round((ht * baseRate) / 10000);
+    return { label, totalTtc: ht + vatAmount, vatRate: baseRate, ht, vat: vatAmount };
   };
 
   const lines: InvoiceLine[] = [
-    lineFor(`${input.roomName} — meeting room rental (${input.durationMinutes / 60}h)`, roomTtc, ROOM_VAT_RATE_BP),
+    lineFor(
+      `${input.roomName} — meeting room rental (${input.durationMinutes / 60}h)`,
+      roomHt,
+      ROOM_VAT_RATE_BP
+    ),
   ];
   for (const addOn of input.addOns) {
-    lines.push(lineFor(addOn.quantity > 1 ? `${addOn.name} × ${addOn.quantity}` : addOn.name, addOn.lineTotal, addOn.vatRate));
+    lines.push(
+      lineFor(
+        addOn.quantity > 1 ? `${addOn.name} × ${addOn.quantity}` : addOn.name,
+        addOn.lineTotal,
+        addOn.vatRate
+      )
+    );
   }
 
   const byRate = new Map<number, { base: number; vat: number }>();

@@ -156,14 +156,14 @@ function vatPct(bp: number): string {
   return `${bp / 100}%`;
 }
 
-// VAT recap derived from the buyer's saved billing profile. The total charged
-// (TTC) is unchanged — this only breaks it down. Without a saved country we
-// can't resolve VAT here, so we point the buyer to their billing details.
+// VAT recap derived from the buyer's saved billing profile: prices are HT, so
+// this adds the VAT and shows the incl.-VAT total actually charged. Without a
+// saved country we can't resolve VAT here, so we point to the billing details.
 function VatRecap({ vat }: { vat: VatPreview }): JSX.Element {
   if (!vat.hasBuyerCountry) {
     return (
       <p className="mt-2 text-gray-400 text-xs">
-        VAT is calculated at payment.{" "}
+        VAT is added at payment.{" "}
         <a href="/rooms/account" className="underline hover:text-[#000643]">
           Add your billing details
         </a>{" "}
@@ -171,29 +171,28 @@ function VatRecap({ vat }: { vat: VatPreview }): JSX.Element {
       </p>
     );
   }
-  if (vat.zeroRated) {
-    return (
-      <div className="mt-2 text-gray-500 text-xs">
-        <div className="flex justify-between">
-          <span>VAT (0%)</span>
-          <span>{formatPrice(0, vat.currency)}</span>
-        </div>
-        {vat.mention ? <p className="mt-1 text-gray-400">{vat.mention}</p> : null}
-      </div>
-    );
-  }
   return (
     <div className="mt-2 space-y-0.5 text-gray-500 text-xs">
-      <div className="flex justify-between">
-        <span>Excl. VAT</span>
-        <span>{formatPrice(vat.totalHt, vat.currency)}</span>
+      {vat.zeroRated ? (
+        <>
+          <div className="flex justify-between">
+            <span>VAT (0%)</span>
+            <span>{formatPrice(0, vat.currency)}</span>
+          </div>
+          {vat.mention ? <p className="text-gray-400">{vat.mention}</p> : null}
+        </>
+      ) : (
+        vat.vatBreakdown.map((v) => (
+          <div key={v.vatRate} className="flex justify-between">
+            <span>VAT {vatPct(v.vatRate)}</span>
+            <span>{formatPrice(v.vat, vat.currency)}</span>
+          </div>
+        ))
+      )}
+      <div className="flex justify-between border-gray-100 border-t pt-1 font-bold text-[#000643]">
+        <span>Total incl. VAT</span>
+        <span>{formatPrice(vat.totalTtc, vat.currency)}</span>
       </div>
-      {vat.vatBreakdown.map((v) => (
-        <div key={v.vatRate} className="flex justify-between">
-          <span>incl. VAT {vatPct(v.vatRate)}</span>
-          <span>{formatPrice(v.vat, vat.currency)}</span>
-        </div>
-      ))}
     </div>
   );
 }
@@ -269,10 +268,10 @@ function SelectionSummary({
                     <span>{formatPrice(line.lineTotal, room.currency)}</span>
                   </div>
                 ))}
-                <div className="mt-1 flex items-center justify-between border-gray-100 border-t pt-2 font-bold text-[#000643]">
+                <div className="mt-1 flex items-center justify-between border-gray-100 border-t pt-2 font-medium text-gray-700">
                   <span className="flex items-center gap-1">
                     <Euro className="h-4 w-4 shrink-0" aria-hidden />
-                    Total
+                    Total excl. VAT
                   </span>
                   <span>{total !== null ? formatPrice(total, room.currency) : ""}</span>
                 </div>

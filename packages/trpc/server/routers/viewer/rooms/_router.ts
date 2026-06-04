@@ -212,10 +212,25 @@ export const roomsRouter = router({
         : undefined,
     });
 
+    // Prices are HT (excl. VAT): add VAT lines so Stripe charges TTC. VAT is
+    // resolved from the buyer's profile + the admin matrix (reverse charge -> none).
+    const { getRoomVatPreviewService } = await import(
+      "@calcom/features/ne26-rooms/di/RoomVatPreviewService.container"
+    );
+    const vat = await getRoomVatPreviewService().preview({
+      userId: ctx.user.id,
+      slug: input.slug,
+      durationHours: input.durationHours,
+      addOns: input.addOns,
+    });
+    const vatLines = vat.vatBreakdown
+      .filter((v) => v.vat > 0)
+      .map((v) => ({ name: `VAT ${v.vatRate / 100}%`, quantity: 1, unitAmount: v.vat }));
+
     const checkout = await getStripeCheckoutService().createCheckoutSession({
       bookingUid: booking.uid,
       currency: booking.currency,
-      lines: booking.checkoutLines,
+      lines: [...booking.checkoutLines, ...vatLines],
       customerEmail: ctx.user.email,
       customerId,
       successUrl: `${WEBAPP_URL}/rooms/booked/${booking.uid}`,
