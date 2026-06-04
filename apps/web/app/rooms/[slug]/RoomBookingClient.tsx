@@ -183,12 +183,9 @@ function SelectionSummary({
 
       {booking ? (
         <div className="mt-3 space-y-2 text-sm">
-          <p className="font-semibold text-[#000643]">Slot held ✓</p>
+          <p className="font-semibold text-[#000643]">Slot held — redirecting to payment…</p>
           <p className="text-gray-600">Reference {booking.uid.slice(0, 8)}</p>
           <p className="font-bold text-[#000643] text-lg">{formatPrice(booking.amountTotal, booking.currency)}</p>
-          <p className="text-gray-500 text-xs">
-            Held until {formatTime(new Date(booking.holdExpiresAt).toISOString())}. Payment is the next step.
-          </p>
         </div>
       ) : (
         <>
@@ -239,7 +236,7 @@ function SelectionSummary({
               disabled={!canBook}
               onClick={onSubmit}
               className="mt-5 w-full rounded-lg bg-[#000643] px-4 py-2.5 font-semibold text-sm text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
-              {isPending ? "Holding…" : "Continue"}
+              {isPending ? "Holding…" : "Continue to payment"}
             </button>
           ) : (
             <a
@@ -248,7 +245,7 @@ function SelectionSummary({
               Log in to book
             </a>
           )}
-          <p className="mt-2 text-center text-gray-400 text-xs">Payment comes in the next step.</p>
+          <p className="mt-2 text-center text-gray-400 text-xs">Secure payment via Stripe.</p>
         </>
       )}
     </aside>
@@ -320,12 +317,19 @@ export default function RoomBookingClient({
 
   function submit(): void {
     if (!selectedStartUtc || !selectedDuration) return;
-    createBooking.mutate({
-      slug: room.slug,
-      startUtc: selectedStartUtc,
-      durationHours: selectedDuration,
-      addOns: Object.entries(selectedAddOns).map(([slug, quantity]) => ({ slug, quantity })),
-    });
+    createBooking.mutate(
+      {
+        slug: room.slug,
+        startUtc: selectedStartUtc,
+        durationHours: selectedDuration,
+        addOns: Object.entries(selectedAddOns).map(([slug, quantity]) => ({ slug, quantity })),
+      },
+      {
+        onSuccess: (data) => {
+          if (data.checkoutUrl) window.location.href = data.checkoutUrl;
+        },
+      }
+    );
   }
 
   return (

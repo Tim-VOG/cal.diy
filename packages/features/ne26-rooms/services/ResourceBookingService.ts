@@ -33,6 +33,7 @@ export interface CreateBookingInput {
 
 export interface CreatedBooking {
   uid: string;
+  roomName: string;
   amountTotal: number;
   currency: string;
   status: ResourceBookingStatus;
@@ -84,7 +85,17 @@ export class ResourceBookingService {
       addOns: addOnLines,
     });
 
-    return { uid: booking.uid, amountTotal, currency: room.currency, status: booking.status, holdExpiresAt };
+    return { uid: booking.uid, roomName: room.name, amountTotal, currency: room.currency, status: booking.status, holdExpiresAt };
+  }
+
+  /**
+   * Mark a booking paid (called from the Stripe webhook). Idempotent: returns
+   * false if the booking was already confirmed, cancelled, or no longer exists
+   * (e.g. its hold expired and it was reclaimed before payment landed).
+   */
+  async confirmPayment(input: { bookingUid: string; stripePaymentId: string }): Promise<boolean> {
+    const count = await this.deps.resourceBookingRepository.markConfirmedByUid(input.bookingUid, input.stripePaymentId);
+    return count > 0;
   }
 
   private async resolveAddOnLines(

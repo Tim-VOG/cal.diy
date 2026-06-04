@@ -71,6 +71,8 @@ export const DI_TOKENS = {
   ADD_ON_REPOSITORY_MODULE: Symbol("AddOnRepositoryModule"),
   RESOURCE_BOOKING_SERVICE: Symbol("ResourceBookingService"),
   RESOURCE_BOOKING_SERVICE_MODULE: Symbol("ResourceBookingServiceModule"),
+  STRIPE_CHECKOUT_SERVICE: Symbol("StripeCheckoutService"),
+  STRIPE_CHECKOUT_SERVICE_MODULE: Symbol("StripeCheckoutServiceModule"),
   DESTINATION_CALENDAR_REPOSITORY: Symbol("DestinationCalendarRepository"),
   DESTINATION_CALENDAR_REPOSITORY_MODULE: Symbol("DestinationCalendarRepositoryModule"),
   MANAGED_EVENT_REASSIGNMENT_SERVICE: Symbol("ManagedEventReassignmentService"),

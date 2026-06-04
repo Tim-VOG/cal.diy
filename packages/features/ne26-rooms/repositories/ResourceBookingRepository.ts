@@ -130,4 +130,35 @@ export class ResourceBookingRepository {
     });
     return slots.map((slot) => slot.slotStart);
   }
+
+  findByUid(uid: string) {
+    return this.prismaClient.resourceBooking.findUnique({
+      where: { uid },
+      select: {
+        uid: true,
+        status: true,
+        startTime: true,
+        endTime: true,
+        amountTotal: true,
+        currency: true,
+        bookerUserId: true,
+        holdExpiresAt: true,
+        invoiceNumber: true,
+        resource: { select: { name: true, slug: true } },
+      },
+    });
+  }
+
+  /**
+   * Confirm a paid booking. Scoped to PENDING so a replayed/duplicate webhook is
+   * a no-op (idempotent) and a cancelled booking is never silently revived.
+   * Returns the number of rows updated (1 = confirmed, 0 = already handled/gone).
+   */
+  async markConfirmedByUid(uid: string, stripePaymentId: string): Promise<number> {
+    const result = await this.prismaClient.resourceBooking.updateMany({
+      where: { uid, status: ResourceBookingStatus.PENDING },
+      data: { status: ResourceBookingStatus.CONFIRMED, stripePaymentId },
+    });
+    return result.count;
+  }
 }
