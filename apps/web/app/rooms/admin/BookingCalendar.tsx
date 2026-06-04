@@ -53,14 +53,16 @@ export default function BookingCalendar({
           <div key={day.date}>
             <h3 className="font-semibold text-[#000643] text-sm">{dayLabel(day.date)}</h3>
             <div className="mt-2 overflow-x-auto rounded-xl border border-gray-200 bg-white">
-              <table className="w-full border-collapse text-sm">
+              <table className="border-collapse text-sm">
                 <thead className="bg-gray-50 text-gray-500 text-xs">
                   <tr>
-                    <th className="border-gray-100 border-b border-r px-3 py-2 text-left font-medium">
+                    <th className="sticky left-0 z-20 w-[8rem] min-w-[8rem] border-gray-100 border-b border-r bg-gray-50 px-3 py-2 text-left font-medium">
                       Room
                     </th>
                     {hours.map((h) => (
-                      <th key={h} className="border-gray-100 border-b px-2 py-2 text-center font-medium">
+                      <th
+                        key={h}
+                        className="min-w-[3.25rem] border-gray-100 border-b px-2 py-2 text-center font-medium">
                         {hourLabel(h)}
                       </th>
                     ))}
@@ -93,13 +95,15 @@ export default function BookingCalendar({
                         );
                         i += span;
                       } else {
-                        cells.push(<td key={hours[i]} className="border-gray-100 border-b px-2 py-2" />);
+                        cells.push(
+                          <td key={hours[i]} className="min-w-[3.25rem] border-gray-100 border-b px-2 py-2" />
+                        );
                         i += 1;
                       }
                     }
                     return (
                       <tr key={room}>
-                        <td className="border-gray-100 border-b border-r px-3 py-2 font-medium text-gray-700">
+                        <td className="sticky left-0 z-10 w-[8rem] min-w-[8rem] border-gray-100 border-b border-r bg-white px-3 py-2 font-medium text-gray-700">
                           {room}
                         </td>
                         {cells}
