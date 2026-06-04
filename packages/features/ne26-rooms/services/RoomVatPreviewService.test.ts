@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
-
 import type { AddOnRepository } from "../repositories/AddOnRepository";
 import type { InvoiceSettings, InvoiceSettingsRepository } from "../repositories/InvoiceSettingsRepository";
-import type { BillingProfile, Ne26BillingProfileRepository } from "../repositories/Ne26BillingProfileRepository";
+import type {
+  BillingProfile,
+  Ne26BillingProfileRepository,
+} from "../repositories/Ne26BillingProfileRepository";
 import type { ResourceRepository } from "../repositories/ResourceRepository";
 import { RoomVatPreviewService } from "./RoomVatPreviewService";
 
@@ -18,6 +20,9 @@ const SETTINGS: InvoiceSettings = {
   bic: "",
   contactEmail: "",
   legalFooter: "",
+  footerColumn1: "",
+  footerColumn2: "",
+  footerColumn3: "",
   euReverseChargeEnabled: true,
   euReverseChargeMention: "VAT reverse charge",
   nonEuExemptEnabled: true,

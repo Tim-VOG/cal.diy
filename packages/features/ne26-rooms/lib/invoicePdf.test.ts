@@ -33,6 +33,9 @@ describe("renderInvoicePdf", () => {
         iban: "BE00 0000 0000 0000",
         bic: "GEBABEBB",
         legalFooter: "",
+        footerColumn1: "",
+        footerColumn2: "",
+        footerColumn3: "",
       }
     );
 
@@ -72,6 +75,49 @@ describe("renderInvoicePdf", () => {
         iban: "BE00 0000 0000 0000",
         bic: "GEBABEBB",
         legalFooter: "",
+        footerColumn1: "",
+        footerColumn2: "",
+        footerColumn3: "",
+      }
+    );
+
+    expect(new TextDecoder().decode(bytes.slice(0, 5))).toBe("%PDF-");
+    expect(bytes.length).toBeGreaterThan(1500);
+  });
+
+  it("renders a three-column, multi-line footer", async () => {
+    const model = buildInvoiceModel({
+      amountTotal: 42000,
+      currency: "EUR",
+      roomName: "Suite 1",
+      durationMinutes: 120,
+      addOns: [],
+    });
+    const bytes = await renderInvoicePdf(
+      model,
+      {
+        invoiceNumber: "NE26-2026-0002",
+        issueDate: new Date("2026-06-04T10:00:00.000Z"),
+        bookerName: "Jane Exhibitor",
+        bookerEmail: "jane@example.com",
+        roomName: "Suite 1",
+        startUtc: new Date("2026-11-17T13:00:00.000Z"),
+        endUtc: new Date("2026-11-17T15:00:00.000Z"),
+      },
+      {
+        legalName: "VO EUROPE SA",
+        vatNumber: "BE 0123.456.789",
+        addressLine1: "Rue Example 1",
+        addressLine2: "",
+        postalCode: "1000",
+        city: "Brussels",
+        country: "Belgium",
+        iban: "BE00 0000 0000 0000",
+        bic: "GEBABEBB",
+        legalFooter: "",
+        footerColumn1: "VO EUROPE SA\nRue Example 1\n1000 Brussels",
+        footerColumn2: "VAT BE0123.456.789\nRPM Brussels",
+        footerColumn3: "Contact\nsales@vo-europe.eu",
       }
     );
 

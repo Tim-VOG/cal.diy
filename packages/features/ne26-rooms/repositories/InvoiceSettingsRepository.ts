@@ -12,6 +12,9 @@ const settingsSelect = {
   bic: true,
   contactEmail: true,
   legalFooter: true,
+  footerColumn1: true,
+  footerColumn2: true,
+  footerColumn3: true,
   euReverseChargeEnabled: true,
   euReverseChargeMention: true,
   nonEuExemptEnabled: true,
@@ -30,6 +33,9 @@ export interface InvoiceSettings {
   bic: string;
   contactEmail: string;
   legalFooter: string;
+  footerColumn1: string;
+  footerColumn2: string;
+  footerColumn3: string;
   euReverseChargeEnabled: boolean;
   euReverseChargeMention: string;
   nonEuExemptEnabled: boolean;

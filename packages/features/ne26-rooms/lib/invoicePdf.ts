@@ -1,5 +1,4 @@
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import type { InvoiceModel } from "./invoice";
 import { INVOICE_LOGO_PNG_BASE64, INVOICE_LOGO_PNG_HEIGHT, INVOICE_LOGO_PNG_WIDTH } from "./invoiceLogo";
 
@@ -32,11 +31,17 @@ export interface InvoiceIssuer {
   iban: string;
   bic: string;
   legalFooter: string;
+  footerColumn1: string;
+  footerColumn2: string;
+  footerColumn3: string;
 }
 
 // pdf-lib's standard fonts use WinAnsi; keep text to safe characters.
 function ascii(s: string): string {
-  return s.replace(/—|–/g, "-").replace(/×/g, "x").replace(/[^\x20-\x7E]/g, "");
+  return s
+    .replace(/—|–/g, "-")
+    .replace(/×/g, "x")
+    .replace(/[^\x20-\x7E]/g, "");
 }
 function money(cents: number, currency: string): string {
   return `${(cents / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
@@ -118,7 +123,14 @@ export async function renderInvoicePdf(
   y -= 13;
   text(meta.bookerEmail, left, y, 10, font, GREY);
   y -= 13;
-  text(`${meta.roomName} - ${dt(meta.startUtc)} to ${dt(meta.endUtc)} (Europe/Brussels)`, left, y, 9, font, GREY);
+  text(
+    `${meta.roomName} - ${dt(meta.startUtc)} to ${dt(meta.endUtc)} (Europe/Brussels)`,
+    left,
+    y,
+    9,
+    font,
+    GREY
+  );
 
   // Table header
   y -= 30;
@@ -143,7 +155,12 @@ export async function renderInvoicePdf(
 
   // Totals
   y -= 6;
-  page.drawLine({ start: { x: colHt - 60, y: y + 8 }, end: { x: right, y: y + 8 }, thickness: 0.5, color: GREY });
+  page.drawLine({
+    start: { x: colHt - 60, y: y + 8 },
+    end: { x: right, y: y + 8 },
+    thickness: 0.5,
+    color: GREY,
+  });
   textRight("Total excl. VAT", colHt, y, 9, font, GREY);
   textRight(amt(model.totalHt), colTtc, y, 9);
   y -= 16;
@@ -160,21 +177,45 @@ export async function renderInvoicePdf(
     text(model.vatMention, left, y, 8, font, GREY);
   }
 
-  // Footer
+  // Footer — three configurable columns (each multi-line), falling back to the
+  // legacy single-line footer when no column is set.
   const bankLine = issuer.iban ? `IBAN ${issuer.iban}${issuer.bic ? ` · BIC ${issuer.bic}` : ""}` : "";
-  const footer = issuer.legalFooter || `${issuer.legalName} - NATO Edge 26 - rooms.vo-eu.be`;
-  text(
-    isCredit
-      ? "Credit note for a refunded Stripe payment, generated automatically."
-      : "Paid via Stripe. This invoice was generated automatically.",
-    left,
-    82,
-    8,
-    font,
-    GREY
-  );
-  if (bankLine) text(bankLine, left, 70, 8, font, GREY);
-  text(footer, left, 58, 8, font, GREY);
+  const autoNote = isCredit
+    ? "Credit note for a refunded Stripe payment, generated automatically."
+    : "Paid via Stripe. This invoice was generated automatically.";
+
+  const columns = [issuer.footerColumn1, issuer.footerColumn2, issuer.footerColumn3];
+  if (columns.some((c) => c.trim().length > 0)) {
+    const colX = [left, left + 175, left + 350];
+    const colTop = 120;
+    page.drawLine({
+      start: { x: left, y: colTop + 12 },
+      end: { x: right, y: colTop + 12 },
+      thickness: 0.5,
+      color: rgb(0.9, 0.9, 0.92),
+    });
+    columns.forEach((col, i) => {
+      // Cap lines so a long column can't run into the bottom note.
+      const lines = col.split("\n").slice(0, 7);
+      let cy = colTop;
+      for (const line of lines) {
+        text(line, colX[i], cy, 7.5, font, GREY);
+        cy -= 10;
+      }
+    });
+  } else {
+    text(
+      issuer.legalFooter || `${issuer.legalName} - NATO Edge 26 - rooms.vo-eu.be`,
+      left,
+      58,
+      8,
+      font,
+      GREY
+    );
+  }
+
+  text(autoNote, left, 40, 7.5, font, GREY);
+  if (bankLine) text(bankLine, left, 30, 7.5, font, GREY);
 
   return doc.save();
 }

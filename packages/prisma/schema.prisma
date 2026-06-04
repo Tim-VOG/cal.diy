@@ -3011,7 +3011,13 @@ model Ne26InvoiceSettings {
   iban                   String   @default("")
   bic                    String   @default("")
   contactEmail           String   @default("")
+  // Legacy single-line footer; kept as a fallback when the columns are empty.
   legalFooter            String   @default("")
+  // Footer printed as three columns at the bottom of invoices/credit notes.
+  // Multi-line: each line break renders on its own row within the column.
+  footerColumn1          String   @default("")
+  footerColumn2          String   @default("")
+  footerColumn3          String   @default("")
   // VAT-by-country matrix (admin-configurable). When enabled, lines are zero-rated
   // for that buyer type and the mention is printed. Belgian VAT applies otherwise.
   euReverseChargeEnabled Boolean  @default(false)
