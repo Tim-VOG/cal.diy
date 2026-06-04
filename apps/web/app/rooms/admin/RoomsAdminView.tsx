@@ -52,6 +52,15 @@ function fmtTime(iso: string): string {
 function fmtMoney(cents: number, currency: string): string {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(cents / 100);
 }
+// Sortable Brussels calendar date (YYYY-MM-DD) used as the day-filter key.
+function dayKey(iso: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(iso));
+}
 function addOnsLabel(row: AdminBookingRow): string {
   return row.addOns.map((a) => `${a.name}×${a.quantity}`).join(", ");
 }
@@ -104,6 +113,9 @@ function toCsv(rows: AdminBookingRow[]): string {
 
 export default function RoomsAdminView({ rows }: { rows: AdminBookingRow[] }): JSX.Element {
   const [status, setStatus] = useState<StatusFilter>("ALL");
+  const [query, setQuery] = useState("");
+  const [roomFilter, setRoomFilter] = useState("ALL");
+  const [dayFilter, setDayFilter] = useState("ALL");
   const router = useRouter();
   const [pendingUid, setPendingUid] = useState<string | null>(null);
   const creditNote = trpc.viewer.rooms.issueCreditNote.useMutation({
@@ -146,10 +158,32 @@ export default function RoomsAdminView({ rows }: { rows: AdminBookingRow[] }): J
     return <span className="text-gray-300">—</span>;
   }
 
-  const filtered = useMemo(
-    () => (status === "ALL" ? rows : rows.filter((r) => r.status === status)),
-    [rows, status]
-  );
+  const rooms = useMemo(() => Array.from(new Set(rows.map((r) => r.roomName))).sort(), [rows]);
+  const days = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of rows) {
+      const key = dayKey(r.startUtc);
+      if (!map.has(key)) map.set(key, fmtDate(r.startUtc));
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([key, label]) => ({ key, label }));
+  }, [rows]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (status !== "ALL" && r.status !== status) return false;
+      if (roomFilter !== "ALL" && r.roomName !== roomFilter) return false;
+      if (dayFilter !== "ALL" && dayKey(r.startUtc) !== dayFilter) return false;
+      if (q) {
+        const hay =
+          `${r.bookerName} ${r.bookerEmail} ${r.roomName} ${r.invoiceNumber ?? ""} ${r.creditNoteNumber ?? ""}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [rows, status, roomFilter, dayFilter, query]);
   const confirmed = useMemo(() => rows.filter((r) => r.status === "CONFIRMED"), [rows]);
   const revenue = confirmed.reduce((sum, r) => sum + r.amountTotal, 0);
   const currency = rows[0]?.currency ?? "EUR";
@@ -202,6 +236,39 @@ export default function RoomsAdminView({ rows }: { rows: AdminBookingRow[] }): J
             {s === "ALL" ? "All" : s.charAt(0) + s.slice(1).toLowerCase()}
           </button>
         ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search name, email, invoice…"
+          className="min-w-56 flex-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:border-[#000643] focus:outline-none"
+        />
+        <select
+          value={roomFilter}
+          onChange={(e) => setRoomFilter(e.target.value)}
+          className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:border-[#000643] focus:outline-none">
+          <option value="ALL">All rooms</option>
+          {rooms.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={dayFilter}
+          onChange={(e) => setDayFilter(e.target.value)}
+          className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:border-[#000643] focus:outline-none">
+          <option value="ALL">All days</option>
+          {days.map((d) => (
+            <option key={d.key} value={d.key}>
+              {d.label}
+            </option>
+          ))}
+        </select>
+        <span className="text-gray-400 text-xs">{filtered.length} shown</span>
       </div>
 
       <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200 bg-white">
