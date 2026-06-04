@@ -1,6 +1,6 @@
 "use client";
 
-import { EVENT_SCHEDULE, SLOT_GRANULARITY_MINUTES } from "@calcom/features/ne26-rooms/lib/eventSchedule";
+import { EVENT_SCHEDULE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import type { AdminBookingRow } from "./RoomsAdminView";
 
 const TZ = "Europe/Brussels";
@@ -31,19 +31,26 @@ const BLOCK_CLASS: Record<string, string> = {
 export default function BookingCalendar({
   rows,
   roomNames,
+  granularityMinutes,
   selectedUid,
   onSelect,
 }: {
   rows: AdminBookingRow[];
   roomNames: string[];
+  granularityMinutes: number;
   selectedUid: string | null;
   onSelect: (uid: string) => void;
 }): JSX.Element {
+  const stepMs = Math.max(15, granularityMinutes) * 60 * 1000;
   return (
     <div className="space-y-8">
       {EVENT_SCHEDULE.map((day) => {
-        const hours = day.openSlotStartsUtc.map((d) => d.toISOString());
-        // A booking starts on one of the day's sellable hours; index by room + start.
+        // Columns at the configured granularity (e.g. hourly), measured from open.
+        const dayOpenMs = day.openSlotStartsUtc[0]?.getTime() ?? 0;
+        const hours = day.openSlotStartsUtc
+          .filter((d) => (d.getTime() - dayOpenMs) % stepMs === 0)
+          .map((d) => d.toISOString());
+        // A booking starts on one of the columns; index by room + start.
         const byRoomStart = new Map<string, AdminBookingRow>();
         for (const row of rows) {
           if (hours.includes(row.startUtc)) byRoomStart.set(`${row.roomName}|${row.startUtc}`, row);
@@ -77,7 +84,7 @@ export default function BookingCalendar({
                       if (booking) {
                         const span = Math.max(
                           1,
-                          Math.min(booking.durationMinutes / SLOT_GRANULARITY_MINUTES, hours.length - i)
+                          Math.min(Math.round(booking.durationMinutes / granularityMinutes), hours.length - i)
                         );
                         const selected = booking.uid === selectedUid;
                         cells.push(

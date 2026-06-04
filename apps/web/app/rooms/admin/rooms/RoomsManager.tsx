@@ -33,14 +33,17 @@ function toCents(units: number): number {
 export default function RoomsManager({
   rooms,
   bufferMinutes,
+  slotGranularityMinutes,
 }: {
   rooms: RoomRow[];
   bufferMinutes: number;
+  slotGranularityMinutes: number;
 }): JSX.Element {
   const router = useRouter();
   const [draft, setDraft] = useState<RoomRow[]>(rooms);
   const [savingId, setSavingId] = useState<number | null>(null);
   const [buffer, setBuffer] = useState(bufferMinutes);
+  const [granularity, setGranularity] = useState(slotGranularityMinutes);
   const update = trpc.viewer.rooms.updateResource.useMutation({
     onSettled: () => setSavingId(null),
     onSuccess: () => router.refresh(),
@@ -83,7 +86,18 @@ export default function RoomsManager({
           Turnover buffer enforced after every booking, so the next one can&apos;t start within it. Use a
           multiple of 15 minutes (0 disables it).
         </p>
-        <div className="mt-3 flex items-end gap-2">
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="text-sm">
+            <span className="block font-medium text-gray-700">Slot granularity</span>
+            <select
+              className="mt-1 w-36 rounded-md border border-gray-200 px-2 py-1 text-sm focus:border-[#000643] focus:outline-none"
+              value={granularity}
+              onChange={(e) => setGranularity(Number(e.target.value))}>
+              <option value={60}>1 hour</option>
+              <option value={30}>30 minutes</option>
+              <option value={15}>15 minutes</option>
+            </select>
+          </label>
           <label className="text-sm">
             <span className="block font-medium text-gray-700">Buffer (minutes)</span>
             <input
@@ -98,10 +112,15 @@ export default function RoomsManager({
           </label>
           <button
             type="button"
-            onClick={() => updateSettings.mutate({ bufferMinutes: buffer })}
+            onClick={() =>
+              updateSettings.mutate({
+                bufferMinutes: buffer,
+                slotGranularityMinutes: granularity as 15 | 30 | 60,
+              })
+            }
             disabled={updateSettings.isPending}
             className="rounded-md bg-[#000643] px-3 py-1.5 font-semibold text-white text-xs transition hover:opacity-90 disabled:opacity-40">
-            {updateSettings.isPending ? "Saving…" : "Save buffer"}
+            {updateSettings.isPending ? "Saving…" : "Save settings"}
           </button>
           {updateSettings.isSuccess ? <span className="text-green-600 text-xs">Saved ✓</span> : null}
         </div>

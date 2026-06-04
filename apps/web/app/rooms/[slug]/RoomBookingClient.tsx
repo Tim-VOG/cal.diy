@@ -328,7 +328,8 @@ export default function RoomBookingClient({
 
   const [selectedDate, setSelectedDate] = useState(days[0]?.date ?? "");
   const [selectedStartUtc, setSelectedStartUtc] = useState<string | null>(null);
-  const [selectedDuration, setSelectedDuration] = useState<DurationHours | null>(null);
+  // Duration is chosen first; start slots that can't fit it are then disabled.
+  const [selectedDuration, setSelectedDuration] = useState<DurationHours>(1);
   const [selectedAddOns, setSelectedAddOns] = useState<Record<string, number>>({});
 
   const createBooking = trpc.viewer.rooms.createBooking.useMutation();
@@ -370,9 +371,16 @@ export default function RoomBookingClient({
     { enabled: isAuthed && Boolean(selectedStartUtc) && selectedDuration != null }
   );
 
-  function pickStart(startUtc: string, availableDurations: DurationHours[]): void {
+  function pickStart(startUtc: string): void {
     setSelectedStartUtc(startUtc);
-    setSelectedDuration(availableDurations[0] ?? null);
+    createBooking.reset();
+  }
+
+  // Available start slots adapt to the chosen duration (not the reverse): if the
+  // current start can't fit the new duration, clear it so the booker re-picks.
+  function chooseDuration(d: DurationHours): void {
+    setSelectedDuration(d);
+    if (selectedStart && !selectedStart.availableDurations.includes(d)) setSelectedStartUtc(null);
     createBooking.reset();
   }
 
@@ -445,7 +453,6 @@ export default function RoomBookingClient({
               onClick={() => {
                 setSelectedDate(d.date);
                 setSelectedStartUtc(null);
-                setSelectedDuration(null);
                 createBooking.reset();
               }}
               className={`${CELL_BASE} ${CELL_CLASS[cellState(d.date === selectedDate, true)]}`}>
@@ -454,49 +461,42 @@ export default function RoomBookingClient({
           ))}
         </div>
 
-        {/* Start times */}
+        {/* Duration first — start slots below adapt to it */}
+        <h2 className="mt-6 font-semibold text-gray-500 text-sm uppercase tracking-wide">Duration</h2>
+        <div className="mt-2 flex gap-2">
+          {DURATIONS.map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => chooseDuration(d)}
+              className={`${CELL_BASE} ${CELL_CLASS[cellState(d === selectedDuration, true)]}`}>
+              {d}h — {formatPrice(priceForDuration[d], room.currency)}
+            </button>
+          ))}
+        </div>
+
+        {/* Start times — only those that can fit the chosen duration are enabled */}
         <h2 className="mt-6 flex items-center gap-1.5 font-semibold text-gray-500 text-sm uppercase tracking-wide">
           <Clock className="h-4 w-4 shrink-0" aria-hidden />
           Start time
+          <span className="font-normal normal-case text-gray-400">({selectedDuration}h)</span>
         </h2>
         <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
           {day?.starts.map((s) => {
-            const isAvailable = s.availableDurations.length > 0;
-            const state = cellState(s.startUtc === selectedStartUtc, isAvailable);
+            const fitsDuration = s.availableDurations.includes(selectedDuration);
+            const state = cellState(s.startUtc === selectedStartUtc, fitsDuration);
             return (
               <button
                 key={s.startUtc}
                 type="button"
-                disabled={!isAvailable}
-                onClick={() => pickStart(s.startUtc, s.availableDurations)}
+                disabled={!fitsDuration}
+                onClick={() => pickStart(s.startUtc)}
                 className={`${CELL_BASE} ${CELL_CLASS[state]} ${state === "disabled" ? "line-through" : ""}`}>
                 {formatTime(s.startUtc)}
               </button>
             );
           })}
         </div>
-
-        {/* Duration */}
-        {selectedStart ? (
-          <>
-            <h2 className="mt-6 font-semibold text-gray-500 text-sm uppercase tracking-wide">Duration</h2>
-            <div className="mt-2 flex gap-2">
-              {DURATIONS.map((d) => {
-                const enabled = selectedStart.availableDurations.includes(d);
-                return (
-                  <button
-                    key={d}
-                    type="button"
-                    disabled={!enabled}
-                    onClick={() => setSelectedDuration(d)}
-                    className={`${CELL_BASE} ${CELL_CLASS[cellState(d === selectedDuration, enabled)]}`}>
-                    {d}h — {formatPrice(priceForDuration[d], room.currency)}
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        ) : null}
 
         <AddOnList
           addOns={addOns}

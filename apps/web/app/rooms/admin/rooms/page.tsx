@@ -24,6 +24,7 @@ export default async function ManageRoomsPage(): Promise<JSX.Element> {
   return (
     <RoomsManager
       bufferMinutes={roomSettings.bufferMinutes}
+      slotGranularityMinutes={roomSettings.slotGranularityMinutes}
       rooms={rooms.map((r) => ({
         id: r.id,
         name: r.name,

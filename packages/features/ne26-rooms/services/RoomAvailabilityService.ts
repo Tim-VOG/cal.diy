@@ -37,6 +37,9 @@ export class RoomAvailabilityService {
       this.deps.ne26RoomSettingsRepository.get(),
     ]);
 
-    return { room: publicRoom, days: computeAvailability(takenSlotStarts, settings.bufferMinutes) };
+    return {
+      room: publicRoom,
+      days: computeAvailability(takenSlotStarts, settings.bufferMinutes, settings.slotGranularityMinutes),
+    };
   }
 }

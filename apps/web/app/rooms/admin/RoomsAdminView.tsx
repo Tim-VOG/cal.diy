@@ -116,9 +116,11 @@ function toCsv(rows: AdminBookingRow[]): string {
 export default function RoomsAdminView({
   rows,
   roomNames,
+  slotGranularityMinutes,
 }: {
   rows: AdminBookingRow[];
   roomNames: string[];
+  slotGranularityMinutes: number;
 }): JSX.Element {
   const [status, setStatus] = useState<StatusFilter>("ALL");
   const [query, setQuery] = useState("");
@@ -318,6 +320,7 @@ export default function RoomsAdminView({
           <BookingCalendar
             rows={filtered}
             roomNames={roomNames}
+            granularityMinutes={slotGranularityMinutes}
             selectedUid={selectedUid}
             onSelect={setSelectedUid}
           />

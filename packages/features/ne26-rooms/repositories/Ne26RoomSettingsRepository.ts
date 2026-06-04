@@ -2,11 +2,14 @@ import type { PrismaClient } from "@calcom/prisma";
 
 const settingsSelect = {
   bufferMinutes: true,
+  slotGranularityMinutes: true,
 } as const;
 
 export interface RoomSettings {
   /** Turnover buffer in minutes required after each booking. */
   bufferMinutes: number;
+  /** Start step offered to bookers (60/30/15). Atomic slot stays 15 min. */
+  slotGranularityMinutes: number;
 }
 
 export class Ne26RoomSettingsRepository {
