@@ -117,3 +117,7 @@ agents/devin-knowledge.json
 
 # pagefind
 _pagefind/
+
+# NE26 room invoice PDFs (runtime storage)
+.ne26-invoices/
+**/.ne26-invoices/

@@ -144,6 +144,7 @@ export class ResourceBookingRepository {
         bookerUserId: true,
         holdExpiresAt: true,
         invoiceNumber: true,
+        invoicePdfUrl: true,
         resource: { select: { name: true, slug: true } },
       },
     });
@@ -183,5 +184,37 @@ export class ResourceBookingRepository {
         addOns: { select: { quantity: true, lineTotal: true, addOn: { select: { name: true } } } },
       },
     });
+  }
+
+  /** Booking with everything the invoice needs (booker, room, add-on VAT rates). */
+  findByUidForInvoice(uid: string) {
+    return this.prismaClient.resourceBooking.findUnique({
+      where: { uid },
+      select: {
+        uid: true,
+        status: true,
+        startTime: true,
+        endTime: true,
+        durationMinutes: true,
+        bookerName: true,
+        bookerEmail: true,
+        amountTotal: true,
+        currency: true,
+        invoiceNumber: true,
+        createdAt: true,
+        resource: { select: { name: true } },
+        addOns: { select: { quantity: true, lineTotal: true, addOn: { select: { name: true, vatRate: true } } } },
+      },
+    });
+  }
+
+  /** Allocate the next gap-tolerant invoice number, e.g. NE26-2026-0001. */
+  async allocateInvoiceNumber(): Promise<string> {
+    const rows = await this.prismaClient.$queryRaw<{ n: number }[]>`SELECT nextval('ne26_invoice_seq')::int AS n`;
+    return `NE26-2026-${String(rows[0].n).padStart(4, "0")}`;
+  }
+
+  async setInvoice(uid: string, invoiceNumber: string, invoicePdfUrl: string): Promise<void> {
+    await this.prismaClient.resourceBooking.update({ where: { uid }, data: { invoiceNumber, invoicePdfUrl } });
   }
 }

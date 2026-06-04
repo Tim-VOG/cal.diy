@@ -30,7 +30,16 @@ export async function POST(req: Request): Promise<Response> {
       const stripePaymentId =
         typeof session.payment_intent === "string" ? session.payment_intent : (session.payment_intent?.id ?? session.id);
       const confirmed = await getResourceBookingService().confirmPayment({ bookingUid, stripePaymentId });
-      if (!confirmed) {
+      if (confirmed) {
+        // Best-effort invoicing: a failed PDF/email must not fail the webhook
+        // (payment is already confirmed) — log it for resend instead.
+        try {
+          const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
+          await getInvoiceService().issueInvoice(bookingUid);
+        } catch (e) {
+          log.error(`Invoice issuance failed for booking ${bookingUid}`, e);
+        }
+      } else {
         // Paid, but the booking was already handled or its hold expired and was
         // reclaimed before payment landed — needs manual review/refund.
         log.warn(`Payment for booking ${bookingUid} could not be confirmed (already handled or hold expired).`);
