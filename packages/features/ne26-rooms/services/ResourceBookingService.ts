@@ -1,9 +1,8 @@
 import { ErrorCode } from "@calcom/lib/errorCodes";
 import { ErrorWithCode } from "@calcom/lib/errors";
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
-
 import { getAtomicSlotStarts } from "../lib/atomicSlots";
-import { EVENT_SCHEDULE, type DurationHours } from "../lib/eventSchedule";
+import { type DurationHours, EVENT_SCHEDULE } from "../lib/eventSchedule";
 import { computeAddOnLine } from "../lib/pricing";
 import type { AddOnRepository } from "../repositories/AddOnRepository";
 import type { ResourceBookingRepository } from "../repositories/ResourceBookingRepository";
@@ -28,7 +27,12 @@ function formatSlotRange(start: Date, end: Date): string {
     year: "numeric",
   }).format(start);
   const time = (d: Date) =>
-    new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Brussels", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/Brussels",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(d);
   return `${day}, ${time(start)}-${time(end)} (Europe/Brussels)`;
 }
 
@@ -44,6 +48,9 @@ export interface CreateBookingInput {
   durationHours: DurationHours;
   booker: { userId: number; email: string; name: string };
   addOns?: { slug: string; quantity: number }[];
+  /** Billing from the exhibitor's saved profile; seeds the invoice VAT. Stripe
+   * confirms it at checkout and the webhook syncs any change back. */
+  billing?: { country?: string | null; vatNumber?: string | null };
 }
 
 export interface CheckoutLine {
@@ -112,6 +119,8 @@ export class ResourceBookingService {
       bookerUserId: input.booker.userId,
       bookerEmail: input.booker.email,
       bookerName: input.booker.name,
+      bookerCountry: input.billing?.country ?? null,
+      bookerVatNumber: input.billing?.vatNumber ?? null,
       amountTotal,
       currency: room.currency,
       status: ResourceBookingStatus.PENDING,
@@ -136,7 +145,10 @@ export class ResourceBookingService {
    * (e.g. its hold expired and it was reclaimed before payment landed).
    */
   async confirmPayment(input: { bookingUid: string; stripePaymentId: string }): Promise<boolean> {
-    const count = await this.deps.resourceBookingRepository.markConfirmedByUid(input.bookingUid, input.stripePaymentId);
+    const count = await this.deps.resourceBookingRepository.markConfirmedByUid(
+      input.bookingUid,
+      input.stripePaymentId
+    );
     return count > 0;
   }
 
@@ -168,7 +180,12 @@ export class ResourceBookingService {
       if (!addOn) {
         throw new ErrorWithCode(ErrorCode.BadRequest, `Unknown or inactive add-on "${req.slug}"`);
       }
-      const { quantity, lineTotal } = computeAddOnLine(addOn.priceType, addOn.price, req.quantity, durationHours);
+      const { quantity, lineTotal } = computeAddOnLine(
+        addOn.priceType,
+        addOn.price,
+        req.quantity,
+        durationHours
+      );
       return { addOnId: addOn.id, name: addOn.name, quantity, unitPrice: addOn.price, lineTotal };
     });
   }

@@ -53,7 +53,32 @@ export const roomsRouter = router({
     const { getStripeCheckoutService } = await import(
       "@calcom/features/ne26-rooms/di/StripeCheckoutService.container"
     );
+    const { getNe26BillingProfileRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26BillingProfileRepository.container"
+    );
     const { WEBAPP_URL } = await import("@calcom/lib/constants");
+
+    // Our billing profile is the source of truth: it seeds the booking VAT and
+    // mirrors into a Stripe Customer so Checkout opens pre-filled.
+    const billingRepo = getNe26BillingProfileRepository();
+    const profile = await billingRepo.findByUserId(ctx.user.id);
+
+    let customerId: string | undefined;
+    if (profile) {
+      const existing = await billingRepo.findStripeCustomerId(ctx.user.id);
+      customerId = await getStripeCheckoutService().ensureCustomer({
+        customerId: existing,
+        email: ctx.user.email,
+        name: ctx.user.name,
+        legalName: profile.legalName,
+        country: profile.country,
+        addressLine1: profile.addressLine1,
+        addressLine2: profile.addressLine2,
+        postalCode: profile.postalCode,
+        city: profile.city,
+      });
+      if (customerId !== existing) await billingRepo.setStripeCustomerId(ctx.user.id, customerId);
+    }
 
     const booking = await getResourceBookingService().createBooking({
       slug: input.slug,
@@ -61,6 +86,9 @@ export const roomsRouter = router({
       durationHours: input.durationHours,
       booker: { userId: ctx.user.id, email: ctx.user.email, name: ctx.user.name ?? ctx.user.email },
       addOns: input.addOns,
+      billing: profile
+        ? { country: profile.country || null, vatNumber: profile.vatNumber || null }
+        : undefined,
     });
 
     const checkout = await getStripeCheckoutService().createCheckoutSession({
@@ -68,6 +96,7 @@ export const roomsRouter = router({
       currency: booking.currency,
       lines: booking.checkoutLines,
       customerEmail: ctx.user.email,
+      customerId,
       successUrl: `${WEBAPP_URL}/rooms/booked/${booking.uid}`,
       cancelUrl: `${WEBAPP_URL}/rooms/${input.slug}`,
     });

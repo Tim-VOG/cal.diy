@@ -3023,18 +3023,21 @@ model Ne26InvoiceSettings {
 
 // Exhibitor billing details, entered once on the account and reused at checkout.
 model Ne26BillingProfile {
-  id           Int      @id @default(autoincrement())
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId       Int      @unique
-  legalName    String   @default("")
+  id               Int      @id @default(autoincrement())
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId           Int      @unique
+  legalName        String   @default("")
   // Intra-EU VAT number; drives the invoice VAT treatment (reverse charge).
-  vatNumber    String   @default("")
+  vatNumber        String   @default("")
   // ISO-3166 alpha-2 country code.
-  country      String   @default("")
-  addressLine1 String   @default("")
-  addressLine2 String   @default("")
-  postalCode   String   @default("")
-  city         String   @default("")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  country          String   @default("")
+  addressLine1     String   @default("")
+  addressLine2     String   @default("")
+  postalCode       String   @default("")
+  city             String   @default("")
+  // Stripe Customer mirroring this profile, so Checkout opens pre-filled. Our
+  // DB stays the source of truth; the Customer is kept in sync from it.
+  stripeCustomerId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }

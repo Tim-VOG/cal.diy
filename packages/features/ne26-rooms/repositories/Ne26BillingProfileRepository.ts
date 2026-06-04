@@ -38,4 +38,19 @@ export class Ne26BillingProfileRepository {
       select: profileSelect,
     });
   }
+
+  async findStripeCustomerId(userId: number): Promise<string | null> {
+    const row = await this.prismaClient.ne26BillingProfile.findUnique({
+      where: { userId },
+      select: { stripeCustomerId: true },
+    });
+    return row?.stripeCustomerId ?? null;
+  }
+
+  async setStripeCustomerId(userId: number, stripeCustomerId: string): Promise<void> {
+    await this.prismaClient.ne26BillingProfile.update({
+      where: { userId },
+      data: { stripeCustomerId },
+    });
+  }
 }

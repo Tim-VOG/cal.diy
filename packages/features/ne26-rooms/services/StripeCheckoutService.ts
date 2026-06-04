@@ -1,7 +1,7 @@
-import Stripe from "stripe";
-
+import process from "node:process";
 import { ErrorCode } from "@calcom/lib/errorCodes";
 import { ErrorWithCode } from "@calcom/lib/errors";
+import Stripe from "stripe";
 
 const STRIPE_API_VERSION = "2020-08-27";
 
@@ -13,6 +13,22 @@ export interface CreateCheckoutSessionInput {
   successUrl: string;
   cancelUrl: string;
   customerEmail?: string;
+  /** Existing Stripe Customer (mirrors our billing profile) to pre-fill Checkout. */
+  customerId?: string;
+}
+
+export interface EnsureCustomerInput {
+  /** Existing Stripe Customer id, if this exhibitor already has one. */
+  customerId?: string | null;
+  email: string;
+  name?: string | null;
+  legalName?: string | null;
+  /** ISO-3166 alpha-2. */
+  country?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  postalCode?: string | null;
+  city?: string | null;
 }
 
 /**
@@ -35,6 +51,34 @@ export class StripeCheckoutService {
     this.stripe = new Stripe(apiKey, { apiVersion: STRIPE_API_VERSION });
   }
 
+  /**
+   * Create or update the Stripe Customer that mirrors our billing profile, so
+   * Checkout opens pre-filled (WooCommerce-style: our DB owns the data, Stripe
+   * is just a mirror). Returns the Customer id to store back on the profile.
+   */
+  async ensureCustomer(input: EnsureCustomerInput): Promise<string> {
+    const params: Stripe.CustomerCreateParams = { email: input.email };
+    const name = input.legalName || input.name;
+    if (name) params.name = name;
+    // Stripe's AddressParam requires line1; only mirror the address when we have it.
+    if (input.addressLine1) {
+      params.address = {
+        line1: input.addressLine1,
+        line2: input.addressLine2 || undefined,
+        postal_code: input.postalCode || undefined,
+        city: input.city || undefined,
+        country: input.country || undefined,
+      };
+    }
+
+    if (input.customerId) {
+      const updated = await this.stripe.customers.update(input.customerId, params);
+      return updated.id;
+    }
+    const created = await this.stripe.customers.create(params);
+    return created.id;
+  }
+
   async createCheckoutSession(input: CreateCheckoutSessionInput): Promise<{ id: string; url: string }> {
     const metadata = { bookingUid: input.bookingUid, source: "ne26-rooms" };
     const session = await this.stripe.checkout.sessions.create({
@@ -45,15 +89,20 @@ export class StripeCheckoutService {
         price_data: {
           currency: input.currency.toLowerCase(),
           unit_amount: line.unitAmount,
-          product_data: line.description ? { name: line.name, description: line.description } : { name: line.name },
+          product_data: line.description
+            ? { name: line.name, description: line.description }
+            : { name: line.name },
         },
       })),
       metadata,
       payment_intent_data: { metadata },
-      // Collect billing details here — the single source for the invoice + VAT.
+      // Collect/confirm billing details here — the source for the invoice + VAT.
+      // A pre-filled Customer (when present) seeds the address; the buyer can
+      // still adjust and the webhook syncs any change back to our DB.
       billing_address_collection: "required",
       tax_id_collection: { enabled: true },
-      customer_email: input.customerEmail,
+      // Stripe forbids customer + customer_email together; prefer the Customer.
+      ...(input.customerId ? { customer: input.customerId } : { customer_email: input.customerEmail }),
       success_url: input.successUrl,
       cancel_url: input.cancelUrl,
     });
