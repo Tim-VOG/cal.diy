@@ -28,4 +28,21 @@ export class AddOnRepository {
       select: publicSelect,
     });
   }
+
+  /** All add-ons (active and inactive) for admin management. */
+  findAllForAdmin() {
+    return this.prismaClient.addOn.findMany({
+      orderBy: { id: "asc" },
+      select: { ...publicSelect, isActive: true },
+    });
+  }
+
+  /** Admin: update an add-on's editable fields (price in cents, VAT in bp). */
+  update(id: number, data: { price?: number; vatRate?: number; isActive?: boolean }) {
+    return this.prismaClient.addOn.update({
+      where: { id },
+      data,
+      select: { ...publicSelect, isActive: true },
+    });
+  }
 }

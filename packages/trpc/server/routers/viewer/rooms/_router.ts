@@ -4,6 +4,7 @@ import { ZBookingUidInputSchema } from "./bookingUid.schema";
 import { ZCreateBookingInputSchema } from "./createBooking.schema";
 import { ZIssueCreditNoteInputSchema } from "./issueCreditNote.schema";
 import { ZPreviewVatInputSchema } from "./previewVat.schema";
+import { ZUpdateAddOnInputSchema } from "./updateAddOn.schema";
 import { ZUpdateBillingProfileInputSchema } from "./updateBillingProfile.schema";
 import { ZUpdateInvoiceSettingsInputSchema } from "./updateInvoiceSettings.schema";
 import { ZUpdateResourceInputSchema } from "./updateResource.schema";
@@ -106,6 +107,19 @@ export const roomsRouter = router({
     );
     const { id, ...data } = input;
     return getResourceRepository().update(id, data);
+  }),
+
+  // Admin-only: list every add-on (active + inactive) for management.
+  listAddOns: authedAdminProcedure.query(async () => {
+    const { getAddOnRepository } = await import("@calcom/features/ne26-rooms/di/AddOnRepository.container");
+    return getAddOnRepository().findAllForAdmin();
+  }),
+
+  // Admin-only: update an add-on's price / VAT rate / active state.
+  updateAddOn: authedAdminProcedure.input(ZUpdateAddOnInputSchema).mutation(async ({ input }) => {
+    const { getAddOnRepository } = await import("@calcom/features/ne26-rooms/di/AddOnRepository.container");
+    const { id, ...data } = input;
+    return getAddOnRepository().update(id, data);
   }),
 
   // Create a PENDING NE26 room booking with a temporary hold, then open a Stripe
