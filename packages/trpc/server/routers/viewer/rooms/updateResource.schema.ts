@@ -8,6 +8,8 @@ export const ZUpdateResourceInputSchema = z.object({
   price1h: z.number().int().min(0).optional(),
   price2h: z.number().int().min(0).optional(),
   price3h: z.number().int().min(0).optional(),
+  /** URL or /public path for the room card image. */
+  imageUrl: z.string().max(500).optional(),
   isActive: z.boolean().optional(),
 });
 

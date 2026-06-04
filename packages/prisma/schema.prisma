@@ -2895,6 +2895,8 @@ model Resource {
   price3h     Int
   currency    String            @default("EUR")
   description String?
+  // Card image: a URL or a path under /public (e.g. "/rooms/suite-1.jpg").
+  imageUrl    String?
   isActive    Boolean           @default(true)
   // Technical user backing this room for the availability engine (Couche 1).
   owner       User?             @relation("ResourceOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)

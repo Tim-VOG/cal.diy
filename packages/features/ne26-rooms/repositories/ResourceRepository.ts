@@ -12,6 +12,7 @@ const publicSelect = {
   price3h: true,
   currency: true,
   description: true,
+  imageUrl: true,
 } as const;
 
 export class ResourceRepository {
@@ -49,6 +50,7 @@ export class ResourceRepository {
       price1h?: number;
       price2h?: number;
       price3h?: number;
+      imageUrl?: string | null;
       isActive?: boolean;
     }
   ) {

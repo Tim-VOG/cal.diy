@@ -29,6 +29,7 @@ export default async function ManageRoomsPage(): Promise<JSX.Element> {
         price2h: r.price2h,
         price3h: r.price3h,
         currency: r.currency,
+        imageUrl: r.imageUrl ?? "",
         isActive: r.isActive,
       }))}
     />

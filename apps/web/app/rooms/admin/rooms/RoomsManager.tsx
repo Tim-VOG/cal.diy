@@ -15,6 +15,7 @@ export interface RoomRow {
   price2h: number;
   price3h: number;
   currency: string;
+  imageUrl: string;
   isActive: boolean;
 }
 
@@ -38,7 +39,7 @@ export default function RoomsManager({ rooms }: { rooms: RoomRow[] }): JSX.Eleme
     onSuccess: () => router.refresh(),
   });
 
-  function setField(id: number, field: keyof RoomRow, value: number | boolean): void {
+  function setField(id: number, field: keyof RoomRow, value: number | boolean | string): void {
     setDraft((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
   }
 
@@ -51,6 +52,7 @@ export default function RoomsManager({ rooms }: { rooms: RoomRow[] }): JSX.Eleme
       price1h: row.price1h,
       price2h: row.price2h,
       price3h: row.price3h,
+      imageUrl: row.imageUrl,
       isActive: row.isActive,
     });
   }
@@ -75,6 +77,7 @@ export default function RoomsManager({ rooms }: { rooms: RoomRow[] }): JSX.Eleme
               <th className="px-3 py-2">1h</th>
               <th className="px-3 py-2">2h</th>
               <th className="px-3 py-2">3h</th>
+              <th className="px-3 py-2">Image (URL / path)</th>
               <th className="px-3 py-2">Active</th>
               <th className="px-3 py-2" />
             </tr>
@@ -116,6 +119,15 @@ export default function RoomsManager({ rooms }: { rooms: RoomRow[] }): JSX.Eleme
                     />
                   </td>
                 ))}
+                <td className="px-3 py-2">
+                  <input
+                    type="text"
+                    placeholder="/rooms/suite-1.jpg"
+                    className={`${cellInput} w-48`}
+                    value={r.imageUrl}
+                    onChange={(e) => setField(r.id, "imageUrl", e.target.value)}
+                  />
+                </td>
                 <td className="px-3 py-2">
                   <input
                     type="checkbox"
