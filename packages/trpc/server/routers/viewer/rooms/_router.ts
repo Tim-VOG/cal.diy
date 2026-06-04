@@ -34,9 +34,8 @@ export const roomsRouter = router({
 
     const checkout = await getStripeCheckoutService().createCheckoutSession({
       bookingUid: booking.uid,
-      amountTotal: booking.amountTotal,
       currency: booking.currency,
-      productName: `NATO Edge 26 — ${booking.roomName}`,
+      lines: booking.checkoutLines,
       customerEmail: ctx.user.email,
       successUrl: `${WEBAPP_URL}/rooms/booked/${booking.uid}`,
       cancelUrl: `${WEBAPP_URL}/rooms/${input.slug}`,

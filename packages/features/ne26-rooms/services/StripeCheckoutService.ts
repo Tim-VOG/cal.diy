@@ -7,9 +7,9 @@ const STRIPE_API_VERSION = "2020-08-27";
 
 export interface CreateCheckoutSessionInput {
   bookingUid: string;
-  amountTotal: number; // smallest currency unit (cents)
   currency: string;
-  productName: string;
+  /** Itemised lines shown in the Checkout summary; their sum is the amount charged. */
+  lines: { name: string; description?: string; quantity: number; unitAmount: number }[];
   successUrl: string;
   cancelUrl: string;
   customerEmail?: string;
@@ -40,16 +40,14 @@ export class StripeCheckoutService {
     const session = await this.stripe.checkout.sessions.create({
       mode: "payment",
       client_reference_id: input.bookingUid,
-      line_items: [
-        {
-          quantity: 1,
-          price_data: {
-            currency: input.currency.toLowerCase(),
-            unit_amount: input.amountTotal,
-            product_data: { name: input.productName },
-          },
+      line_items: input.lines.map((line) => ({
+        quantity: line.quantity,
+        price_data: {
+          currency: input.currency.toLowerCase(),
+          unit_amount: line.unitAmount,
+          product_data: line.description ? { name: line.name, description: line.description } : { name: line.name },
         },
-      ],
+      })),
       metadata,
       payment_intent_data: { metadata },
       // Collect billing details here — the single source for the invoice + VAT.

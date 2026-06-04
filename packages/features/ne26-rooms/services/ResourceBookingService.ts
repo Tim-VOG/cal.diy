@@ -17,6 +17,21 @@ const SELLABLE_HOUR_MS = new Set(
   EVENT_SCHEDULE.flatMap((day) => day.sellableHourStartsUtc.map((d) => d.getTime()))
 );
 
+// Human, Brussels-time slot label for the Stripe Checkout line (e.g.
+// "Tue 17 Nov 2026, 14:00–16:00 (Europe/Brussels)").
+function formatSlotRange(start: Date, end: Date): string {
+  const day = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Brussels",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(start);
+  const time = (d: Date) =>
+    new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Brussels", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+  return `${day}, ${time(start)}-${time(end)} (Europe/Brussels)`;
+}
+
 export interface IResourceBookingServiceDeps {
   resourceRepository: ResourceRepository;
   addOnRepository: AddOnRepository;
@@ -31,6 +46,13 @@ export interface CreateBookingInput {
   addOns?: { slug: string; quantity: number }[];
 }
 
+export interface CheckoutLine {
+  name: string;
+  description?: string;
+  quantity: number;
+  unitAmount: number; // cents
+}
+
 export interface CreatedBooking {
   uid: string;
   roomName: string;
@@ -38,6 +60,8 @@ export interface CreatedBooking {
   currency: string;
   status: ResourceBookingStatus;
   holdExpiresAt: Date;
+  /** Itemised lines for the Stripe Checkout summary (room + each add-on). */
+  checkoutLines: CheckoutLine[];
 }
 
 export class ResourceBookingService {
@@ -69,6 +93,16 @@ export class ResourceBookingService {
     const amountTotal = roomPrice + addOnLines.reduce((sum, line) => sum + line.lineTotal, 0);
     const holdExpiresAt = new Date(Date.now() + HOLD_MINUTES * MS_PER_MINUTE);
 
+    const checkoutLines: CheckoutLine[] = [
+      {
+        name: `${room.name} — meeting room (${input.durationHours}h)`,
+        description: formatSlotRange(input.startUtc, endTime),
+        quantity: 1,
+        unitAmount: roomPrice,
+      },
+      ...addOnLines.map((line) => ({ name: line.name, quantity: line.quantity, unitAmount: line.unitPrice })),
+    ];
+
     const booking = await this.deps.resourceBookingRepository.createWithSlots({
       resourceId: room.id,
       startTime: input.startUtc,
@@ -85,7 +119,15 @@ export class ResourceBookingService {
       addOns: addOnLines,
     });
 
-    return { uid: booking.uid, roomName: room.name, amountTotal, currency: room.currency, status: booking.status, holdExpiresAt };
+    return {
+      uid: booking.uid,
+      roomName: room.name,
+      amountTotal,
+      currency: room.currency,
+      status: booking.status,
+      holdExpiresAt,
+      checkoutLines,
+    };
   }
 
   /**
@@ -115,7 +157,7 @@ export class ResourceBookingService {
   private async resolveAddOnLines(
     requested: { slug: string; quantity: number }[],
     durationHours: number
-  ): Promise<{ addOnId: number; quantity: number; unitPrice: number; lineTotal: number }[]> {
+  ): Promise<{ addOnId: number; name: string; quantity: number; unitPrice: number; lineTotal: number }[]> {
     if (!requested.length) return [];
 
     const catalog = await this.deps.addOnRepository.findManyActiveBySlugs(requested.map((a) => a.slug));
@@ -127,7 +169,7 @@ export class ResourceBookingService {
         throw new ErrorWithCode(ErrorCode.BadRequest, `Unknown or inactive add-on "${req.slug}"`);
       }
       const { quantity, lineTotal } = computeAddOnLine(addOn.priceType, addOn.price, req.quantity, durationHours);
-      return { addOnId: addOn.id, quantity, unitPrice: addOn.price, lineTotal };
+      return { addOnId: addOn.id, name: addOn.name, quantity, unitPrice: addOn.price, lineTotal };
     });
   }
 }
