@@ -1,0 +1,36 @@
+import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
+import { getResourceRepository } from "@calcom/features/ne26-rooms/di/ResourceRepository.container";
+import { buildLegacyRequest } from "@lib/buildLegacyCtx";
+import type { Metadata } from "next";
+import { cookies, headers } from "next/headers";
+import { notFound, redirect } from "next/navigation";
+import RoomsManager from "./RoomsManager";
+
+export const metadata: Metadata = {
+  title: "Manage rooms · NATO Edge 26 admin",
+  robots: { index: false, follow: false },
+};
+
+export default async function ManageRoomsPage(): Promise<JSX.Element> {
+  const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
+  if (!session?.user?.id) redirect("/auth/login?callbackUrl=/rooms/admin/rooms");
+  if (session.user.role !== "ADMIN") notFound();
+
+  const rooms = await getResourceRepository().findAllForAdmin();
+  return (
+    <RoomsManager
+      rooms={rooms.map((r) => ({
+        id: r.id,
+        name: r.name,
+        category: r.category,
+        capacity: r.capacity,
+        surface: r.surface,
+        price1h: r.price1h,
+        price2h: r.price2h,
+        price3h: r.price3h,
+        currency: r.currency,
+        isActive: r.isActive,
+      }))}
+    />
+  );
+}

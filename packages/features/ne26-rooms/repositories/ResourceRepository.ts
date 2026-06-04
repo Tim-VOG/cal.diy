@@ -31,4 +31,31 @@ export class ResourceRepository {
       select: { ...publicSelect, isActive: true },
     });
   }
+
+  /** All rooms (active and inactive) with the fields the admin can edit. */
+  findAllForAdmin() {
+    return this.prismaClient.resource.findMany({
+      orderBy: { id: "asc" },
+      select: { ...publicSelect, isActive: true },
+    });
+  }
+
+  /** Admin: update a room's editable fields (prices in cents, capacity, etc.). */
+  update(
+    id: number,
+    data: {
+      capacity?: number;
+      surface?: number;
+      price1h?: number;
+      price2h?: number;
+      price3h?: number;
+      isActive?: boolean;
+    }
+  ) {
+    return this.prismaClient.resource.update({
+      where: { id },
+      data,
+      select: { ...publicSelect, isActive: true },
+    });
+  }
 }

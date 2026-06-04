@@ -6,6 +6,7 @@ import { ZIssueCreditNoteInputSchema } from "./issueCreditNote.schema";
 import { ZPreviewVatInputSchema } from "./previewVat.schema";
 import { ZUpdateBillingProfileInputSchema } from "./updateBillingProfile.schema";
 import { ZUpdateInvoiceSettingsInputSchema } from "./updateInvoiceSettings.schema";
+import { ZUpdateResourceInputSchema } from "./updateResource.schema";
 
 export const roomsRouter = router({
   // The signed-in exhibitor's saved billing details (null until they fill them in).
@@ -88,6 +89,23 @@ export const roomsRouter = router({
     const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
     const sent = await getInvoiceService().resendInvoice(input.uid);
     return { sent };
+  }),
+
+  // Admin-only: list every room (active + inactive) for management.
+  listResources: authedAdminProcedure.query(async () => {
+    const { getResourceRepository } = await import(
+      "@calcom/features/ne26-rooms/di/ResourceRepository.container"
+    );
+    return getResourceRepository().findAllForAdmin();
+  }),
+
+  // Admin-only: update a room's prices / capacity / surface / active state.
+  updateResource: authedAdminProcedure.input(ZUpdateResourceInputSchema).mutation(async ({ input }) => {
+    const { getResourceRepository } = await import(
+      "@calcom/features/ne26-rooms/di/ResourceRepository.container"
+    );
+    const { id, ...data } = input;
+    return getResourceRepository().update(id, data);
   }),
 
   // Create a PENDING NE26 room booking with a temporary hold, then open a Stripe
