@@ -11,7 +11,6 @@ import {
 } from "@calcom/features/auth/signup/utils/token";
 import { validateAndGetCorrectedUsernameAndEmail } from "@calcom/features/auth/signup/utils/validateUsername";
 import { hashPassword } from "@calcom/lib/auth/hashPassword";
-
 import logger from "@calcom/lib/logger";
 import { isPrismaError } from "@calcom/lib/server/getServerErrorFromUnknown";
 import { isUsernameReservedDueToMigration } from "@calcom/lib/server/username";
@@ -198,10 +197,17 @@ export default async function handler(body: Record<string, string>) {
       await prefillAvatar({ email: userEmail });
     }
 
+    // Forward a safe relative callbackUrl so the verification link returns the
+    // user to where they signed up from (e.g. /rooms) instead of onboarding.
+    const callbackUrl = typeof body.callbackUrl === "string" ? body.callbackUrl : "";
+    const safeCallbackUrl =
+      callbackUrl.startsWith("/") && !callbackUrl.startsWith("//") ? callbackUrl : undefined;
+
     await sendEmailVerification({
       email: userEmail,
       username: correctedUsername,
       language,
+      extraParams: safeCallbackUrl ? { callbackUrl: safeCallbackUrl } : undefined,
     });
   }
 

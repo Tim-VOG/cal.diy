@@ -34,7 +34,13 @@ export default function SignupForm(): JSX.Element {
       const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: usernameFromEmail(email), email, password, language: "en" }),
+        body: JSON.stringify({
+          username: usernameFromEmail(email),
+          email,
+          password,
+          language: "en",
+          callbackUrl: "/rooms",
+        }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { message?: string };

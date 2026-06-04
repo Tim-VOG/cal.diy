@@ -1,7 +1,5 @@
-import type { TFunction } from "i18next";
-
 import { APP_NAME, SENDER_NAME, SUPPORT_MAIL_ADDRESS } from "@calcom/lib/constants";
-
+import type { TFunction } from "i18next";
 import { BaseEmailHtml, CallToAction } from "../components";
 
 export type EmailVerifyLink = {
@@ -50,7 +48,8 @@ export const VerifyAccountEmail = (
               style={{ color: "#3E3E3E" }}
               target="_blank"
               rel="noreferrer">
-              <>{props.language("the_calcom_team", { companyName: SENDER_NAME })}</>
+              {/* NE26: env-driven sign-off (set NEXT_PUBLIC_SENDER_ID / app name) instead of the hardcoded Cal team. */}
+              <>The {SENDER_NAME} team</>
             </a>
           </>
         </p>
