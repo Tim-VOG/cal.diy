@@ -1,3 +1,4 @@
+import process from "node:process";
 import { getResourceBookingService } from "@calcom/features/ne26-rooms/di/ResourceBookingService.container";
 import { getStripeCheckoutService } from "@calcom/features/ne26-rooms/di/StripeCheckoutService.container";
 import logger from "@calcom/lib/logger";
@@ -28,7 +29,9 @@ export async function POST(req: Request): Promise<Response> {
     const bookingUid = session.metadata?.bookingUid;
     if (session.metadata?.source === "ne26-rooms" && bookingUid) {
       const stripePaymentId =
-        typeof session.payment_intent === "string" ? session.payment_intent : (session.payment_intent?.id ?? session.id);
+        typeof session.payment_intent === "string"
+          ? session.payment_intent
+          : (session.payment_intent?.id ?? session.id);
       const bookingService = getResourceBookingService();
 
       // Persist the billing details Stripe collected (drives the invoice + VAT)
@@ -46,7 +49,9 @@ export async function POST(req: Request): Promise<Response> {
         // Best-effort invoicing: a failed PDF/email must not fail the webhook
         // (payment is already confirmed) — log it for resend instead.
         try {
-          const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
+          const { getInvoiceService } = await import(
+            "@calcom/features/ne26-rooms/di/InvoiceService.container"
+          );
           await getInvoiceService().issueInvoice(bookingUid);
         } catch (e) {
           log.error(`Invoice issuance failed for booking ${bookingUid}`, e);
@@ -54,7 +59,30 @@ export async function POST(req: Request): Promise<Response> {
       } else {
         // Paid, but the booking was already handled or its hold expired and was
         // reclaimed before payment landed — needs manual review/refund.
-        log.warn(`Payment for booking ${bookingUid} could not be confirmed (already handled or hold expired).`);
+        log.warn(
+          `Payment for booking ${bookingUid} could not be confirmed (already handled or hold expired).`
+        );
+      }
+    }
+  }
+
+  // A refund issues a credit note and frees the room's slots. Idempotent on the
+  // booking side, so a replayed event is harmless.
+  if (event.type === "charge.refunded") {
+    const charge = event.data.object as Stripe.Charge;
+    const paymentIntentId =
+      typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id;
+    if (paymentIntentId) {
+      try {
+        const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
+        const issued = await getInvoiceService().issueCreditNoteByPaymentIntent(paymentIntentId);
+        if (!issued) {
+          log.info(
+            `No credit note issued for refunded payment ${paymentIntentId} (not eligible or already credited).`
+          );
+        }
+      } catch (e) {
+        log.error(`Credit note issuance failed for refunded payment ${paymentIntentId}`, e);
       }
     }
   }

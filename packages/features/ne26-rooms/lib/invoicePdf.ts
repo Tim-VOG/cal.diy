@@ -15,6 +15,10 @@ export interface InvoiceMeta {
   roomName: string;
   startUtc: Date;
   endUtc: Date;
+  /** "invoice" (default) or "credit_note" — flips the title and negates amounts. */
+  kind?: "invoice" | "credit_note";
+  /** For a credit note: the invoice number it cancels. */
+  relatedInvoiceNumber?: string;
 }
 
 export interface InvoiceIssuer {
@@ -71,6 +75,10 @@ export async function renderInvoicePdf(
   const textRight = (s: string, xRight: number, yy: number, size = 10, f = font, color = rgb(0, 0, 0)) =>
     page.drawText(ascii(s), { x: xRight - f.widthOfTextAtSize(ascii(s), size), y: yy, size, font: f, color });
 
+  // A credit note shows the same breakdown with negated amounts.
+  const isCredit = meta.kind === "credit_note";
+  const amt = (cents: number) => money(isCredit ? -cents : cents, model.currency);
+
   // Header — logo top-left (text fallback if the image can't embed), meta top-right
   const logoW = 130;
   const logoH = (logoW * INVOICE_LOGO_PNG_HEIGHT) / INVOICE_LOGO_PNG_WIDTH;
@@ -80,9 +88,12 @@ export async function renderInvoicePdf(
   } catch {
     text(issuer.legalName, left, y - 14, 18, bold, NAVY);
   }
-  textRight("INVOICE", right, y - 2, 18, bold, NAVY);
+  textRight(isCredit ? "CREDIT NOTE" : "INVOICE", right, y - 2, 18, bold, NAVY);
   textRight(meta.invoiceNumber, right, y - 20, 10, bold);
   textRight(`Date: ${dt(meta.issueDate)}`, right, y - 33, 9, font, GREY);
+  if (isCredit && meta.relatedInvoiceNumber) {
+    textRight(`Cancels invoice ${meta.relatedInvoiceNumber}`, right, y - 45, 8, font, GREY);
+  }
 
   // Issuer details (from admin company settings)
   y -= logoH + 14;
@@ -125,8 +136,8 @@ export async function renderInvoicePdf(
   for (const line of model.lines) {
     text(line.label, left + 6, y, 9);
     textRight(pct(line.vatRate), colVat, y, 9);
-    textRight(money(line.ht, model.currency), colHt, y, 9);
-    textRight(money(line.totalTtc, model.currency), colTtc, y, 9);
+    textRight(amt(line.ht), colHt, y, 9);
+    textRight(amt(line.totalTtc), colTtc, y, 9);
     y -= 18;
   }
 
@@ -134,15 +145,15 @@ export async function renderInvoicePdf(
   y -= 6;
   page.drawLine({ start: { x: colHt - 60, y: y + 8 }, end: { x: right, y: y + 8 }, thickness: 0.5, color: GREY });
   textRight("Total excl. VAT", colHt, y, 9, font, GREY);
-  textRight(money(model.totalHt, model.currency), colTtc, y, 9);
+  textRight(amt(model.totalHt), colTtc, y, 9);
   y -= 16;
   for (const v of model.vatBreakdown) {
     textRight(`VAT ${pct(v.vatRate)}`, colHt, y, 9, font, GREY);
-    textRight(money(v.vat, model.currency), colTtc, y, 9);
+    textRight(amt(v.vat), colTtc, y, 9);
     y -= 16;
   }
-  textRight("Total incl. VAT", colHt, y, 11, bold, NAVY);
-  textRight(money(model.totalTtc, model.currency), colTtc, y, 11, bold, NAVY);
+  textRight(isCredit ? "Total credited" : "Total incl. VAT", colHt, y, 11, bold, NAVY);
+  textRight(amt(model.totalTtc), colTtc, y, 11, bold, NAVY);
 
   if (model.vatMention) {
     y -= 24;
@@ -152,7 +163,16 @@ export async function renderInvoicePdf(
   // Footer
   const bankLine = issuer.iban ? `IBAN ${issuer.iban}${issuer.bic ? ` · BIC ${issuer.bic}` : ""}` : "";
   const footer = issuer.legalFooter || `${issuer.legalName} - NATO Edge 26 - rooms.vo-eu.be`;
-  text("Paid via Stripe. This invoice was generated automatically.", left, 82, 8, font, GREY);
+  text(
+    isCredit
+      ? "Credit note for a refunded Stripe payment, generated automatically."
+      : "Paid via Stripe. This invoice was generated automatically.",
+    left,
+    82,
+    8,
+    font,
+    GREY
+  );
   if (bankLine) text(bankLine, left, 70, 8, font, GREY);
   text(footer, left, 58, 8, font, GREY);
 

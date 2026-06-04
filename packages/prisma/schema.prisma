@@ -2908,36 +2908,38 @@ model Resource {
 }
 
 model ResourceBooking {
-  id              Int                   @id @default(autoincrement())
-  uid             String                @unique @default(uuid())
-  resource        Resource              @relation(fields: [resourceId], references: [id], onDelete: Cascade)
-  resourceId      Int
-  startTime       DateTime
-  endTime         DateTime
+  id               Int                   @id @default(autoincrement())
+  uid              String                @unique @default(uuid())
+  resource         Resource              @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  resourceId       Int
+  startTime        DateTime
+  endTime          DateTime
   // 60 | 120 | 180. Number of atomic 1h slots = durationMinutes / 60.
-  durationMinutes Int
+  durationMinutes  Int
   // Exhibitor account (nullable: SetNull keeps the paid booking if the account is removed).
-  booker          User?                 @relation("ResourceBooker", fields: [bookerUserId], references: [id], onDelete: SetNull)
-  bookerUserId    Int?
-  bookerEmail     String
-  bookerName      String
+  booker           User?                 @relation("ResourceBooker", fields: [bookerUserId], references: [id], onDelete: SetNull)
+  bookerUserId     Int?
+  bookerEmail      String
+  bookerName       String
   // Buyer billing country (ISO-3166 alpha-2) and intra-EU VAT number, captured at
   // booking to drive the invoice VAT treatment (reverse charge / exemption).
-  bookerCountry   String?
-  bookerVatNumber String?
-  status          ResourceBookingStatus @default(PENDING)
+  bookerCountry    String?
+  bookerVatNumber  String?
+  status           ResourceBookingStatus @default(PENDING)
   // PENDING hold expiry: a non-confirmed booking past this time can be released (§4.4).
-  holdExpiresAt   DateTime?
+  holdExpiresAt    DateTime?
   // Total in cents = the room's price for the chosen duration + sum(add-on lineTotals).
-  amountTotal     Int
-  currency        String                @default("EUR")
-  stripePaymentId String?
-  invoiceNumber   String?               @unique
-  invoicePdfUrl   String?
-  slots           ResourceSlot[]
-  addOns          BookingAddOn[]
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+  amountTotal      Int
+  currency         String                @default("EUR")
+  stripePaymentId  String?
+  invoiceNumber    String?               @unique
+  invoicePdfUrl    String?
+  creditNoteNumber String?               @unique
+  creditNotePdfUrl String?
+  slots            ResourceSlot[]
+  addOns           BookingAddOn[]
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
 
   @@index([resourceId])
   @@index([bookerUserId])

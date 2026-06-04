@@ -149,6 +149,8 @@ export class ResourceBookingRepository {
         holdExpiresAt: true,
         invoiceNumber: true,
         invoicePdfUrl: true,
+        creditNoteNumber: true,
+        creditNotePdfUrl: true,
         resource: { select: { name: true, slug: true } },
       },
     });
@@ -198,6 +200,7 @@ export class ResourceBookingRepository {
         currency: true,
         stripePaymentId: true,
         invoiceNumber: true,
+        creditNoteNumber: true,
         createdAt: true,
         resource: { select: { name: true, slug: true, category: true } },
         addOns: { select: { quantity: true, lineTotal: true, addOn: { select: { name: true } } } },
@@ -222,20 +225,67 @@ export class ResourceBookingRepository {
         amountTotal: true,
         currency: true,
         invoiceNumber: true,
+        creditNoteNumber: true,
         createdAt: true,
         resource: { select: { name: true } },
-        addOns: { select: { quantity: true, lineTotal: true, addOn: { select: { name: true, vatRate: true } } } },
+        addOns: {
+          select: { quantity: true, lineTotal: true, addOn: { select: { name: true, vatRate: true } } },
+        },
       },
     });
   }
 
   /** Allocate the next gap-tolerant invoice number, e.g. NE26-2026-0001. */
   async allocateInvoiceNumber(): Promise<string> {
-    const rows = await this.prismaClient.$queryRaw<{ n: number }[]>`SELECT nextval('ne26_invoice_seq')::int AS n`;
+    const rows = await this.prismaClient.$queryRaw<
+      { n: number }[]
+    >`SELECT nextval('ne26_invoice_seq')::int AS n`;
     return `NE26-2026-${String(rows[0].n).padStart(4, "0")}`;
   }
 
   async setInvoice(uid: string, invoiceNumber: string, invoicePdfUrl: string): Promise<void> {
-    await this.prismaClient.resourceBooking.update({ where: { uid }, data: { invoiceNumber, invoicePdfUrl } });
+    await this.prismaClient.resourceBooking.update({
+      where: { uid },
+      data: { invoiceNumber, invoicePdfUrl },
+    });
+  }
+
+  async allocateCreditNoteNumber(): Promise<string> {
+    const rows = await this.prismaClient.$queryRaw<
+      { n: number }[]
+    >`SELECT nextval('ne26_credit_note_seq')::int AS n`;
+    return `NE26-CN-2026-${String(rows[0].n).padStart(4, "0")}`;
+  }
+
+  /** Resolve a booking uid from the Stripe payment intent (for refund webhooks). */
+  async findUidByStripePaymentId(stripePaymentId: string): Promise<string | null> {
+    const row = await this.prismaClient.resourceBooking.findFirst({
+      where: { stripePaymentId },
+      select: { uid: true },
+    });
+    return row?.uid ?? null;
+  }
+
+  /**
+   * Record a credit note and cancel the booking in one transaction. Only acts on
+   * a CONFIRMED, not-yet-credited booking (idempotent). Its atomic slots are
+   * deleted so the freed room+hour can be booked again. Returns rows updated.
+   */
+  async creditNoteAndCancel(
+    uid: string,
+    creditNoteNumber: string,
+    creditNotePdfUrl: string
+  ): Promise<number> {
+    return this.prismaClient.$transaction(async (tx) => {
+      const result = await tx.resourceBooking.updateMany({
+        where: { uid, status: ResourceBookingStatus.CONFIRMED, creditNoteNumber: null },
+        data: { status: ResourceBookingStatus.CANCELLED, creditNoteNumber, creditNotePdfUrl },
+      });
+      if (result.count > 0) {
+        const booking = await tx.resourceBooking.findUnique({ where: { uid }, select: { id: true } });
+        if (booking) await tx.resourceSlot.deleteMany({ where: { bookingId: booking.id } });
+      }
+      return result.count;
+    });
   }
 }

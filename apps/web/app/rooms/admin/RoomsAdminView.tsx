@@ -1,5 +1,7 @@
 "use client";
 
+import { trpc } from "@calcom/trpc/react";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 const TZ = "Europe/Brussels";
@@ -18,6 +20,7 @@ export interface AdminBookingRow {
   currency: string;
   stripePaymentId: string | null;
   invoiceNumber: string | null;
+  creditNoteNumber: string | null;
   addOns: { name: string; quantity: number; lineTotal: number }[];
 }
 
@@ -31,14 +34,20 @@ const STATUS_BADGE: Record<string, string> = {
 };
 
 function fmtDate(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", { timeZone: TZ, weekday: "short", day: "numeric", month: "short" }).format(
-    new Date(iso)
-  );
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: TZ,
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).format(new Date(iso));
 }
 function fmtTime(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false }).format(
-    new Date(iso)
-  );
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: TZ,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(iso));
 }
 function fmtMoney(cents: number, currency: string): string {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(cents / 100);
@@ -49,8 +58,21 @@ function addOnsLabel(row: AdminBookingRow): string {
 
 function toCsv(rows: AdminBookingRow[]): string {
   const header = [
-    "Room", "Category", "Date (Brussels)", "Start", "End", "Hours", "Status",
-    "Booker name", "Booker email", "Amount", "Currency", "Add-ons", "Payment ID", "Invoice",
+    "Room",
+    "Category",
+    "Date (Brussels)",
+    "Start",
+    "End",
+    "Hours",
+    "Status",
+    "Booker name",
+    "Booker email",
+    "Amount",
+    "Currency",
+    "Add-ons",
+    "Payment ID",
+    "Invoice",
+    "Credit note",
   ];
   const escapeCsv = (v: string | number | null): string => {
     const s = v === null ? "" : String(v);
@@ -58,10 +80,21 @@ function toCsv(rows: AdminBookingRow[]): string {
   };
   const lines = rows.map((r) =>
     [
-      r.roomName, r.category, fmtDate(r.startUtc), fmtTime(r.startUtc), fmtTime(r.endUtc),
-      r.durationMinutes / 60, r.status, r.bookerName, r.bookerEmail, (r.amountTotal / 100).toFixed(2),
-      r.currency, r.addOns.map((a) => `${a.name} x${a.quantity} (${(a.lineTotal / 100).toFixed(2)})`).join("; "),
-      r.stripePaymentId, r.invoiceNumber,
+      r.roomName,
+      r.category,
+      fmtDate(r.startUtc),
+      fmtTime(r.startUtc),
+      fmtTime(r.endUtc),
+      r.durationMinutes / 60,
+      r.status,
+      r.bookerName,
+      r.bookerEmail,
+      (r.amountTotal / 100).toFixed(2),
+      r.currency,
+      r.addOns.map((a) => `${a.name} x${a.quantity} (${(a.lineTotal / 100).toFixed(2)})`).join("; "),
+      r.stripePaymentId,
+      r.invoiceNumber,
+      r.creditNoteNumber,
     ]
       .map(escapeCsv)
       .join(",")
@@ -71,8 +104,52 @@ function toCsv(rows: AdminBookingRow[]): string {
 
 export default function RoomsAdminView({ rows }: { rows: AdminBookingRow[] }): JSX.Element {
   const [status, setStatus] = useState<StatusFilter>("ALL");
+  const router = useRouter();
+  const [pendingUid, setPendingUid] = useState<string | null>(null);
+  const creditNote = trpc.viewer.rooms.issueCreditNote.useMutation({
+    onSettled: () => setPendingUid(null),
+    onSuccess: () => router.refresh(),
+  });
 
-  const filtered = useMemo(() => (status === "ALL" ? rows : rows.filter((r) => r.status === status)), [rows, status]);
+  function onIssueCreditNote(row: AdminBookingRow): void {
+    const ok = window.confirm(
+      `Issue a credit note for ${row.bookerName} (${row.roomName})? This cancels the booking, frees the slot, and emails the booker. Refund the payment in Stripe separately.`
+    );
+    if (!ok) return;
+    setPendingUid(row.uid);
+    creditNote.mutate({ uid: row.uid });
+  }
+
+  function renderCreditNoteCell(r: AdminBookingRow): JSX.Element {
+    if (r.creditNoteNumber) {
+      return (
+        <a
+          href={`/rooms/credit-note/${r.uid}`}
+          target="_blank"
+          rel="noreferrer"
+          className="text-[#000643] underline hover:opacity-80">
+          {r.creditNoteNumber}
+        </a>
+      );
+    }
+    if (r.status === "CONFIRMED" && r.invoiceNumber) {
+      return (
+        <button
+          type="button"
+          onClick={() => onIssueCreditNote(r)}
+          disabled={pendingUid === r.uid}
+          className="rounded-md border border-red-200 px-2 py-1 font-medium text-red-600 text-xs transition hover:border-red-400 disabled:opacity-50">
+          {pendingUid === r.uid ? "Issuing…" : "Credit note"}
+        </button>
+      );
+    }
+    return <span className="text-gray-300">—</span>;
+  }
+
+  const filtered = useMemo(
+    () => (status === "ALL" ? rows : rows.filter((r) => r.status === status)),
+    [rows, status]
+  );
   const confirmed = useMemo(() => rows.filter((r) => r.status === "CONFIRMED"), [rows]);
   const revenue = confirmed.reduce((sum, r) => sum + r.amountTotal, 0);
   const currency = rows[0]?.currency ?? "EUR";
@@ -118,7 +195,9 @@ export default function RoomsAdminView({ rows }: { rows: AdminBookingRow[] }): J
             type="button"
             onClick={() => setStatus(s)}
             className={`rounded-lg border px-3 py-1.5 font-medium text-sm transition ${
-              s === status ? "border-[#000643] bg-[#000643] text-white" : "border-gray-200 bg-white text-black hover:border-[#000643]"
+              s === status
+                ? "border-[#000643] bg-[#000643] text-white"
+                : "border-gray-200 bg-white text-black hover:border-[#000643]"
             }`}>
             {s === "ALL" ? "All" : s.charAt(0) + s.slice(1).toLowerCase()}
           </button>
@@ -136,12 +215,13 @@ export default function RoomsAdminView({ rows }: { rows: AdminBookingRow[] }): J
               <th className="px-3 py-2">Add-ons</th>
               <th className="px-3 py-2 text-right">Amount</th>
               <th className="px-3 py-2">Invoice</th>
+              <th className="px-3 py-2">Credit note</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td className="px-3 py-6 text-center text-gray-400" colSpan={7}>
+                <td className="px-3 py-6 text-center text-gray-400" colSpan={8}>
                   No bookings
                 </td>
               </tr>
@@ -153,10 +233,12 @@ export default function RoomsAdminView({ rows }: { rows: AdminBookingRow[] }): J
                     <div className="text-gray-400 text-xs">{r.category}</div>
                   </td>
                   <td className="px-3 py-2">
-                    {fmtDate(r.startUtc)} · {fmtTime(r.startUtc)}–{fmtTime(r.endUtc)} ({r.durationMinutes / 60}h)
+                    {fmtDate(r.startUtc)} · {fmtTime(r.startUtc)}–{fmtTime(r.endUtc)} (
+                    {r.durationMinutes / 60}h)
                   </td>
                   <td className="px-3 py-2">
-                    <span className={`rounded-full px-2 py-0.5 font-medium text-xs ${STATUS_BADGE[r.status] ?? ""}`}>
+                    <span
+                      className={`rounded-full px-2 py-0.5 font-medium text-xs ${STATUS_BADGE[r.status] ?? ""}`}>
                       {r.status}
                     </span>
                   </td>
@@ -179,6 +261,7 @@ export default function RoomsAdminView({ rows }: { rows: AdminBookingRow[] }): J
                       <span className="text-gray-300">—</span>
                     )}
                   </td>
+                  <td className="px-3 py-2">{renderCreditNoteCell(r)}</td>
                 </tr>
               ))
             )}

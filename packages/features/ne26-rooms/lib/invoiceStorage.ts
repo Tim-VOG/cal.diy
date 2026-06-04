@@ -7,21 +7,23 @@ function storageDir(): string {
   return process.env.NE26_INVOICE_DIR || path.join(process.cwd(), ".ne26-invoices");
 }
 
+export type DocumentKind = "invoice" | "credit_note";
+
 // uids are uuids; reject anything else to avoid path traversal.
-function safeName(uid: string): string {
+function safeName(uid: string, kind: DocumentKind): string {
   if (!/^[a-zA-Z0-9-]+$/.test(uid)) throw new Error("Invalid invoice id");
-  return `${uid}.pdf`;
+  return kind === "credit_note" ? `${uid}-credit-note.pdf` : `${uid}.pdf`;
 }
 
-export async function saveInvoicePdf(uid: string, bytes: Uint8Array): Promise<void> {
+export async function saveInvoicePdf(uid: string, bytes: Uint8Array, kind: DocumentKind = "invoice"): Promise<void> {
   const dir = storageDir();
   await mkdir(dir, { recursive: true });
-  await writeFile(path.join(dir, safeName(uid)), bytes);
+  await writeFile(path.join(dir, safeName(uid, kind)), bytes);
 }
 
-export async function readInvoicePdf(uid: string): Promise<Buffer | null> {
+export async function readInvoicePdf(uid: string, kind: DocumentKind = "invoice"): Promise<Buffer | null> {
   try {
-    return await readFile(path.join(storageDir(), safeName(uid)));
+    return await readFile(path.join(storageDir(), safeName(uid, kind)));
   } catch {
     return null;
   }

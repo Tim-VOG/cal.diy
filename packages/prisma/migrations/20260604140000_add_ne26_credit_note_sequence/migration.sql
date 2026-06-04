@@ -1,0 +1,1 @@
+CREATE SEQUENCE IF NOT EXISTS "ne26_credit_note_seq" AS integer START WITH 1 INCREMENT BY 1;

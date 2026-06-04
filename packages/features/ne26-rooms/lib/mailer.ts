@@ -1,7 +1,7 @@
-import nodemailer from "nodemailer";
-
+import process from "node:process";
 import { ErrorCode } from "@calcom/lib/errorCodes";
 import { ErrorWithCode } from "@calcom/lib/errors";
+import nodemailer from "nodemailer";
 
 export interface InvoiceEmailInput {
   to: string;
@@ -10,6 +10,8 @@ export interface InvoiceEmailInput {
   roomName: string;
   amountLabel: string;
   pdf: Uint8Array;
+  /** "invoice" (default) sends a confirmation; "credit_note" sends a refund notice. */
+  documentKind?: "invoice" | "credit_note";
 }
 
 function escapeHtml(s: string): string {
@@ -25,7 +27,10 @@ export async function sendInvoiceEmail(input: InvoiceEmailInput): Promise<void> 
   const from = process.env.EMAIL_FROM;
   const fromName = process.env.EMAIL_FROM_NAME ?? "NATO Edge 26";
   if (!host || !port || !from) {
-    throw new ErrorWithCode(ErrorCode.InternalServerError, "SMTP is not configured (EMAIL_SERVER_* / EMAIL_FROM)");
+    throw new ErrorWithCode(
+      ErrorCode.InternalServerError,
+      "SMTP is not configured (EMAIL_SERVER_* / EMAIL_FROM)"
+    );
   }
 
   const transport = nodemailer.createTransport({
@@ -38,12 +43,31 @@ export async function sendInvoiceEmail(input: InvoiceEmailInput): Promise<void> 
 
   const name = escapeHtml(input.bookerName);
   const room = escapeHtml(input.roomName);
+  const amount = escapeHtml(input.amountLabel);
+  const isCredit = input.documentKind === "credit_note";
+
+  const subject = isCredit
+    ? `Your NATO Edge 26 refund — credit note ${input.invoiceNumber}`
+    : `Your NATO Edge 26 booking — invoice ${input.invoiceNumber}`;
+  const textBody = isCredit
+    ? `Hi ${input.bookerName},\n\nYour booking of ${input.roomName} at NATO Edge 26 has been cancelled and refunded.\nA refund of ${input.amountLabel} has been issued.\n\nCredit note ${input.invoiceNumber} is attached.\n\nNATO Edge 26 — Meeting Rooms`
+    : `Hi ${input.bookerName},\n\nThank you for booking ${input.roomName} at NATO Edge 26.\nYour payment of ${input.amountLabel} has been received.\n\nInvoice ${input.invoiceNumber} is attached.\n\nNATO Edge 26 — Meeting Rooms`;
+  const htmlBody = isCredit
+    ? `<p>Hi ${name},</p><p>Your booking of <strong>${room}</strong> at NATO Edge 26 has been cancelled and refunded.</p><p>A refund of <strong>${amount}</strong> has been issued. Credit note <strong>${input.invoiceNumber}</strong> is attached.</p><p>NATO Edge 26 — Meeting Rooms</p>`
+    : `<p>Hi ${name},</p><p>Thank you for booking <strong>${room}</strong> at NATO Edge 26.</p><p>Your payment of <strong>${amount}</strong> has been received. Invoice <strong>${input.invoiceNumber}</strong> is attached.</p><p>NATO Edge 26 — Meeting Rooms</p>`;
+
   await transport.sendMail({
     from: `${fromName} <${from}>`,
     to: input.to,
-    subject: `Your NATO Edge 26 booking — invoice ${input.invoiceNumber}`,
-    text: `Hi ${input.bookerName},\n\nThank you for booking ${input.roomName} at NATO Edge 26.\nYour payment of ${input.amountLabel} has been received.\n\nInvoice ${input.invoiceNumber} is attached.\n\nNATO Edge 26 — Meeting Rooms`,
-    html: `<p>Hi ${name},</p><p>Thank you for booking <strong>${room}</strong> at NATO Edge 26.</p><p>Your payment of <strong>${escapeHtml(input.amountLabel)}</strong> has been received. Invoice <strong>${input.invoiceNumber}</strong> is attached.</p><p>NATO Edge 26 — Meeting Rooms</p>`,
-    attachments: [{ filename: `${input.invoiceNumber}.pdf`, content: Buffer.from(input.pdf), contentType: "application/pdf" }],
+    subject,
+    text: textBody,
+    html: htmlBody,
+    attachments: [
+      {
+        filename: `${input.invoiceNumber}.pdf`,
+        content: Buffer.from(input.pdf),
+        contentType: "application/pdf",
+      },
+    ],
   });
 }

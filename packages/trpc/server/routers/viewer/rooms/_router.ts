@@ -1,15 +1,27 @@
 import authedProcedure, { authedAdminProcedure } from "../../../procedures/authedProcedure";
 import { router } from "../../../trpc";
 import { ZCreateBookingInputSchema } from "./createBooking.schema";
+import { ZIssueCreditNoteInputSchema } from "./issueCreditNote.schema";
 import { ZUpdateInvoiceSettingsInputSchema } from "./updateInvoiceSettings.schema";
 
 export const roomsRouter = router({
   // Admin-only: update the issuer/company details printed on invoices.
-  updateInvoiceSettings: authedAdminProcedure.input(ZUpdateInvoiceSettingsInputSchema).mutation(async ({ input }) => {
-    const { getInvoiceSettingsRepository } = await import(
-      "@calcom/features/ne26-rooms/di/InvoiceSettingsRepository.container"
-    );
-    return getInvoiceSettingsRepository().update(input);
+  updateInvoiceSettings: authedAdminProcedure
+    .input(ZUpdateInvoiceSettingsInputSchema)
+    .mutation(async ({ input }) => {
+      const { getInvoiceSettingsRepository } = await import(
+        "@calcom/features/ne26-rooms/di/InvoiceSettingsRepository.container"
+      );
+      return getInvoiceSettingsRepository().update(input);
+    }),
+
+  // Admin-only: cancel a confirmed booking and issue a credit note (manual full
+  // refund flow). The Stripe refund itself is done in the Stripe dashboard; this
+  // records the credit note, frees the room, and emails the booker.
+  issueCreditNote: authedAdminProcedure.input(ZIssueCreditNoteInputSchema).mutation(async ({ input }) => {
+    const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
+    const issued = await getInvoiceService().issueCreditNote(input.uid);
+    return { issued };
   }),
 
   // Create a PENDING NE26 room booking with a temporary hold, then open a Stripe
