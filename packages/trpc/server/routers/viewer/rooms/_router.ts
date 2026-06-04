@@ -9,6 +9,7 @@ import { ZUpdateAddOnInputSchema } from "./updateAddOn.schema";
 import { ZUpdateBillingProfileInputSchema } from "./updateBillingProfile.schema";
 import { ZUpdateInvoiceSettingsInputSchema } from "./updateInvoiceSettings.schema";
 import { ZUpdateResourceInputSchema } from "./updateResource.schema";
+import { ZUpdateRoomSettingsInputSchema } from "./updateRoomSettings.schema";
 
 export const roomsRouter = router({
   // The signed-in exhibitor's saved billing details (null until they fill them in).
@@ -100,6 +101,16 @@ export const roomsRouter = router({
     );
     return getResourceRepository().findAllForAdmin();
   }),
+
+  // Admin-only: update booking settings (turnover buffer between bookings).
+  updateRoomSettings: authedAdminProcedure
+    .input(ZUpdateRoomSettingsInputSchema)
+    .mutation(async ({ input }) => {
+      const { getNe26RoomSettingsRepository } = await import(
+        "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container"
+      );
+      return getNe26RoomSettingsRepository().update(input);
+    }),
 
   // Admin-only: update a room's prices / capacity / surface / active state.
   updateResource: authedAdminProcedure.input(ZUpdateResourceInputSchema).mutation(async ({ input }) => {

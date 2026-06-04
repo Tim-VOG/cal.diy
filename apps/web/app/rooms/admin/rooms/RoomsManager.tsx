@@ -30,12 +30,22 @@ function toCents(units: number): number {
   return Math.round(units * 100);
 }
 
-export default function RoomsManager({ rooms }: { rooms: RoomRow[] }): JSX.Element {
+export default function RoomsManager({
+  rooms,
+  bufferMinutes,
+}: {
+  rooms: RoomRow[];
+  bufferMinutes: number;
+}): JSX.Element {
   const router = useRouter();
   const [draft, setDraft] = useState<RoomRow[]>(rooms);
   const [savingId, setSavingId] = useState<number | null>(null);
+  const [buffer, setBuffer] = useState(bufferMinutes);
   const update = trpc.viewer.rooms.updateResource.useMutation({
     onSettled: () => setSavingId(null),
+    onSuccess: () => router.refresh(),
+  });
+  const updateSettings = trpc.viewer.rooms.updateRoomSettings.useMutation({
     onSuccess: () => router.refresh(),
   });
 
@@ -66,6 +76,36 @@ export default function RoomsManager({ rooms }: { rooms: RoomRow[] }): JSX.Eleme
       <p className="mt-1 text-gray-600 text-sm">
         Edit prices (in {draft[0]?.currency ?? "EUR"}), capacity, surface and whether a room is bookable.
       </p>
+
+      <div className="mt-5 rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="font-semibold text-[#000643] text-xs uppercase tracking-wide">Booking settings</h2>
+        <p className="mt-1 text-gray-500 text-xs">
+          Turnover buffer enforced after every booking, so the next one can&apos;t start within it. Use a
+          multiple of 15 minutes (0 disables it).
+        </p>
+        <div className="mt-3 flex items-end gap-2">
+          <label className="text-sm">
+            <span className="block font-medium text-gray-700">Buffer (minutes)</span>
+            <input
+              type="number"
+              min={0}
+              max={240}
+              step={15}
+              className="mt-1 w-28 rounded-md border border-gray-200 px-2 py-1 text-sm focus:border-[#000643] focus:outline-none"
+              value={buffer}
+              onChange={(e) => setBuffer(Math.max(0, Math.min(240, Number(e.target.value))))}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => updateSettings.mutate({ bufferMinutes: buffer })}
+            disabled={updateSettings.isPending}
+            className="rounded-md bg-[#000643] px-3 py-1.5 font-semibold text-white text-xs transition hover:opacity-90 disabled:opacity-40">
+            {updateSettings.isPending ? "Saving…" : "Save buffer"}
+          </button>
+          {updateSettings.isSuccess ? <span className="text-green-600 text-xs">Saved ✓</span> : null}
+        </div>
+      </div>
 
       <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200 bg-white">
         <table className="w-full text-left text-sm">

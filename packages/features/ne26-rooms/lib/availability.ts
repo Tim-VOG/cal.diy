@@ -1,9 +1,14 @@
-import { EVENT_SCHEDULE, SELECTABLE_DURATIONS, type DurationHours } from "./eventSchedule";
+import {
+  type DurationHours,
+  EVENT_SCHEDULE,
+  SELECTABLE_DURATIONS,
+  SLOT_GRANULARITY_MS,
+} from "./eventSchedule";
 
 const MS_PER_HOUR = 60 * 60 * 1000;
 
 export interface AvailableStart {
-  /** Atomic 1h slot start, in UTC (ISO 8601). */
+  /** Atomic slot start, in UTC (ISO 8601). */
   startUtc: string;
   /** Durations (in hours) bookable from this start — a subset of [1, 2, 3]. */
   availableDurations: DurationHours[];
@@ -15,28 +20,43 @@ export interface EventDayAvailability {
 }
 
 /**
- * Compute, per event day, which (start hour, duration) combinations are still
- * bookable for one room given the atomic hours already taken.
+ * Compute, per event day, which (start, duration) combinations are still
+ * bookable for one room given the atomic slots already taken and the turnover
+ * buffer required after a booking.
  *
- * A duration is offered from a start hour only if every atomic hour it spans is
- * (a) within that day's opening window and (b) not already taken — which is how
- * overlapping 1/2/3h bookings are kept mutually exclusive (brief §4.3).
+ * A duration is offered from a start only if (a) every slot it spans is within
+ * the day's opening window and not taken, and (b) the buffer slots immediately
+ * after it are not taken — so a new booking always keeps `bufferMinutes` clear
+ * of the next one. Existing bookings reserve their own trailing buffer, so this
+ * is symmetric and the DB unique index remains the hard guarantee.
  *
- * @param takenSlotStartsUtc atomic hour starts occupied by CONFIRMED or
- *   actively-held PENDING bookings for the room (caller resolves "active hold").
+ * @param takenSlotStartsUtc slots occupied by CONFIRMED or actively-held PENDING
+ *   bookings (incl. their reserved buffer); the caller resolves "active hold".
+ * @param bufferMinutes turnover buffer required after a booking (admin setting).
  */
-export function computeAvailability(takenSlotStartsUtc: Date[]): EventDayAvailability[] {
+export function computeAvailability(
+  takenSlotStartsUtc: Date[],
+  bufferMinutes: number
+): EventDayAvailability[] {
   const taken = new Set(takenSlotStartsUtc.map((d) => d.getTime()));
+  const bufferCount = Math.max(0, Math.ceil((bufferMinutes * 60 * 1000) / SLOT_GRANULARITY_MS));
 
   return EVENT_SCHEDULE.map((day) => {
-    const openHours = new Set(day.sellableHourStartsUtc.map((d) => d.getTime()));
+    const openSlots = new Set(day.openSlotStartsUtc.map((d) => d.getTime()));
 
-    const starts: AvailableStart[] = day.sellableHourStartsUtc.map((start) => {
+    const starts: AvailableStart[] = day.openSlotStartsUtc.map((start) => {
       const startMs = start.getTime();
       const availableDurations = SELECTABLE_DURATIONS.filter((duration) => {
-        for (let hour = 0; hour < duration; hour++) {
-          const hourMs = startMs + hour * MS_PER_HOUR;
-          if (!openHours.has(hourMs) || taken.has(hourMs)) return false;
+        const slotCount = (duration * MS_PER_HOUR) / SLOT_GRANULARITY_MS;
+        // Every slot of the booking must be open (within the window) and free.
+        for (let i = 0; i < slotCount; i++) {
+          const slotMs = startMs + i * SLOT_GRANULARITY_MS;
+          if (!openSlots.has(slotMs) || taken.has(slotMs)) return false;
+        }
+        // The trailing buffer slots must be free (they may extend past close).
+        const endMs = startMs + duration * MS_PER_HOUR;
+        for (let i = 0; i < bufferCount; i++) {
+          if (taken.has(endMs + i * SLOT_GRANULARITY_MS)) return false;
         }
         return true;
       });
