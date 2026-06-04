@@ -1,8 +1,11 @@
+import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { getResourceBookingRepository } from "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container";
+import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import { CheckCircle2, Clock } from "lucide-react";
 import type { Metadata } from "next";
+import { cookies, headers } from "next/headers";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 type Params = Promise<{ uid: string }>;
 
@@ -11,16 +14,31 @@ export const metadata: Metadata = { title: "Booking confirmation · NATO Edge 26
 const TZ = "Europe/Brussels";
 
 function formatRange(start: Date, end: Date): string {
-  const day = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, weekday: "short", day: "numeric", month: "short" }).format(start);
+  const day = new Intl.DateTimeFormat("en-GB", {
+    timeZone: TZ,
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).format(start);
   const time = (d: Date) =>
-    new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: TZ,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(d);
   return `${day}, ${time(start)} – ${time(end)}`;
 }
 
 export default async function BookedPage({ params }: { params: Params }): Promise<JSX.Element> {
   const { uid } = await params;
+  const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
+  if (!session?.user?.id) redirect(`/auth/login?callbackUrl=/rooms/booked/${uid}`);
+
   const booking = await getResourceBookingRepository().findByUid(uid);
   if (!booking) notFound();
+  // Only the booker (or an admin) can see a booking's confirmation.
+  if (booking.bookerUserId !== session.user.id && session.user.role !== "ADMIN") notFound();
 
   const isConfirmed = booking.status === "CONFIRMED";
   const amount = new Intl.NumberFormat("en-GB", { style: "currency", currency: booking.currency }).format(

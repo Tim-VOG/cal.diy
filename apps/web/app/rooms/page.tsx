@@ -1,7 +1,11 @@
+import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { getRoomAvailabilityService } from "@calcom/features/ne26-rooms/di/RoomAvailabilityService.container";
+import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import { Building, Euro, Scaling, Users } from "lucide-react";
 import type { Metadata } from "next";
+import { cookies, headers } from "next/headers";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { AMENITIES } from "./amenities";
 
 export const metadata: Metadata = {
@@ -78,6 +82,10 @@ function RoomCard({ room }: { room: Room }): JSX.Element {
 }
 
 export default async function RoomsListingPage(): Promise<JSX.Element> {
+  // Rooms are exhibitor-only: require an account to browse the listing.
+  const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
+  if (!session?.user?.id) redirect("/auth/login?callbackUrl=/rooms");
+
   const rooms = await getRoomAvailabilityService().getActiveRooms();
 
   const byCategory = new Map<string, Room[]>();

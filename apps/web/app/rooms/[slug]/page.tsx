@@ -7,7 +7,7 @@ import { ErrorWithCode } from "@calcom/lib/errors";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import RoomBookingClient from "./RoomBookingClient";
 
 type Params = Promise<{ slug: string }>;
@@ -33,11 +33,14 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
 
 export default async function RoomDetailPage({ params }: { params: Params }): Promise<JSX.Element> {
   const { slug } = await params;
+  // Rooms are exhibitor-only: require an account to view a room.
+  const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
+  if (!session?.user?.id) redirect(`/auth/login?callbackUrl=/rooms/${slug}`);
+
   const data = await loadRoom(slug);
   if (!data) notFound();
 
   const addOns = await getAddOnRepository().findManyActive();
-  const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
 
-  return <RoomBookingClient availability={data} addOns={addOns} isAuthed={Boolean(session?.user?.id)} />;
+  return <RoomBookingClient availability={data} addOns={addOns} isAuthed />;
 }
