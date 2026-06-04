@@ -24,6 +24,7 @@ export const ENDPOINTS = [
   "ooo",
   "payments",
   "public",
+  "rooms",
   "timezones",
   "slots",
   "travelSchedules",
