@@ -184,6 +184,39 @@ export class ResourceBookingRepository {
     });
   }
 
+  /** A single booking with everything the admin detail view shows. */
+  findByUidForAdmin(uid: string) {
+    return this.prismaClient.resourceBooking.findUnique({
+      where: { uid },
+      select: {
+        uid: true,
+        status: true,
+        startTime: true,
+        endTime: true,
+        durationMinutes: true,
+        bookerName: true,
+        bookerEmail: true,
+        bookerUserId: true,
+        bookerCountry: true,
+        bookerVatNumber: true,
+        amountTotal: true,
+        currency: true,
+        stripePaymentId: true,
+        invoiceNumber: true,
+        invoicePdfUrl: true,
+        creditNoteNumber: true,
+        creditNotePdfUrl: true,
+        holdExpiresAt: true,
+        createdAt: true,
+        updatedAt: true,
+        resource: { select: { name: true, slug: true, category: true } },
+        addOns: {
+          select: { quantity: true, unitPrice: true, lineTotal: true, addOn: { select: { name: true } } },
+        },
+      },
+    });
+  }
+
   /** All bookings with room + add-on details, for the admin dashboard. */
   findAllWithDetails() {
     return this.prismaClient.resourceBooking.findMany({

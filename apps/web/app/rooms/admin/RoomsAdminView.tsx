@@ -229,7 +229,9 @@ export default function RoomsAdminView({ rows }: { rows: AdminBookingRow[] }): J
               filtered.map((r) => (
                 <tr key={r.uid} className="border-gray-50 border-b last:border-0">
                   <td className="px-3 py-2">
-                    <div className="font-medium">{r.roomName}</div>
+                    <a href={`/rooms/admin/${r.uid}`} className="font-medium text-[#000643] hover:underline">
+                      {r.roomName}
+                    </a>
                     <div className="text-gray-400 text-xs">{r.category}</div>
                   </td>
                   <td className="px-3 py-2">
