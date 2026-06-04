@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 import type { InvoiceModel } from "./invoice";
+import { INVOICE_LOGO_PNG_BASE64, INVOICE_LOGO_PNG_HEIGHT, INVOICE_LOGO_PNG_WIDTH } from "./invoiceLogo";
 
 const TZ = "Europe/Brussels";
 const NAVY = rgb(0, 6 / 255, 67 / 255); // #000643
@@ -53,15 +54,25 @@ export async function renderInvoicePdf(model: InvoiceModel, meta: InvoiceMeta): 
   const textRight = (s: string, xRight: number, yy: number, size = 10, f = font, color = rgb(0, 0, 0)) =>
     page.drawText(ascii(s), { x: xRight - f.widthOfTextAtSize(ascii(s), size), y: yy, size, font: f, color });
 
-  // Header
-  text("VO Group SA", left, y, 18, bold, NAVY);
-  textRight("INVOICE", right, y, 18, bold, NAVY);
-  y -= 16;
-  text("NATO Edge 26 - Meeting Rooms", left, y, 9, font, GREY);
-  textRight(meta.invoiceNumber, right, y, 10, bold);
-  y -= 12;
-  text("VAT: BE 0xxx.xxx.xxx", left, y, 9, font, GREY);
-  textRight(`Date: ${dt(meta.issueDate)}`, right, y, 9, font, GREY);
+  // Header — logo top-left (text fallback if the image can't embed), meta top-right
+  const logoW = 130;
+  const logoH = (logoW * INVOICE_LOGO_PNG_HEIGHT) / INVOICE_LOGO_PNG_WIDTH;
+  try {
+    const logo = await doc.embedPng(Buffer.from(INVOICE_LOGO_PNG_BASE64, "base64"));
+    page.drawImage(logo, { x: left, y: y - logoH, width: logoW, height: logoH });
+  } catch {
+    text("VO EUROPE SA", left, y - 14, 18, bold, NAVY);
+  }
+  textRight("INVOICE", right, y - 2, 18, bold, NAVY);
+  textRight(meta.invoiceNumber, right, y - 20, 10, bold);
+  textRight(`Date: ${dt(meta.issueDate)}`, right, y - 33, 9, font, GREY);
+
+  // Issuer (placeholder until admin company settings are wired)
+  y -= logoH + 14;
+  text("VO EUROPE SA", left, y, 9, bold);
+  textRight("NATO Edge 26 - Meeting Rooms", right, y, 9, font, GREY);
+  y -= 11;
+  text("VAT BE 0xxx.xxx.xxx", left, y, 8, font, GREY);
 
   // Bill to
   y -= 36;
@@ -110,7 +121,7 @@ export async function renderInvoicePdf(model: InvoiceModel, meta: InvoiceMeta): 
 
   // Footer
   text("Paid via Stripe. This invoice was generated automatically.", left, 70, 8, font, GREY);
-  text("VO Group SA - NATO Edge 26 - rooms.vo-eu.be", left, 58, 8, font, GREY);
+  text("VO EUROPE SA - NATO Edge 26 - rooms.vo-eu.be", left, 58, 8, font, GREY);
 
   return doc.save();
 }
