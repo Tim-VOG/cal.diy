@@ -164,6 +164,48 @@ export class ResourceBookingService {
     return count > 0;
   }
 
+  /**
+   * Admin: block a room on a slot (maintenance / internal use). Occupies the
+   * atomic hours like a confirmed booking — the DB rejects a block that overlaps
+   * an existing booking (surfaced as a BookingConflict).
+   */
+  async createBlock(input: { slug: string; startUtc: Date; durationHours: DurationHours }): Promise<void> {
+    const room = await this.deps.resourceRepository.findBySlug(input.slug);
+    if (!room) throw new ErrorWithCode(ErrorCode.NotFound, `Room "${input.slug}" not found`);
+
+    const durationMinutes = input.durationHours * 60;
+    const slotStarts = getAtomicSlotStarts(input.startUtc, durationMinutes);
+    for (const slot of slotStarts) {
+      if (!SELLABLE_HOUR_MS.has(slot.getTime())) {
+        throw new ErrorWithCode(ErrorCode.BadRequest, "Selected time is outside the event opening hours.");
+      }
+    }
+    const endTime = new Date(input.startUtc.getTime() + durationMinutes * MS_PER_MINUTE);
+
+    await this.deps.resourceBookingRepository.createWithSlots({
+      resourceId: room.id,
+      startTime: input.startUtc,
+      endTime,
+      durationMinutes,
+      slotStarts,
+      bookerEmail: "block@ne26.internal",
+      bookerName: "BLOCKED (admin)",
+      amountTotal: 0,
+      currency: room.currency,
+      status: ResourceBookingStatus.CONFIRMED,
+      isBlock: true,
+    });
+  }
+
+  listBlocks() {
+    return this.deps.resourceBookingRepository.findBlocks();
+  }
+
+  async removeBlock(uid: string): Promise<boolean> {
+    const count = await this.deps.resourceBookingRepository.removeBlockByUid(uid);
+    return count > 0;
+  }
+
   /** Persist billing details collected by Stripe Checkout (before confirming). */
   async applyCheckoutBilling(input: {
     bookingUid: string;

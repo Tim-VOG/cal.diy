@@ -1,6 +1,7 @@
 import authedProcedure, { authedAdminProcedure } from "../../../procedures/authedProcedure";
 import { router } from "../../../trpc";
 import { ZBookingUidInputSchema } from "./bookingUid.schema";
+import { ZCreateBlockInputSchema } from "./createBlock.schema";
 import { ZCreateBookingInputSchema } from "./createBooking.schema";
 import { ZIssueCreditNoteInputSchema } from "./issueCreditNote.schema";
 import { ZPreviewVatInputSchema } from "./previewVat.schema";
@@ -120,6 +121,36 @@ export const roomsRouter = router({
     const { getAddOnRepository } = await import("@calcom/features/ne26-rooms/di/AddOnRepository.container");
     const { id, ...data } = input;
     return getAddOnRepository().update(id, data);
+  }),
+
+  // Admin-only: current room blocks (maintenance / internal use).
+  listBlocks: authedAdminProcedure.query(async () => {
+    const { getResourceBookingService } = await import(
+      "@calcom/features/ne26-rooms/di/ResourceBookingService.container"
+    );
+    return getResourceBookingService().listBlocks();
+  }),
+
+  // Admin-only: block a room on a slot (rejected if it overlaps a booking).
+  createBlock: authedAdminProcedure.input(ZCreateBlockInputSchema).mutation(async ({ input }) => {
+    const { getResourceBookingService } = await import(
+      "@calcom/features/ne26-rooms/di/ResourceBookingService.container"
+    );
+    await getResourceBookingService().createBlock({
+      slug: input.slug,
+      startUtc: new Date(input.startUtc),
+      durationHours: input.durationHours,
+    });
+    return { created: true };
+  }),
+
+  // Admin-only: remove a room block and free its slots.
+  removeBlock: authedAdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
+    const { getResourceBookingService } = await import(
+      "@calcom/features/ne26-rooms/di/ResourceBookingService.container"
+    );
+    const removed = await getResourceBookingService().removeBlock(input.uid);
+    return { removed };
   }),
 
   // Create a PENDING NE26 room booking with a temporary hold, then open a Stripe

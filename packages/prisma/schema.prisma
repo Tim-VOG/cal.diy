@@ -2937,6 +2937,9 @@ model ResourceBooking {
   invoicePdfUrl    String?
   creditNoteNumber String?               @unique
   creditNotePdfUrl String?
+  // Admin block (maintenance / internal use): occupies the slots like a CONFIRMED
+  // booking but is not a real sale (excluded from the bookings list and revenue).
+  isBlock          Boolean               @default(false)
   slots            ResourceSlot[]
   addOns           BookingAddOn[]
   createdAt        DateTime              @default(now())

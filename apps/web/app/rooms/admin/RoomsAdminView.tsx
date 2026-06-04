@@ -219,6 +219,11 @@ export default function RoomsAdminView({ rows }: { rows: AdminBookingRow[] }): J
             Manage add-ons
           </a>
           <a
+            href="/rooms/admin/blocks"
+            className="rounded-lg border border-gray-200 px-4 py-2 font-semibold text-[#000643] text-sm transition hover:border-[#000643]">
+            Blocked slots
+          </a>
+          <a
             href="/rooms/admin/settings"
             className="rounded-lg border border-gray-200 px-4 py-2 font-semibold text-[#000643] text-sm transition hover:border-[#000643]">
             Invoice settings

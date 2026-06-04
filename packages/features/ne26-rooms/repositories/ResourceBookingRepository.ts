@@ -20,6 +20,8 @@ export interface CreateResourceBookingWithSlotsInput {
   currency?: string;
   status?: ResourceBookingStatus;
   holdExpiresAt?: Date | null;
+  /** Admin block rather than a real sale. */
+  isBlock?: boolean;
   /** Add-on lines, with prices already frozen by the caller. */
   addOns?: { addOnId: number; quantity: number; unitPrice: number; lineTotal: number }[];
 }
@@ -70,6 +72,7 @@ export class ResourceBookingRepository {
             currency: input.currency,
             status: input.status,
             holdExpiresAt: input.holdExpiresAt ?? null,
+            isBlock: input.isBlock ?? false,
           },
           select: {
             id: true,
@@ -249,9 +252,10 @@ export class ResourceBookingRepository {
     });
   }
 
-  /** All bookings with room + add-on details, for the admin dashboard. */
+  /** All real bookings (excluding admin blocks) with details, for the dashboard. */
   findAllWithDetails() {
     return this.prismaClient.resourceBooking.findMany({
+      where: { isBlock: false },
       orderBy: [{ startTime: "asc" }, { createdAt: "asc" }],
       select: {
         uid: true,
@@ -352,5 +356,28 @@ export class ResourceBookingRepository {
       }
       return result.count;
     });
+  }
+
+  /** All current admin blocks (room + period), most recent first. */
+  findBlocks() {
+    return this.prismaClient.resourceBooking.findMany({
+      where: { isBlock: true, status: ResourceBookingStatus.CONFIRMED },
+      orderBy: [{ startTime: "asc" }],
+      select: {
+        uid: true,
+        startTime: true,
+        endTime: true,
+        durationMinutes: true,
+        resource: { select: { name: true } },
+      },
+    });
+  }
+
+  /** Delete an admin block and free its slots (cascade). No-op for non-blocks. */
+  async removeBlockByUid(uid: string): Promise<number> {
+    const result = await this.prismaClient.resourceBooking.deleteMany({
+      where: { uid, isBlock: true },
+    });
+    return result.count;
   }
 }
