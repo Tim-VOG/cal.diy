@@ -2990,3 +2990,20 @@ model BookingAddOn {
   @@index([bookingId])
   @@index([addOnId])
 }
+
+// Singleton issuer/company details for NE26 invoices (admin-editable).
+model Ne26InvoiceSettings {
+  id           Int      @id @default(1)
+  legalName    String   @default("VO EUROPE SA")
+  vatNumber    String   @default("")
+  addressLine1 String   @default("")
+  addressLine2 String   @default("")
+  postalCode   String   @default("")
+  city         String   @default("")
+  country      String   @default("Belgium")
+  iban         String   @default("")
+  bic          String   @default("")
+  contactEmail String   @default("")
+  legalFooter  String   @default("")
+  updatedAt    DateTime @updatedAt
+}

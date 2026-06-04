@@ -4,10 +4,12 @@ import { buildInvoiceModel } from "../lib/invoice";
 import { renderInvoicePdf } from "../lib/invoicePdf";
 import { saveInvoicePdf } from "../lib/invoiceStorage";
 import { sendInvoiceEmail } from "../lib/mailer";
+import type { InvoiceSettingsRepository } from "../repositories/InvoiceSettingsRepository";
 import type { ResourceBookingRepository } from "../repositories/ResourceBookingRepository";
 
 export interface IInvoiceServiceDeps {
   resourceBookingRepository: ResourceBookingRepository;
+  invoiceSettingsRepository: InvoiceSettingsRepository;
 }
 
 export class InvoiceService {
@@ -36,15 +38,20 @@ export class InvoiceService {
     });
 
     const invoiceNumber = await this.deps.resourceBookingRepository.allocateInvoiceNumber();
-    const pdf = await renderInvoicePdf(model, {
-      invoiceNumber,
-      issueDate: new Date(),
-      bookerName: booking.bookerName,
-      bookerEmail: booking.bookerEmail,
-      roomName: booking.resource.name,
-      startUtc: booking.startTime,
-      endUtc: booking.endTime,
-    });
+    const issuer = await this.deps.invoiceSettingsRepository.get();
+    const pdf = await renderInvoicePdf(
+      model,
+      {
+        invoiceNumber,
+        issueDate: new Date(),
+        bookerName: booking.bookerName,
+        bookerEmail: booking.bookerEmail,
+        roomName: booking.resource.name,
+        startUtc: booking.startTime,
+        endUtc: booking.endTime,
+      },
+      issuer
+    );
 
     await saveInvoicePdf(uid, pdf);
     // Persist before emailing: the invoice now exists (idempotency anchor); a

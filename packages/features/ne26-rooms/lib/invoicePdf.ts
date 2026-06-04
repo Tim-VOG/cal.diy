@@ -17,6 +17,19 @@ export interface InvoiceMeta {
   endUtc: Date;
 }
 
+export interface InvoiceIssuer {
+  legalName: string;
+  vatNumber: string;
+  addressLine1: string;
+  addressLine2: string;
+  postalCode: string;
+  city: string;
+  country: string;
+  iban: string;
+  bic: string;
+  legalFooter: string;
+}
+
 // pdf-lib's standard fonts use WinAnsi; keep text to safe characters.
 function ascii(s: string): string {
   return s.replace(/—|–/g, "-").replace(/×/g, "x").replace(/[^\x20-\x7E]/g, "");
@@ -39,7 +52,11 @@ function dt(d: Date): string {
   }).format(d);
 }
 
-export async function renderInvoicePdf(model: InvoiceModel, meta: InvoiceMeta): Promise<Uint8Array> {
+export async function renderInvoicePdf(
+  model: InvoiceModel,
+  meta: InvoiceMeta,
+  issuer: InvoiceIssuer
+): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const page = doc.addPage([595, 842]); // A4
   const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -61,18 +78,26 @@ export async function renderInvoicePdf(model: InvoiceModel, meta: InvoiceMeta): 
     const logo = await doc.embedPng(Buffer.from(INVOICE_LOGO_PNG_BASE64, "base64"));
     page.drawImage(logo, { x: left, y: y - logoH, width: logoW, height: logoH });
   } catch {
-    text("VO EUROPE SA", left, y - 14, 18, bold, NAVY);
+    text(issuer.legalName, left, y - 14, 18, bold, NAVY);
   }
   textRight("INVOICE", right, y - 2, 18, bold, NAVY);
   textRight(meta.invoiceNumber, right, y - 20, 10, bold);
   textRight(`Date: ${dt(meta.issueDate)}`, right, y - 33, 9, font, GREY);
 
-  // Issuer (placeholder until admin company settings are wired)
+  // Issuer details (from admin company settings)
   y -= logoH + 14;
-  text("VO EUROPE SA", left, y, 9, bold);
+  text(issuer.legalName, left, y, 9, bold);
   textRight("NATO Edge 26 - Meeting Rooms", right, y, 9, font, GREY);
-  y -= 11;
-  text("VAT BE 0xxx.xxx.xxx", left, y, 8, font, GREY);
+  const issuerLines = [
+    [issuer.addressLine1, issuer.addressLine2].filter(Boolean).join(", "),
+    [issuer.postalCode, issuer.city].filter(Boolean).join(" "),
+    issuer.country,
+    issuer.vatNumber ? `VAT ${issuer.vatNumber}` : "",
+  ].filter(Boolean);
+  for (const line of issuerLines) {
+    y -= 10;
+    text(line, left, y, 8, font, GREY);
+  }
 
   // Bill to
   y -= 36;
@@ -120,8 +145,11 @@ export async function renderInvoicePdf(model: InvoiceModel, meta: InvoiceMeta): 
   textRight(money(model.totalTtc, model.currency), colTtc, y, 11, bold, NAVY);
 
   // Footer
-  text("Paid via Stripe. This invoice was generated automatically.", left, 70, 8, font, GREY);
-  text("VO EUROPE SA - NATO Edge 26 - rooms.vo-eu.be", left, 58, 8, font, GREY);
+  const bankLine = issuer.iban ? `IBAN ${issuer.iban}${issuer.bic ? ` · BIC ${issuer.bic}` : ""}` : "";
+  const footer = issuer.legalFooter || `${issuer.legalName} - NATO Edge 26 - rooms.vo-eu.be`;
+  text("Paid via Stripe. This invoice was generated automatically.", left, 82, 8, font, GREY);
+  if (bankLine) text(bankLine, left, 70, 8, font, GREY);
+  text(footer, left, 58, 8, font, GREY);
 
   return doc.save();
 }

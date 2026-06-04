@@ -1,8 +1,17 @@
-import authedProcedure from "../../../procedures/authedProcedure";
+import authedProcedure, { authedAdminProcedure } from "../../../procedures/authedProcedure";
 import { router } from "../../../trpc";
 import { ZCreateBookingInputSchema } from "./createBooking.schema";
+import { ZUpdateInvoiceSettingsInputSchema } from "./updateInvoiceSettings.schema";
 
 export const roomsRouter = router({
+  // Admin-only: update the issuer/company details printed on invoices.
+  updateInvoiceSettings: authedAdminProcedure.input(ZUpdateInvoiceSettingsInputSchema).mutation(async ({ input }) => {
+    const { getInvoiceSettingsRepository } = await import(
+      "@calcom/features/ne26-rooms/di/InvoiceSettingsRepository.container"
+    );
+    return getInvoiceSettingsRepository().update(input);
+  }),
+
   // Create a PENDING NE26 room booking with a temporary hold, then open a Stripe
   // Checkout session for it and return the URL to redirect the booker to.
   // Requires login; the booker identity comes from the session.

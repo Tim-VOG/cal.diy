@@ -20,6 +20,17 @@ describe("renderInvoicePdf", () => {
       roomName: "Suite 1",
       startUtc: new Date("2026-11-17T13:00:00.000Z"),
       endUtc: new Date("2026-11-17T15:00:00.000Z"),
+    }, {
+      legalName: "VO EUROPE SA",
+      vatNumber: "BE 0123.456.789",
+      addressLine1: "Rue Example 1",
+      addressLine2: "",
+      postalCode: "1000",
+      city: "Brussels",
+      country: "Belgium",
+      iban: "BE00 0000 0000 0000",
+      bic: "GEBABEBB",
+      legalFooter: "",
     });
 
     expect(new TextDecoder().decode(bytes.slice(0, 5))).toBe("%PDF-");

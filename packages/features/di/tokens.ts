@@ -75,6 +75,8 @@ export const DI_TOKENS = {
   STRIPE_CHECKOUT_SERVICE_MODULE: Symbol("StripeCheckoutServiceModule"),
   INVOICE_SERVICE: Symbol("InvoiceService"),
   INVOICE_SERVICE_MODULE: Symbol("InvoiceServiceModule"),
+  INVOICE_SETTINGS_REPOSITORY: Symbol("InvoiceSettingsRepository"),
+  INVOICE_SETTINGS_REPOSITORY_MODULE: Symbol("InvoiceSettingsRepositoryModule"),
   DESTINATION_CALENDAR_REPOSITORY: Symbol("DestinationCalendarRepository"),
   DESTINATION_CALENDAR_REPOSITORY_MODULE: Symbol("DestinationCalendarRepositoryModule"),
   MANAGED_EVENT_REASSIGNMENT_SERVICE: Symbol("ManagedEventReassignmentService"),
