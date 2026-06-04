@@ -2,9 +2,28 @@ import authedProcedure, { authedAdminProcedure } from "../../../procedures/authe
 import { router } from "../../../trpc";
 import { ZCreateBookingInputSchema } from "./createBooking.schema";
 import { ZIssueCreditNoteInputSchema } from "./issueCreditNote.schema";
+import { ZUpdateBillingProfileInputSchema } from "./updateBillingProfile.schema";
 import { ZUpdateInvoiceSettingsInputSchema } from "./updateInvoiceSettings.schema";
 
 export const roomsRouter = router({
+  // The signed-in exhibitor's saved billing details (null until they fill them in).
+  getBillingProfile: authedProcedure.query(async ({ ctx }) => {
+    const { getNe26BillingProfileRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26BillingProfileRepository.container"
+    );
+    return getNe26BillingProfileRepository().findByUserId(ctx.user.id);
+  }),
+
+  // Create or update the signed-in exhibitor's billing profile (reused at checkout).
+  updateBillingProfile: authedProcedure
+    .input(ZUpdateBillingProfileInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { getNe26BillingProfileRepository } = await import(
+        "@calcom/features/ne26-rooms/di/Ne26BillingProfileRepository.container"
+      );
+      return getNe26BillingProfileRepository().upsertByUserId(ctx.user.id, input);
+    }),
+
   // Admin-only: update the issuer/company details printed on invoices.
   updateInvoiceSettings: authedAdminProcedure
     .input(ZUpdateInvoiceSettingsInputSchema)

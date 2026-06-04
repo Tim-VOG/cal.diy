@@ -14,7 +14,12 @@ export default function RoomsLayout({ children }: { children: ReactNode }) {
             {/* biome-ignore lint/performance/noImgElement: static brand SVG, next/image adds no value here */}
             <img src="/NE26-WHITE.svg" alt="NATO Edge 26" className="h-9 w-auto" />
           </Link>
-          <span className="text-sm opacity-70">17–19 November 2026</span>
+          <div className="flex items-center gap-5">
+            <Link href="/rooms/account" className="text-sm opacity-80 transition hover:opacity-100">
+              Billing details
+            </Link>
+            <span className="text-sm opacity-70">17–19 November 2026</span>
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-5xl px-6 py-8">{children}</main>
