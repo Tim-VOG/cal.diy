@@ -38,7 +38,7 @@ function fmtDateTime(iso: string): string {
 
 // All sellable 1h starts across the event, as <option>s for the block form.
 const START_OPTIONS = EVENT_SCHEDULE.flatMap((day) =>
-  day.sellableHourStartsUtc.map((d) => ({ iso: d.toISOString(), label: fmtDateTime(d.toISOString()) }))
+  day.openSlotStartsUtc.map((d) => ({ iso: d.toISOString(), label: fmtDateTime(d.toISOString()) }))
 );
 
 const inputClass =

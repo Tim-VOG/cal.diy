@@ -1,20 +1,16 @@
 import { ErrorCode } from "@calcom/lib/errorCodes";
 import { ErrorWithCode } from "@calcom/lib/errors";
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
-import { getAtomicSlotStarts } from "../lib/atomicSlots";
-import { type DurationHours, EVENT_SCHEDULE } from "../lib/eventSchedule";
+import { getAtomicSlotStarts, getBufferSlotStarts } from "../lib/atomicSlots";
+import { type DurationHours, OPEN_SLOT_MS } from "../lib/eventSchedule";
 import { computeAddOnLine } from "../lib/pricing";
 import type { AddOnRepository } from "../repositories/AddOnRepository";
+import type { Ne26RoomSettingsRepository } from "../repositories/Ne26RoomSettingsRepository";
 import type { ResourceBookingRepository } from "../repositories/ResourceBookingRepository";
 import type { ResourceRepository } from "../repositories/ResourceRepository";
 
 const HOLD_MINUTES = 15;
 const MS_PER_MINUTE = 60 * 1000;
-
-// Every atomic hour that is actually open for booking across the event.
-const SELLABLE_HOUR_MS = new Set(
-  EVENT_SCHEDULE.flatMap((day) => day.sellableHourStartsUtc.map((d) => d.getTime()))
-);
 
 // Human, Brussels-time slot label for the Stripe Checkout line (e.g.
 // "Tue 17 Nov 2026, 14:00–16:00 (Europe/Brussels)").
@@ -40,6 +36,7 @@ export interface IResourceBookingServiceDeps {
   resourceRepository: ResourceRepository;
   addOnRepository: AddOnRepository;
   resourceBookingRepository: ResourceBookingRepository;
+  ne26RoomSettingsRepository: Ne26RoomSettingsRepository;
 }
 
 export interface CreateBookingInput {
@@ -89,10 +86,15 @@ export class ResourceBookingService {
     const durationMinutes = input.durationHours * 60;
     const slotStarts = getAtomicSlotStarts(input.startUtc, durationMinutes);
     for (const slot of slotStarts) {
-      if (!SELLABLE_HOUR_MS.has(slot.getTime())) {
+      if (!OPEN_SLOT_MS.has(slot.getTime())) {
         throw new ErrorWithCode(ErrorCode.BadRequest, "Selected time is outside the event opening hours.");
       }
     }
+    // Reserve the turnover buffer after the booking so the next one can't start
+    // within it. Added to the slot set, so the DB unique index enforces the gap.
+    const { bufferMinutes } = await this.deps.ne26RoomSettingsRepository.get();
+    const bufferSlots = getBufferSlotStarts(input.startUtc, durationMinutes, bufferMinutes);
+
     const endTime = new Date(input.startUtc.getTime() + durationMinutes * MS_PER_MINUTE);
     const roomPrice = { 1: room.price1h, 2: room.price2h, 3: room.price3h }[input.durationHours];
 
@@ -115,7 +117,7 @@ export class ResourceBookingService {
       startTime: input.startUtc,
       endTime,
       durationMinutes,
-      slotStarts,
+      slotStarts: [...slotStarts, ...bufferSlots],
       bookerUserId: input.booker.userId,
       bookerEmail: input.booker.email,
       bookerName: input.booker.name,
@@ -176,7 +178,7 @@ export class ResourceBookingService {
     const durationMinutes = input.durationHours * 60;
     const slotStarts = getAtomicSlotStarts(input.startUtc, durationMinutes);
     for (const slot of slotStarts) {
-      if (!SELLABLE_HOUR_MS.has(slot.getTime())) {
+      if (!OPEN_SLOT_MS.has(slot.getTime())) {
         throw new ErrorWithCode(ErrorCode.BadRequest, "Selected time is outside the event opening hours.");
       }
     }

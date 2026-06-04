@@ -1,4 +1,5 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
+import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
 import { getResourceRepository } from "@calcom/features/ne26-rooms/di/ResourceRepository.container";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
@@ -16,9 +17,13 @@ export default async function ManageRoomsPage(): Promise<JSX.Element> {
   if (!session?.user?.id) redirect("/rooms/login?callbackUrl=/rooms/admin/rooms");
   if (session.user.role !== "ADMIN") notFound();
 
-  const rooms = await getResourceRepository().findAllForAdmin();
+  const [rooms, roomSettings] = await Promise.all([
+    getResourceRepository().findAllForAdmin(),
+    getNe26RoomSettingsRepository().get(),
+  ]);
   return (
     <RoomsManager
+      bufferMinutes={roomSettings.bufferMinutes}
       rooms={rooms.map((r) => ({
         id: r.id,
         name: r.name,

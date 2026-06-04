@@ -3032,6 +3032,16 @@ model Ne26InvoiceSettings {
   updatedAt              DateTime @updatedAt
 }
 
+// Singleton booking configuration for NE26 rooms (admin-editable).
+model Ne26RoomSettings {
+  id            Int      @id @default(1)
+  // Turnover buffer in minutes required after each booking; reserved as slots so
+  // the next booking can't start within it. Should be a multiple of the slot
+  // granularity (15 min).
+  bufferMinutes Int      @default(15)
+  updatedAt     DateTime @updatedAt
+}
+
 // Exhibitor billing details, entered once on the account and reused at checkout.
 model Ne26BillingProfile {
   id               Int      @id @default(autoincrement())

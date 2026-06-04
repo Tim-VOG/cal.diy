@@ -1,7 +1,7 @@
 import { bindModuleToClassOnToken, createModule, type ModuleLoader } from "@calcom/features/di/di";
 import { DI_TOKENS } from "@calcom/features/di/tokens";
 import { RoomAvailabilityService } from "@calcom/features/ne26-rooms/services/RoomAvailabilityService";
-
+import { moduleLoader as ne26RoomSettingsRepositoryModuleLoader } from "./Ne26RoomSettingsRepository.module";
 import { moduleLoader as resourceBookingRepositoryModuleLoader } from "./ResourceBookingRepository.module";
 import { moduleLoader as resourceRepositoryModuleLoader } from "./ResourceRepository.module";
 
@@ -17,6 +17,7 @@ const loadModule = bindModuleToClassOnToken({
   depsMap: {
     resourceRepository: resourceRepositoryModuleLoader,
     resourceBookingRepository: resourceBookingRepositoryModuleLoader,
+    ne26RoomSettingsRepository: ne26RoomSettingsRepositoryModuleLoader,
   },
 });
 

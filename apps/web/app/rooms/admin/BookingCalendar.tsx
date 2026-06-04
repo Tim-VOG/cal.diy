@@ -1,6 +1,6 @@
 "use client";
 
-import { EVENT_SCHEDULE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
+import { EVENT_SCHEDULE, SLOT_GRANULARITY_MINUTES } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import type { AdminBookingRow } from "./RoomsAdminView";
 
 const TZ = "Europe/Brussels";
@@ -42,7 +42,7 @@ export default function BookingCalendar({
   return (
     <div className="space-y-8">
       {EVENT_SCHEDULE.map((day) => {
-        const hours = day.sellableHourStartsUtc.map((d) => d.toISOString());
+        const hours = day.openSlotStartsUtc.map((d) => d.toISOString());
         // A booking starts on one of the day's sellable hours; index by room + start.
         const byRoomStart = new Map<string, AdminBookingRow>();
         for (const row of rows) {
@@ -73,7 +73,10 @@ export default function BookingCalendar({
                     while (i < hours.length) {
                       const booking = byRoomStart.get(`${room}|${hours[i]}`);
                       if (booking) {
-                        const span = Math.max(1, Math.min(booking.durationMinutes / 60, hours.length - i));
+                        const span = Math.max(
+                          1,
+                          Math.min(booking.durationMinutes / SLOT_GRANULARITY_MINUTES, hours.length - i)
+                        );
                         const selected = booking.uid === selectedUid;
                         cells.push(
                           <td key={hours[i]} colSpan={span} className="border-gray-100 border-b p-1">
