@@ -27,7 +27,7 @@ export interface CreateBookingInput {
   slug: string;
   startUtc: Date;
   durationHours: DurationHours;
-  booker: { userId: number; email: string; name: string; country?: string; vatNumber?: string };
+  booker: { userId: number; email: string; name: string };
   addOns?: { slug: string; quantity: number }[];
 }
 
@@ -78,8 +78,6 @@ export class ResourceBookingService {
       bookerUserId: input.booker.userId,
       bookerEmail: input.booker.email,
       bookerName: input.booker.name,
-      bookerCountry: input.booker.country ?? null,
-      bookerVatNumber: input.booker.vatNumber ?? null,
       amountTotal,
       currency: room.currency,
       status: ResourceBookingStatus.PENDING,
@@ -98,6 +96,20 @@ export class ResourceBookingService {
   async confirmPayment(input: { bookingUid: string; stripePaymentId: string }): Promise<boolean> {
     const count = await this.deps.resourceBookingRepository.markConfirmedByUid(input.bookingUid, input.stripePaymentId);
     return count > 0;
+  }
+
+  /** Persist billing details collected by Stripe Checkout (before confirming). */
+  async applyCheckoutBilling(input: {
+    bookingUid: string;
+    country: string | null;
+    vatNumber: string | null;
+    name: string | null;
+  }): Promise<void> {
+    await this.deps.resourceBookingRepository.updateBillingFromCheckout(input.bookingUid, {
+      country: input.country,
+      vatNumber: input.vatNumber,
+      name: input.name,
+    });
   }
 
   private async resolveAddOnLines(

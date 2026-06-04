@@ -12,6 +12,7 @@ export interface CreateCheckoutSessionInput {
   productName: string;
   successUrl: string;
   cancelUrl: string;
+  customerEmail?: string;
 }
 
 /**
@@ -51,6 +52,10 @@ export class StripeCheckoutService {
       ],
       metadata,
       payment_intent_data: { metadata },
+      // Collect billing details here — the single source for the invoice + VAT.
+      billing_address_collection: "required",
+      tax_id_collection: { enabled: true },
+      customer_email: input.customerEmail,
       success_url: input.successUrl,
       cancel_url: input.cancelUrl,
     });

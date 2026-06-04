@@ -1,6 +1,5 @@
 "use client";
 
-import { COUNTRY_OPTIONS } from "@calcom/features/ne26-rooms/lib/countries";
 import type { DurationHours } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { computeAddOnLine } from "@calcom/features/ne26-rooms/lib/pricing";
 import type { RoomAvailability } from "@calcom/features/ne26-rooms/services/RoomAvailabilityService";
@@ -270,8 +269,6 @@ export default function RoomBookingClient({
   const [selectedStartUtc, setSelectedStartUtc] = useState<string | null>(null);
   const [selectedDuration, setSelectedDuration] = useState<DurationHours | null>(null);
   const [selectedAddOns, setSelectedAddOns] = useState<Record<string, number>>({});
-  const [country, setCountry] = useState("");
-  const [vatNumber, setVatNumber] = useState("");
 
   const createBooking = trpc.viewer.rooms.createBooking.useMutation();
 
@@ -297,7 +294,7 @@ export default function RoomBookingClient({
   }
   const addOnTotal = addOnLines.reduce((sum, line) => sum + line.lineTotal, 0);
   const total = selectedDuration ? priceForDuration[selectedDuration] + addOnTotal : null;
-  const canBook = Boolean(selectedStartUtc && selectedDuration && country) && !createBooking.isPending;
+  const canBook = Boolean(selectedStartUtc && selectedDuration) && !createBooking.isPending;
 
   function pickStart(startUtc: string, availableDurations: DurationHours[]): void {
     setSelectedStartUtc(startUtc);
@@ -319,14 +316,12 @@ export default function RoomBookingClient({
   }
 
   function submit(): void {
-    if (!selectedStartUtc || !selectedDuration || !country) return;
+    if (!selectedStartUtc || !selectedDuration) return;
     createBooking.mutate(
       {
         slug: room.slug,
         startUtc: selectedStartUtc,
         durationHours: selectedDuration,
-        country,
-        vatNumber: vatNumber.trim() || undefined,
         addOns: Object.entries(selectedAddOns).map(([slug, quantity]) => ({ slug, quantity })),
       },
       {
@@ -430,35 +425,6 @@ export default function RoomBookingClient({
         ) : null}
 
         <AddOnList addOns={addOns} selected={selectedAddOns} onToggle={toggleAddOn} onSetQuantity={setQuantity} />
-
-        {/* Billing details — drive the invoice VAT treatment */}
-        <h2 className="mt-6 font-semibold text-gray-500 text-sm uppercase tracking-wide">Billing</h2>
-        <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label>
-            <span className="text-gray-600 text-sm">Country *</span>
-            <select
-              value={country}
-              onChange={(e) => setCountry(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#000643] focus:outline-none">
-              <option value="">Select your country…</option>
-              {COUNTRY_OPTIONS.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="text-gray-600 text-sm">VAT number (optional)</span>
-            <input
-              type="text"
-              value={vatNumber}
-              onChange={(e) => setVatNumber(e.target.value)}
-              placeholder="e.g. BE0123456789"
-              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#000643] focus:outline-none"
-            />
-          </label>
-        </div>
       </div>
 
       <SelectionSummary

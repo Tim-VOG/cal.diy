@@ -29,7 +29,19 @@ export async function POST(req: Request): Promise<Response> {
     if (session.metadata?.source === "ne26-rooms" && bookingUid) {
       const stripePaymentId =
         typeof session.payment_intent === "string" ? session.payment_intent : (session.payment_intent?.id ?? session.id);
-      const confirmed = await getResourceBookingService().confirmPayment({ bookingUid, stripePaymentId });
+      const bookingService = getResourceBookingService();
+
+      // Persist the billing details Stripe collected (drives the invoice + VAT)
+      // before confirming, while the booking is still PENDING.
+      const details = session.customer_details;
+      await bookingService.applyCheckoutBilling({
+        bookingUid,
+        country: details?.address?.country ?? null,
+        vatNumber: details?.tax_ids?.[0]?.value ?? null,
+        name: details?.name ?? null,
+      });
+
+      const confirmed = await bookingService.confirmPayment({ bookingUid, stripePaymentId });
       if (confirmed) {
         // Best-effort invoicing: a failed PDF/email must not fail the webhook
         // (payment is already confirmed) — log it for resend instead.

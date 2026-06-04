@@ -167,6 +167,21 @@ export class ResourceBookingRepository {
     return result.count;
   }
 
+  /** Store the billing details Stripe Checkout collected, on the still-held booking. */
+  async updateBillingFromCheckout(
+    uid: string,
+    data: { country: string | null; vatNumber: string | null; name: string | null }
+  ): Promise<void> {
+    await this.prismaClient.resourceBooking.updateMany({
+      where: { uid, status: ResourceBookingStatus.PENDING },
+      data: {
+        bookerCountry: data.country ?? undefined,
+        bookerVatNumber: data.vatNumber ?? undefined,
+        ...(data.name ? { bookerName: data.name } : {}),
+      },
+    });
+  }
+
   /** All bookings with room + add-on details, for the admin dashboard. */
   findAllWithDetails() {
     return this.prismaClient.resourceBooking.findMany({

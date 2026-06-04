@@ -28,13 +28,7 @@ export const roomsRouter = router({
       slug: input.slug,
       startUtc: new Date(input.startUtc),
       durationHours: input.durationHours,
-      booker: {
-        userId: ctx.user.id,
-        email: ctx.user.email,
-        name: ctx.user.name ?? ctx.user.email,
-        country: input.country,
-        vatNumber: input.vatNumber,
-      },
+      booker: { userId: ctx.user.id, email: ctx.user.email, name: ctx.user.name ?? ctx.user.email },
       addOns: input.addOns,
     });
 
@@ -43,6 +37,7 @@ export const roomsRouter = router({
       amountTotal: booking.amountTotal,
       currency: booking.currency,
       productName: `NATO Edge 26 — ${booking.roomName}`,
+      customerEmail: ctx.user.email,
       successUrl: `${WEBAPP_URL}/rooms/booked/${booking.uid}`,
       cancelUrl: `${WEBAPP_URL}/rooms/${input.slug}`,
     });
