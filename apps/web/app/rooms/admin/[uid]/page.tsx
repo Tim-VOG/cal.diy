@@ -143,6 +143,7 @@ export default async function AdminBookingDetailPage({
           uid={booking.uid}
           status={booking.status}
           hasInvoice={Boolean(booking.invoiceNumber)}
+          hasCreditNote={Boolean(booking.creditNoteNumber)}
         />
       </div>
 

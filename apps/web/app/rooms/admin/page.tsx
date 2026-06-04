@@ -1,5 +1,6 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { getResourceBookingRepository } from "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container";
+import { getResourceRepository } from "@calcom/features/ne26-rooms/di/ResourceRepository.container";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
@@ -17,7 +18,11 @@ export default async function RoomsAdminPage(): Promise<JSX.Element> {
   if (!session?.user?.id) redirect("/rooms/login?callbackUrl=/rooms/admin");
   if (session.user.role !== "ADMIN") notFound();
 
-  const bookings = await getResourceBookingRepository().findAllWithDetails();
+  const [bookings, allRooms] = await Promise.all([
+    getResourceBookingRepository().findAllWithDetails(),
+    getResourceRepository().findAllForAdmin(),
+  ]);
+  const roomNames = allRooms.filter((r) => r.isActive).map((r) => r.name);
   const rows = bookings.map((b) => ({
     uid: b.uid,
     status: b.status,
@@ -36,5 +41,5 @@ export default async function RoomsAdminPage(): Promise<JSX.Element> {
     addOns: b.addOns.map((a) => ({ name: a.addOn.name, quantity: a.quantity, lineTotal: a.lineTotal })),
   }));
 
-  return <RoomsAdminView rows={rows} />;
+  return <RoomsAdminView rows={rows} roomNames={roomNames} />;
 }

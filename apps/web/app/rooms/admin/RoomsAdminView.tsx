@@ -3,6 +3,8 @@
 import { trpc } from "@calcom/trpc/react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import BookingCalendar from "./BookingCalendar";
+import BookingSidePanel from "./BookingSidePanel";
 
 const TZ = "Europe/Brussels";
 
@@ -111,11 +113,19 @@ function toCsv(rows: AdminBookingRow[]): string {
   return [header.join(","), ...lines].join("\n");
 }
 
-export default function RoomsAdminView({ rows }: { rows: AdminBookingRow[] }): JSX.Element {
+export default function RoomsAdminView({
+  rows,
+  roomNames,
+}: {
+  rows: AdminBookingRow[];
+  roomNames: string[];
+}): JSX.Element {
   const [status, setStatus] = useState<StatusFilter>("ALL");
   const [query, setQuery] = useState("");
   const [roomFilter, setRoomFilter] = useState("ALL");
   const [dayFilter, setDayFilter] = useState("ALL");
+  const [view, setView] = useState<"table" | "calendar">("table");
+  const [selectedUid, setSelectedUid] = useState<string | null>(null);
   const router = useRouter();
   const [pendingUid, setPendingUid] = useState<string | null>(null);
   const creditNote = trpc.viewer.rooms.issueCreditNote.useMutation({
@@ -187,6 +197,7 @@ export default function RoomsAdminView({ rows }: { rows: AdminBookingRow[] }): J
   const confirmed = useMemo(() => rows.filter((r) => r.status === "CONFIRMED"), [rows]);
   const revenue = confirmed.reduce((sum, r) => sum + r.amountTotal, 0);
   const currency = rows[0]?.currency ?? "EUR";
+  const selectedBooking = selectedUid ? (rows.find((r) => r.uid === selectedUid) ?? null) : null;
 
   function downloadCsv(): void {
     const blob = new Blob([toCsv(filtered)], { type: "text/csv;charset=utf-8;" });
@@ -238,6 +249,22 @@ export default function RoomsAdminView({ rows }: { rows: AdminBookingRow[] }): J
       </div>
 
       <div className="mt-4 flex gap-2">
+        {(["table", "calendar"] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setView(v)}
+            className={`rounded-lg border px-3 py-1.5 font-medium text-sm transition ${
+              v === view
+                ? "border-[#000643] bg-[#000643] text-white"
+                : "border-gray-200 bg-white text-black hover:border-[#000643]"
+            }`}>
+            {v === "table" ? "Table" : "Calendar"}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-3 flex gap-2">
         {STATUS_FILTERS.map((s) => (
           <button
             key={s}
@@ -286,72 +313,90 @@ export default function RoomsAdminView({ rows }: { rows: AdminBookingRow[] }): J
         <span className="text-gray-400 text-xs">{filtered.length} shown</span>
       </div>
 
-      <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200 bg-white">
-        <table className="w-full text-left text-sm">
-          <thead className="border-gray-100 border-b bg-gray-50 text-gray-500 text-xs uppercase">
-            <tr>
-              <th className="px-3 py-2">Room</th>
-              <th className="px-3 py-2">When (Brussels)</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">Booker</th>
-              <th className="px-3 py-2">Add-ons</th>
-              <th className="px-3 py-2 text-right">Amount</th>
-              <th className="px-3 py-2">Invoice</th>
-              <th className="px-3 py-2">Credit note</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 ? (
+      {view === "calendar" ? (
+        <div className={`mt-4 ${selectedBooking ? "grid gap-6 lg:grid-cols-[1fr_360px]" : ""}`}>
+          <BookingCalendar
+            rows={filtered}
+            roomNames={roomNames}
+            selectedUid={selectedUid}
+            onSelect={setSelectedUid}
+          />
+          {selectedBooking ? (
+            <BookingSidePanel booking={selectedBooking} onClose={() => setSelectedUid(null)} />
+          ) : null}
+        </div>
+      ) : (
+        <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200 bg-white">
+          <table className="w-full text-left text-sm">
+            <thead className="border-gray-100 border-b bg-gray-50 text-gray-500 text-xs uppercase">
               <tr>
-                <td className="px-3 py-6 text-center text-gray-400" colSpan={8}>
-                  No bookings
-                </td>
+                <th className="px-3 py-2">Room</th>
+                <th className="px-3 py-2">When (Brussels)</th>
+                <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">Booker</th>
+                <th className="px-3 py-2">Add-ons</th>
+                <th className="px-3 py-2 text-right">Amount</th>
+                <th className="px-3 py-2">Invoice</th>
+                <th className="px-3 py-2">Credit note</th>
               </tr>
-            ) : (
-              filtered.map((r) => (
-                <tr key={r.uid} className="border-gray-50 border-b last:border-0">
-                  <td className="px-3 py-2">
-                    <a href={`/rooms/admin/${r.uid}`} className="font-medium text-[#000643] hover:underline">
-                      {r.roomName}
-                    </a>
-                    <div className="text-gray-400 text-xs">{r.category}</div>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr>
+                  <td className="px-3 py-6 text-center text-gray-400" colSpan={8}>
+                    No bookings
                   </td>
-                  <td className="px-3 py-2">
-                    {fmtDate(r.startUtc)} · {fmtTime(r.startUtc)}–{fmtTime(r.endUtc)} (
-                    {r.durationMinutes / 60}h)
-                  </td>
-                  <td className="px-3 py-2">
-                    <span
-                      className={`rounded-full px-2 py-0.5 font-medium text-xs ${STATUS_BADGE[r.status] ?? ""}`}>
-                      {r.status}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2">
-                    <div>{r.bookerName}</div>
-                    <div className="text-gray-400 text-xs">{r.bookerEmail}</div>
-                  </td>
-                  <td className="px-3 py-2 text-gray-600">{addOnsLabel(r) || "—"}</td>
-                  <td className="px-3 py-2 text-right font-medium">{fmtMoney(r.amountTotal, r.currency)}</td>
-                  <td className="px-3 py-2">
-                    {r.invoiceNumber ? (
-                      <a
-                        href={`/rooms/invoice/${r.uid}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[#000643] underline hover:opacity-80">
-                        {r.invoiceNumber}
-                      </a>
-                    ) : (
-                      <span className="text-gray-300">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">{renderCreditNoteCell(r)}</td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ) : (
+                filtered.map((r) => (
+                  <tr key={r.uid} className="border-gray-50 border-b last:border-0">
+                    <td className="px-3 py-2">
+                      <a
+                        href={`/rooms/admin/${r.uid}`}
+                        className="font-medium text-[#000643] hover:underline">
+                        {r.roomName}
+                      </a>
+                      <div className="text-gray-400 text-xs">{r.category}</div>
+                    </td>
+                    <td className="px-3 py-2">
+                      {fmtDate(r.startUtc)} · {fmtTime(r.startUtc)}–{fmtTime(r.endUtc)} (
+                      {r.durationMinutes / 60}h)
+                    </td>
+                    <td className="px-3 py-2">
+                      <span
+                        className={`rounded-full px-2 py-0.5 font-medium text-xs ${STATUS_BADGE[r.status] ?? ""}`}>
+                        {r.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div>{r.bookerName}</div>
+                      <div className="text-gray-400 text-xs">{r.bookerEmail}</div>
+                    </td>
+                    <td className="px-3 py-2 text-gray-600">{addOnsLabel(r) || "—"}</td>
+                    <td className="px-3 py-2 text-right font-medium">
+                      {fmtMoney(r.amountTotal, r.currency)}
+                    </td>
+                    <td className="px-3 py-2">
+                      {r.invoiceNumber ? (
+                        <a
+                          href={`/rooms/invoice/${r.uid}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[#000643] underline hover:opacity-80">
+                          {r.invoiceNumber}
+                        </a>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">{renderCreditNoteCell(r)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

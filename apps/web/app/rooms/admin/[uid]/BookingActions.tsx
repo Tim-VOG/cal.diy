@@ -9,19 +9,23 @@ export default function BookingActions({
   uid,
   status,
   hasInvoice,
+  hasCreditNote,
 }: {
   uid: string;
   status: string;
   hasInvoice: boolean;
+  hasCreditNote: boolean;
 }): JSX.Element {
   const router = useRouter();
   const refresh = { onSuccess: () => router.refresh() };
   const confirmManually = trpc.viewer.rooms.confirmBookingManually.useMutation(refresh);
   const cancelPending = trpc.viewer.rooms.cancelPendingBooking.useMutation(refresh);
+  const creditNote = trpc.viewer.rooms.issueCreditNote.useMutation(refresh);
   const resend = trpc.viewer.rooms.resendInvoice.useMutation();
-  const busy = confirmManually.isPending || cancelPending.isPending || resend.isPending;
+  const busy =
+    confirmManually.isPending || cancelPending.isPending || creditNote.isPending || resend.isPending;
 
-  const error = confirmManually.error ?? cancelPending.error ?? resend.error;
+  const error = confirmManually.error ?? cancelPending.error ?? creditNote.error ?? resend.error;
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-5">
@@ -67,6 +71,24 @@ export default function BookingActions({
             onClick={() => resend.mutate({ uid })}
             className={`${btnBase} border border-gray-200 text-[#000643] hover:border-[#000643]`}>
             {resend.isPending ? "Sending…" : "Resend invoice email"}
+          </button>
+        ) : null}
+
+        {status === "CONFIRMED" && hasInvoice && !hasCreditNote ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Issue a credit note? This cancels the booking, frees the slot, and emails the booker. Refund the payment in Stripe separately."
+                )
+              ) {
+                creditNote.mutate({ uid });
+              }
+            }}
+            className={`${btnBase} border border-red-200 text-red-600 hover:border-red-400`}>
+            {creditNote.isPending ? "Issuing…" : "Issue credit note"}
           </button>
         ) : null}
 
