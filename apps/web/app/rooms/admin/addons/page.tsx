@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 
 export default async function ManageAddOnsPage(): Promise<JSX.Element> {
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
-  if (!session?.user?.id) redirect("/auth/login?callbackUrl=/rooms/admin/addons");
+  if (!session?.user?.id) redirect("/rooms/login?callbackUrl=/rooms/admin/addons");
   if (session.user.role !== "ADMIN") notFound();
 
   const addOns = await getAddOnRepository().findAllForAdmin();

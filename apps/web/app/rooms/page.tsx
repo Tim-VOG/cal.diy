@@ -84,7 +84,7 @@ function RoomCard({ room }: { room: Room }): JSX.Element {
 export default async function RoomsListingPage(): Promise<JSX.Element> {
   // Rooms are exhibitor-only: require an account to browse the listing.
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
-  if (!session?.user?.id) redirect("/auth/login?callbackUrl=/rooms");
+  if (!session?.user?.id) redirect("/rooms/login?callbackUrl=/rooms");
 
   const rooms = await getRoomAvailabilityService().getActiveRooms();
 

@@ -297,7 +297,7 @@ function SelectionSummary({
             </button>
           ) : (
             <a
-              href={`/auth/login?callbackUrl=/rooms/${room.slug}`}
+              href={`/rooms/login?callbackUrl=/rooms/${room.slug}`}
               className="mt-5 block w-full rounded-lg bg-[#000643] px-4 py-2.5 text-center font-semibold text-sm text-white transition hover:opacity-90">
               Log in to book
             </a>

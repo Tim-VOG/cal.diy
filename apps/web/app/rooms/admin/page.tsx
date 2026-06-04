@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 export default async function RoomsAdminPage(): Promise<JSX.Element> {
   // Page-level authorization (never in a layout): admins only.
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
-  if (!session?.user?.id) redirect("/auth/login?callbackUrl=/rooms/admin");
+  if (!session?.user?.id) redirect("/rooms/login?callbackUrl=/rooms/admin");
   if (session.user.role !== "ADMIN") notFound();
 
   const bookings = await getResourceBookingRepository().findAllWithDetails();

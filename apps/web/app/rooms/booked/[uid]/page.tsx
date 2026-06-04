@@ -33,7 +33,7 @@ function formatRange(start: Date, end: Date): string {
 export default async function BookedPage({ params }: { params: Params }): Promise<JSX.Element> {
   const { uid } = await params;
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
-  if (!session?.user?.id) redirect(`/auth/login?callbackUrl=/rooms/booked/${uid}`);
+  if (!session?.user?.id) redirect(`/rooms/login?callbackUrl=/rooms/booked/${uid}`);
 
   const booking = await getResourceBookingRepository().findByUid(uid);
   if (!booking) notFound();

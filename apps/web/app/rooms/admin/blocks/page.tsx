@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 
 export default async function ManageBlocksPage(): Promise<JSX.Element> {
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
-  if (!session?.user?.id) redirect("/auth/login?callbackUrl=/rooms/admin/blocks");
+  if (!session?.user?.id) redirect("/rooms/login?callbackUrl=/rooms/admin/blocks");
   if (session.user.role !== "ADMIN") notFound();
 
   const [blocks, rooms] = await Promise.all([

@@ -35,7 +35,7 @@ export default async function RoomDetailPage({ params }: { params: Params }): Pr
   const { slug } = await params;
   // Rooms are exhibitor-only: require an account to view a room.
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
-  if (!session?.user?.id) redirect(`/auth/login?callbackUrl=/rooms/${slug}`);
+  if (!session?.user?.id) redirect(`/rooms/login?callbackUrl=/rooms/${slug}`);
 
   const data = await loadRoom(slug);
   if (!data) notFound();

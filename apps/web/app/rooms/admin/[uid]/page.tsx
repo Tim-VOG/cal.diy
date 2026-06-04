@@ -62,7 +62,7 @@ export default async function AdminBookingDetailPage({
 }): Promise<JSX.Element> {
   const { uid } = await params;
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
-  if (!session?.user?.id) redirect(`/auth/login?callbackUrl=/rooms/admin/${uid}`);
+  if (!session?.user?.id) redirect(`/rooms/login?callbackUrl=/rooms/admin/${uid}`);
   if (session.user.role !== "ADMIN") notFound();
 
   const booking = await getResourceBookingRepository().findByUidForAdmin(uid);

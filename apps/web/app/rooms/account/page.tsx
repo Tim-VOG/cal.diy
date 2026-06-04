@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 
 export default async function RoomsAccountPage(): Promise<JSX.Element> {
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
-  if (!session?.user?.id) redirect("/auth/login?callbackUrl=/rooms/account");
+  if (!session?.user?.id) redirect("/rooms/login?callbackUrl=/rooms/account");
 
   const profile = await getNe26BillingProfileRepository().findByUserId(session.user.id);
   return <BillingProfileForm initial={profile} />;
