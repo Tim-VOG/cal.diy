@@ -96,7 +96,7 @@ export default async function RoomsListingPage(): Promise<JSX.Element> {
   }
   const orderedCategories = [
     ...CATEGORY_ORDER.filter((c) => byCategory.has(c)),
-    ...[...byCategory.keys()].filter((c) => !CATEGORY_ORDER.includes(c)),
+    ...Array.from(byCategory.keys()).filter((c) => !CATEGORY_ORDER.includes(c)),
   ];
 
   return (
