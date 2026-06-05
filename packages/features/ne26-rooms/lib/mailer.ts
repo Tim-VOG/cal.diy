@@ -12,6 +12,8 @@ export interface InvoiceEmailInput {
   pdf: Uint8Array;
   /** "invoice" (default) sends a confirmation; "credit_note" sends a refund notice. */
   documentKind?: "invoice" | "credit_note";
+  /** Optional calendar invite (.ics) to attach, e.g. for booking confirmations. */
+  ics?: string;
 }
 
 function escapeHtml(s: string): string {
@@ -69,6 +71,15 @@ export async function sendInvoiceEmail(input: InvoiceEmailInput): Promise<void> 
         content: Buffer.from(input.pdf),
         contentType: "application/pdf",
       },
+      ...(input.ics
+        ? [
+            {
+              filename: "booking.ics",
+              content: input.ics,
+              contentType: "text/calendar; method=PUBLISH; charset=UTF-8",
+            },
+          ]
+        : []),
     ],
   });
 }

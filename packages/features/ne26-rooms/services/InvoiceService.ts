@@ -1,4 +1,5 @@
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
+import { buildBookingIcs } from "../lib/ics";
 import { buildInvoiceModel } from "../lib/invoice";
 import type { InvoiceMeta } from "../lib/invoicePdf";
 import { renderInvoicePdf } from "../lib/invoicePdf";
@@ -102,6 +103,12 @@ export class InvoiceService {
       roomName: booking.resource.name,
       amountLabel: `${(booking.amountTotal / 100).toFixed(2)} ${booking.currency}`,
       pdf,
+      ics: buildBookingIcs({
+        uid: booking.uid,
+        roomName: booking.resource.name,
+        startUtc: booking.startTime,
+        endUtc: booking.endTime,
+      }),
     });
   }
 

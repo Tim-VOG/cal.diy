@@ -146,15 +146,6 @@ export async function renderInvoicePdf(
     text(line, left, y, 9, font, GREY);
     y -= 12;
   }
-  y -= 1;
-  text(
-    `${meta.roomName} - ${dt(meta.startUtc)} to ${dt(meta.endUtc)} (Europe/Brussels)`,
-    left,
-    y,
-    9,
-    font,
-    GREY
-  );
 
   // Table header
   y -= 30;
@@ -200,6 +191,25 @@ export async function renderInvoicePdf(
     y -= 24;
     text(model.vatMention, left, y, 8, font, GREY);
   }
+
+  // Booking recap — highlighted block under the amounts, restating what was
+  // purchased (room + slot, Europe/Brussels).
+  y -= 40;
+  const boxH = 46;
+  page.drawRectangle({
+    x: left,
+    y: y - boxH + 26,
+    width: right - left,
+    height: boxH,
+    color: rgb(0.95, 0.96, 1),
+    borderColor: NAVY,
+    borderWidth: 0.6,
+  });
+  text("BOOKING", left + 12, y, 8, bold, NAVY);
+  y -= 16;
+  text(meta.roomName, left + 12, y, 11, bold, NAVY);
+  y -= 13;
+  text(`${dt(meta.startUtc)} to ${dt(meta.endUtc)} (Europe/Brussels)`, left + 12, y, 9, font, GREY);
 
   // Footer — three configurable columns (each multi-line), falling back to the
   // legacy single-line footer when no column is set.
