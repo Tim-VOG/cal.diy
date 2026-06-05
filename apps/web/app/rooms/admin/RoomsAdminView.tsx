@@ -1,5 +1,6 @@
 "use client";
 
+import type { EventDayDefinition } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { trpc } from "@calcom/trpc/react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -117,10 +118,12 @@ export default function RoomsAdminView({
   rows,
   roomNames,
   slotGranularityMinutes,
+  eventDays,
 }: {
   rows: AdminBookingRow[];
   roomNames: string[];
   slotGranularityMinutes: number;
+  eventDays: EventDayDefinition[];
 }): JSX.Element {
   const [status, setStatus] = useState<StatusFilter>("ALL");
   const [query, setQuery] = useState("");
@@ -299,6 +302,7 @@ export default function RoomsAdminView({
             rows={filtered}
             roomNames={roomNames}
             granularityMinutes={slotGranularityMinutes}
+            eventDays={eventDays}
             selectedUid={selectedUid}
             onSelect={setSelectedUid}
           />

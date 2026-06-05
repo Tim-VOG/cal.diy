@@ -48,6 +48,7 @@ export default async function RoomsAdminPage(): Promise<JSX.Element> {
       rows={rows}
       roomNames={roomNames}
       slotGranularityMinutes={roomSettings.slotGranularityMinutes}
+      eventDays={roomSettings.eventDays}
     />
   );
 }

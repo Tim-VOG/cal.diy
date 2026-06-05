@@ -2,7 +2,7 @@ import { ErrorCode } from "@calcom/lib/errorCodes";
 import { ErrorWithCode } from "@calcom/lib/errors";
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
 import { getAtomicSlotStarts, getBufferSlotStarts } from "../lib/atomicSlots";
-import { type DurationHours, OPEN_SLOT_MS } from "../lib/eventSchedule";
+import { buildEventSchedule, buildOpenSlotMs, type DurationHours } from "../lib/eventSchedule";
 import { computeAddOnLine } from "../lib/pricing";
 import type { AddOnRepository } from "../repositories/AddOnRepository";
 import type { Ne26RoomSettingsRepository } from "../repositories/Ne26RoomSettingsRepository";
@@ -83,17 +83,19 @@ export class ResourceBookingService {
       throw new ErrorWithCode(ErrorCode.NotFound, `Room "${input.slug}" not found`);
     }
 
+    const settings = await this.deps.ne26RoomSettingsRepository.get();
+    const openSlotMs = buildOpenSlotMs(buildEventSchedule(settings.eventDays));
+
     const durationMinutes = input.durationHours * 60;
     const slotStarts = getAtomicSlotStarts(input.startUtc, durationMinutes);
     for (const slot of slotStarts) {
-      if (!OPEN_SLOT_MS.has(slot.getTime())) {
+      if (!openSlotMs.has(slot.getTime())) {
         throw new ErrorWithCode(ErrorCode.BadRequest, "Selected time is outside the event opening hours.");
       }
     }
     // Reserve the turnover buffer after the booking so the next one can't start
     // within it. Added to the slot set, so the DB unique index enforces the gap.
-    const { bufferMinutes } = await this.deps.ne26RoomSettingsRepository.get();
-    const bufferSlots = getBufferSlotStarts(input.startUtc, durationMinutes, bufferMinutes);
+    const bufferSlots = getBufferSlotStarts(input.startUtc, durationMinutes, settings.bufferMinutes);
 
     const endTime = new Date(input.startUtc.getTime() + durationMinutes * MS_PER_MINUTE);
     const roomPrice = { 1: room.price1h, 2: room.price2h, 3: room.price3h }[input.durationHours];
@@ -175,10 +177,13 @@ export class ResourceBookingService {
     const room = await this.deps.resourceRepository.findBySlug(input.slug);
     if (!room) throw new ErrorWithCode(ErrorCode.NotFound, `Room "${input.slug}" not found`);
 
+    const settings = await this.deps.ne26RoomSettingsRepository.get();
+    const openSlotMs = buildOpenSlotMs(buildEventSchedule(settings.eventDays));
+
     const durationMinutes = input.durationHours * 60;
     const slotStarts = getAtomicSlotStarts(input.startUtc, durationMinutes);
     for (const slot of slotStarts) {
-      if (!OPEN_SLOT_MS.has(slot.getTime())) {
+      if (!openSlotMs.has(slot.getTime())) {
         throw new ErrorWithCode(ErrorCode.BadRequest, "Selected time is outside the event opening hours.");
       }
     }

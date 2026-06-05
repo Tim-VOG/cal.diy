@@ -27,6 +27,7 @@ export default async function ManageBlocksPage(): Promise<JSX.Element> {
   return (
     <BlocksManager
       granularityMinutes={roomSettings.slotGranularityMinutes}
+      eventDays={roomSettings.eventDays}
       rooms={rooms.filter((r) => r.isActive).map((r) => ({ slug: r.slug, name: r.name }))}
       blocks={blocks.map((b) => ({
         uid: b.uid,

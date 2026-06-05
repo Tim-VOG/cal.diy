@@ -3042,6 +3042,11 @@ model Ne26RoomSettings {
   // internal atomic slot stays 15 min; this only controls which marks are
   // offered as start times and the admin calendar columns.
   slotGranularityMinutes Int      @default(60)
+  // Opening hours per event day, Brussels time. JSON array of
+  // { date: "YYYY-MM-DD", openHourBrussels, closeHourBrussels }. Drives
+  // availability, the admin calendar and the block editor. Null = built-in
+  // NE26 defaults (17/18/19 Nov 2026).
+  eventDays              Json?
   updatedAt              DateTime @updatedAt
 }
 

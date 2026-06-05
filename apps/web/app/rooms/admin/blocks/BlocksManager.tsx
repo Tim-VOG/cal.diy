@@ -1,12 +1,12 @@
 "use client";
 
 import {
+  buildEventSchedule,
   type DurationHours,
-  EVENT_SCHEDULE,
+  type EventDayDefinition,
   SELECTABLE_DURATIONS,
 } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { trpc } from "@calcom/trpc/react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
@@ -37,9 +37,12 @@ function fmtDateTime(iso: string): string {
 }
 
 // Start <option>s at the configured granularity (e.g. hourly), across the event.
-function buildStartOptions(granularityMinutes: number): { iso: string; label: string }[] {
+function buildStartOptions(
+  granularityMinutes: number,
+  eventDays: EventDayDefinition[]
+): { iso: string; label: string }[] {
   const stepMs = Math.max(15, granularityMinutes) * 60 * 1000;
-  return EVENT_SCHEDULE.flatMap((day) => {
+  return buildEventSchedule(eventDays).flatMap((day) => {
     const dayOpenMs = day.openSlotStartsUtc[0]?.getTime() ?? 0;
     return day.openSlotStartsUtc
       .filter((d) => (d.getTime() - dayOpenMs) % stepMs === 0)
@@ -54,13 +57,18 @@ export default function BlocksManager({
   rooms,
   blocks,
   granularityMinutes,
+  eventDays,
 }: {
   rooms: RoomOption[];
   blocks: BlockRow[];
   granularityMinutes: number;
+  eventDays: EventDayDefinition[];
 }): JSX.Element {
   const router = useRouter();
-  const startOptions = useMemo(() => buildStartOptions(granularityMinutes), [granularityMinutes]);
+  const startOptions = useMemo(
+    () => buildStartOptions(granularityMinutes, eventDays),
+    [granularityMinutes, eventDays]
+  );
   const [slug, setSlug] = useState(rooms[0]?.slug ?? "");
   const [startUtc, setStartUtc] = useState(startOptions[0]?.iso ?? "");
   const [durationHours, setDurationHours] = useState<DurationHours>(1);
@@ -70,11 +78,8 @@ export default function BlocksManager({
   const remove = trpc.viewer.rooms.removeBlock.useMutation(refresh);
 
   return (
-    <div className="mx-auto max-w-3xl">
-      <Link href="/rooms/admin" className="text-gray-500 text-sm hover:text-[#000643]">
-        ← Back to admin
-      </Link>
-      <h1 className="mt-2 font-bold text-2xl text-[#000643]">Blocked slots</h1>
+    <div>
+      <h1 className="font-bold text-2xl text-[#000643]">Blocked slots</h1>
       <p className="mt-1 text-gray-600 text-sm">
         Block a room for maintenance or internal use. A block reserves the slot like a confirmed booking, so
         it can&apos;t be booked. It&apos;s rejected if it overlaps an existing booking.

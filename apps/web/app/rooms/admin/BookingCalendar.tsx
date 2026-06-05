@@ -1,6 +1,7 @@
 "use client";
 
-import { EVENT_SCHEDULE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
+import { buildEventSchedule, type EventDayDefinition } from "@calcom/features/ne26-rooms/lib/eventSchedule";
+import { useMemo } from "react";
 import type { AdminBookingRow } from "./RoomsAdminView";
 
 const TZ = "Europe/Brussels";
@@ -32,19 +33,22 @@ export default function BookingCalendar({
   rows,
   roomNames,
   granularityMinutes,
+  eventDays,
   selectedUid,
   onSelect,
 }: {
   rows: AdminBookingRow[];
   roomNames: string[];
   granularityMinutes: number;
+  eventDays: EventDayDefinition[];
   selectedUid: string | null;
   onSelect: (uid: string) => void;
 }): JSX.Element {
   const stepMs = Math.max(15, granularityMinutes) * 60 * 1000;
+  const schedule = useMemo(() => buildEventSchedule(eventDays), [eventDays]);
   return (
     <div className="space-y-8">
-      {EVENT_SCHEDULE.map((day) => {
+      {schedule.map((day) => {
         // Columns at the configured granularity (e.g. hourly), measured from open.
         const dayOpenMs = day.openSlotStartsUtc[0]?.getTime() ?? 0;
         const hours = day.openSlotStartsUtc
