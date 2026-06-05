@@ -20,10 +20,16 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
     <div className="flex min-h-screen flex-col bg-gray-50 text-black">
       <header className="bg-[#000643] text-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-          <Link href="/rooms" className="flex items-center" aria-label="NATO Edge 26 Rooms — home">
-            {/* White logo: it sits on the navy (#000643) header bar. */}
-            {/* biome-ignore lint/performance/noImgElement: static brand SVG, next/image adds no value here */}
-            <img src="/NE26-WHITE.svg" alt="NATO Edge 26" className="h-9 w-auto" />
+          <Link
+            href="/rooms"
+            className="flex items-center gap-4"
+            aria-label="VO Europe — NATO Edge 26 Rooms — home">
+            {/* Both logos are white-on-transparent, so they sit on the navy bar. */}
+            {/* biome-ignore lint/performance/noImgElement: static brand asset, next/image adds no value here */}
+            <img src="/VOEU.png" alt="VO Europe" className="h-7 w-auto" />
+            <span className="h-7 w-px bg-white/25" aria-hidden />
+            {/* biome-ignore lint/performance/noImgElement: static brand asset, next/image adds no value here */}
+            <img src="/NE26.png" alt="NATO Edge 26" className="h-8 w-auto" />
           </Link>
           <div className="flex items-center gap-5">
             <span className="hidden text-sm opacity-70 sm:inline">17–19 November 2026</span>

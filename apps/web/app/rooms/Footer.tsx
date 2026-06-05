@@ -11,14 +11,12 @@ export default function Footer(): JSX.Element {
         </p>
 
         <div className="mt-8 grid grid-cols-1 gap-10 sm:grid-cols-2 lg:grid-cols-4">
-          <div>
-            {/* Forced white so the brand SVG reads on the black footer. */}
-            {/* biome-ignore lint/performance/noImgElement: static brand SVG, next/image adds no value here */}
-            <img
-              src="/NE26-WHITE.svg"
-              alt="VO Europe — NATO Edge 26"
-              className="h-12 w-auto [filter:brightness(0)_invert(1)]"
-            />
+          <div className="flex flex-col items-start gap-4">
+            {/* Both logos are white-on-transparent, so they read on the black footer. */}
+            {/* biome-ignore lint/performance/noImgElement: static brand asset, next/image adds no value here */}
+            <img src="/VOEU.png" alt="VO Europe" className="h-8 w-auto" />
+            {/* biome-ignore lint/performance/noImgElement: static brand asset, next/image adds no value here */}
+            <img src="/NE26.png" alt="NATO Edge 26" className="h-10 w-auto" />
           </div>
 
           <div>
