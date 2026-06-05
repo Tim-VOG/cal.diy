@@ -5,9 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+const CATEGORIES = ["PREMIUM", "INTERMEDIATE", "ENTRY"] as const;
+
 export interface RoomRow {
   id: number;
   name: string;
+  description: string;
   category: string;
   capacity: number;
   surface: number;
@@ -60,6 +63,9 @@ export default function RoomsManager({
     setSavingId(row.id);
     update.mutate({
       id: row.id,
+      name: row.name,
+      description: row.description,
+      category: row.category as (typeof CATEGORIES)[number],
       capacity: row.capacity,
       surface: row.surface,
       price1h: row.price1h,
@@ -145,8 +151,29 @@ export default function RoomsManager({
             {draft.map((r) => (
               <tr key={r.id} className="border-gray-50 border-b last:border-0">
                 <td className="px-3 py-2">
-                  <div className="font-medium">{r.name}</div>
-                  <div className="text-gray-400 text-xs">{r.category}</div>
+                  <input
+                    type="text"
+                    className={`${cellInput} w-44`}
+                    value={r.name}
+                    onChange={(e) => setField(r.id, "name", e.target.value)}
+                  />
+                  <select
+                    className={`${cellInput} mt-1 w-44`}
+                    value={r.category}
+                    onChange={(e) => setField(r.id, "category", e.target.value)}>
+                    {CATEGORIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    placeholder="Description"
+                    className={`${cellInput} mt-1 w-44`}
+                    value={r.description}
+                    onChange={(e) => setField(r.id, "description", e.target.value)}
+                  />
                 </td>
                 <td className="px-3 py-2">
                   <input

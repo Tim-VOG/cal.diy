@@ -220,34 +220,12 @@ export default function RoomsAdminView({
             {rows.length} bookings · {confirmed.length} confirmed · {fmtMoney(revenue, currency)} collected
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <a
-            href="/rooms/admin/rooms"
-            className="rounded-lg border border-gray-200 px-4 py-2 font-semibold text-[#000643] text-sm transition hover:border-[#000643]">
-            Manage rooms
-          </a>
-          <a
-            href="/rooms/admin/addons"
-            className="rounded-lg border border-gray-200 px-4 py-2 font-semibold text-[#000643] text-sm transition hover:border-[#000643]">
-            Manage add-ons
-          </a>
-          <a
-            href="/rooms/admin/blocks"
-            className="rounded-lg border border-gray-200 px-4 py-2 font-semibold text-[#000643] text-sm transition hover:border-[#000643]">
-            Blocked slots
-          </a>
-          <a
-            href="/rooms/admin/settings"
-            className="rounded-lg border border-gray-200 px-4 py-2 font-semibold text-[#000643] text-sm transition hover:border-[#000643]">
-            Invoice settings
-          </a>
-          <button
-            type="button"
-            onClick={downloadCsv}
-            className="rounded-lg bg-[#000643] px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90">
-            Export CSV
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={downloadCsv}
+          className="rounded-lg bg-[#000643] px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90">
+          Export CSV
+        </button>
       </div>
 
       <div className="mt-4 flex gap-2">

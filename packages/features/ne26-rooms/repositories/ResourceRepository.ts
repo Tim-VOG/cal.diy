@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@calcom/prisma";
+import type { ResourceCategory } from "@calcom/prisma/enums";
 
 const publicSelect = {
   id: true,
@@ -41,10 +42,13 @@ export class ResourceRepository {
     });
   }
 
-  /** Admin: update a room's editable fields (prices in cents, capacity, etc.). */
+  /** Admin: update a room's editable fields (name, prices in cents, etc.). */
   update(
     id: number,
     data: {
+      name?: string;
+      description?: string | null;
+      category?: ResourceCategory;
       capacity?: number;
       surface?: number;
       price1h?: number;

@@ -5,7 +5,11 @@ import { ZCreateBlockInputSchema } from "./createBlock.schema";
 import { ZCreateBookingInputSchema } from "./createBooking.schema";
 import { ZIssueCreditNoteInputSchema } from "./issueCreditNote.schema";
 import { ZPreviewVatInputSchema } from "./previewVat.schema";
-import { ZUpdateAddOnInputSchema } from "./updateAddOn.schema";
+import {
+  ZCreateAddOnInputSchema,
+  ZDeleteAddOnInputSchema,
+  ZUpdateAddOnInputSchema,
+} from "./updateAddOn.schema";
 import { ZUpdateBillingProfileInputSchema } from "./updateBillingProfile.schema";
 import { ZUpdateInvoiceSettingsInputSchema } from "./updateInvoiceSettings.schema";
 import { ZUpdateResourceInputSchema } from "./updateResource.schema";
@@ -127,11 +131,25 @@ export const roomsRouter = router({
     return getAddOnRepository().findAllForAdmin();
   }),
 
-  // Admin-only: update an add-on's price / VAT rate / active state.
+  // Admin-only: update an add-on's name / price / VAT rate / type / active state.
   updateAddOn: authedAdminProcedure.input(ZUpdateAddOnInputSchema).mutation(async ({ input }) => {
     const { getAddOnRepository } = await import("@calcom/features/ne26-rooms/di/AddOnRepository.container");
     const { id, ...data } = input;
     return getAddOnRepository().update(id, data);
+  }),
+
+  // Admin-only: create a new add-on (slug derived from the name).
+  createAddOn: authedAdminProcedure.input(ZCreateAddOnInputSchema).mutation(async ({ input }) => {
+    const { getAddOnRepository } = await import("@calcom/features/ne26-rooms/di/AddOnRepository.container");
+    const slugify = (await import("@calcom/lib/slugify")).default;
+    return getAddOnRepository().create({ ...input, slug: slugify(input.name) });
+  }),
+
+  // Admin-only: delete an add-on (refused if used by bookings — deactivate instead).
+  deleteAddOn: authedAdminProcedure.input(ZDeleteAddOnInputSchema).mutation(async ({ input }) => {
+    const { getAddOnRepository } = await import("@calcom/features/ne26-rooms/di/AddOnRepository.container");
+    await getAddOnRepository().delete(input.id);
+    return { deleted: true };
   }),
 
   // Admin-only: current room blocks (maintenance / internal use).

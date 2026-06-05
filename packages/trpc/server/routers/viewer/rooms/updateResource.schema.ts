@@ -2,6 +2,9 @@ import { z } from "zod";
 
 export const ZUpdateResourceInputSchema = z.object({
   id: z.number().int().positive(),
+  name: z.string().min(1).max(120).optional(),
+  description: z.string().max(500).optional(),
+  category: z.enum(["PREMIUM", "INTERMEDIATE", "ENTRY"]).optional(),
   capacity: z.number().int().min(0).optional(),
   surface: z.number().int().min(0).optional(),
   /** Prices in cents. */

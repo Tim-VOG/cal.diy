@@ -28,6 +28,7 @@ export default async function ManageRoomsPage(): Promise<JSX.Element> {
       rooms={rooms.map((r) => ({
         id: r.id,
         name: r.name,
+        description: r.description ?? "",
         category: r.category,
         capacity: r.capacity,
         surface: r.surface,
