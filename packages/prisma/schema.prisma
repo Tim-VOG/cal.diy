@@ -3047,6 +3047,10 @@ model Ne26RoomSettings {
   // availability, the admin calendar and the block editor. Null = built-in
   // NE26 defaults (17/18/19 Nov 2026).
   eventDays              Json?
+  // Public landing page (/rooms) content, editable from the admin. Title shows
+  // above "Book a meeting room"; intro is a short paragraph below it.
+  landingTitle           String?
+  landingIntro           String?  @db.Text
   updatedAt              DateTime @updatedAt
 }
 

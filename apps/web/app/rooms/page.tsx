@@ -1,4 +1,5 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
+import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
 import { getRoomAvailabilityService } from "@calcom/features/ne26-rooms/di/RoomAvailabilityService.container";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import { Building, Euro, Scaling, Users } from "lucide-react";
@@ -86,7 +87,10 @@ export default async function RoomsListingPage(): Promise<JSX.Element> {
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
   if (!session?.user?.id) redirect("/rooms/login?callbackUrl=/rooms");
 
-  const rooms = await getRoomAvailabilityService().getActiveRooms();
+  const [rooms, settings] = await Promise.all([
+    getRoomAvailabilityService().getActiveRooms(),
+    getNe26RoomSettingsRepository().get(),
+  ]);
 
   const byCategory = new Map<string, Room[]>();
   for (const room of rooms) {
@@ -101,9 +105,16 @@ export default async function RoomsListingPage(): Promise<JSX.Element> {
 
   return (
     <div>
-      <h1 className="font-bold text-2xl text-[#000643]">Book a meeting room</h1>
-      <p className="mt-1 text-gray-600 text-sm">
-        Choose a room, a time slot (1h, 2h or 3h) and add-ons. Times shown in Europe/Brussels.
+      {settings.landingTitle ? (
+        <p className="font-semibold text-[#000643] text-sm uppercase tracking-wide">
+          {settings.landingTitle}
+        </p>
+      ) : null}
+      <h1 className="mt-1 font-bold text-2xl text-[#000643]">Book a meeting room</h1>
+      <p className="mt-2 whitespace-pre-line text-gray-600 text-sm">
+        {settings.landingIntro?.trim()
+          ? settings.landingIntro
+          : "Choose a room, a time slot (1h, 2h or 3h) and add-ons. Times shown in Europe/Brussels."}
       </p>
 
       {orderedCategories.map((category) => (

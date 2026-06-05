@@ -20,6 +20,10 @@ export const ZUpdateRoomSettingsInputSchema = z.object({
   slotGranularityMinutes: z.union([z.literal(15), z.literal(30), z.literal(60)]).optional(),
   /** Opening hours per event day (Brussels). Replaces the stored list. */
   eventDays: z.array(ZEventDay).min(1).optional(),
+  /** Public landing title shown above "Book a meeting room" (empty clears it). */
+  landingTitle: z.string().max(200).optional(),
+  /** Public landing intro paragraph (empty clears it). */
+  landingIntro: z.string().max(5000).optional(),
 });
 
 export type TUpdateRoomSettingsInputSchema = z.infer<typeof ZUpdateRoomSettingsInputSchema>;

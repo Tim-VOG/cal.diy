@@ -6,6 +6,8 @@ const settingsSelect = {
   bufferMinutes: true,
   slotGranularityMinutes: true,
   eventDays: true,
+  landingTitle: true,
+  landingIntro: true,
 } as const;
 
 export interface RoomSettings {
@@ -15,12 +17,18 @@ export interface RoomSettings {
   slotGranularityMinutes: number;
   /** Opening hours per event day (Brussels). Falls back to built-in defaults. */
   eventDays: EventDayDefinition[];
+  /** Public landing title, shown above "Book a meeting room". */
+  landingTitle: string | null;
+  /** Public landing intro paragraph. */
+  landingIntro: string | null;
 }
 
 interface SettingsRow {
   bufferMinutes: number;
   slotGranularityMinutes: number;
   eventDays: Prisma.JsonValue | null;
+  landingTitle: string | null;
+  landingIntro: string | null;
 }
 
 function toSettings(row: SettingsRow): RoomSettings {
@@ -28,6 +36,8 @@ function toSettings(row: SettingsRow): RoomSettings {
     bufferMinutes: row.bufferMinutes,
     slotGranularityMinutes: row.slotGranularityMinutes,
     eventDays: normalizeEventDays(row.eventDays),
+    landingTitle: row.landingTitle,
+    landingIntro: row.landingIntro,
   };
 }
 
@@ -50,10 +60,14 @@ export class Ne26RoomSettingsRepository {
       bufferMinutes?: number;
       slotGranularityMinutes?: number;
       eventDays?: Prisma.InputJsonValue;
+      landingTitle?: string | null;
+      landingIntro?: string | null;
     } = {};
     if (data.bufferMinutes !== undefined) patch.bufferMinutes = data.bufferMinutes;
     if (data.slotGranularityMinutes !== undefined) patch.slotGranularityMinutes = data.slotGranularityMinutes;
     if (data.eventDays !== undefined) patch.eventDays = data.eventDays;
+    if (data.landingTitle !== undefined) patch.landingTitle = data.landingTitle;
+    if (data.landingIntro !== undefined) patch.landingIntro = data.landingIntro;
 
     const row = await this.prismaClient.ne26RoomSettings.upsert({
       where: { id: 1 },
