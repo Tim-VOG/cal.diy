@@ -102,7 +102,11 @@ export class StripeCheckoutService {
       billing_address_collection: "required",
       tax_id_collection: { enabled: true },
       // Stripe forbids customer + customer_email together; prefer the Customer.
-      ...(input.customerId ? { customer: input.customerId } : { customer_email: input.customerEmail }),
+      // With an existing Customer, tax_id/address collection requires
+      // customer_update=auto so Stripe may write the collected fields back.
+      ...(input.customerId
+        ? { customer: input.customerId, customer_update: { name: "auto", address: "auto" } }
+        : { customer_email: input.customerEmail }),
       success_url: input.successUrl,
       cancel_url: input.cancelUrl,
     });
