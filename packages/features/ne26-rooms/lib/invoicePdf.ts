@@ -18,6 +18,16 @@ export interface InvoiceMeta {
   kind?: "invoice" | "credit_note";
   /** For a credit note: the invoice number it cancels. */
   relatedInvoiceNumber?: string;
+  /** Customer billing details for the "Bill to" block (legal name + address). */
+  billTo?: {
+    legalName?: string | null;
+    addressLine1?: string | null;
+    addressLine2?: string | null;
+    postalCode?: string | null;
+    city?: string | null;
+    country?: string | null;
+    vatNumber?: string | null;
+  };
 }
 
 export interface InvoiceIssuer {
@@ -116,13 +126,27 @@ export async function renderInvoicePdf(
   }
 
   // Bill to
+  const b = meta.billTo;
   y -= 36;
   text("Bill to", left, y, 9, bold, GREY);
   y -= 14;
-  text(meta.bookerName, left, y, 11, bold);
+  // Company / legal name on top when known, otherwise the contact name.
+  text(b?.legalName || meta.bookerName, left, y, 11, bold);
   y -= 13;
-  text(meta.bookerEmail, left, y, 10, font, GREY);
-  y -= 13;
+  const billLines = [
+    // Show the contact name as a second line only when a legal name is on top.
+    b?.legalName && meta.bookerName !== b.legalName ? meta.bookerName : "",
+    [b?.addressLine1, b?.addressLine2].filter(Boolean).join(", "),
+    [b?.postalCode, b?.city].filter(Boolean).join(" "),
+    b?.country || "",
+    b?.vatNumber ? `VAT ${b.vatNumber}` : "",
+    meta.bookerEmail,
+  ].filter(Boolean);
+  for (const line of billLines) {
+    text(line, left, y, 9, font, GREY);
+    y -= 12;
+  }
+  y -= 1;
   text(
     `${meta.roomName} - ${dt(meta.startUtc)} to ${dt(meta.endUtc)} (Europe/Brussels)`,
     left,

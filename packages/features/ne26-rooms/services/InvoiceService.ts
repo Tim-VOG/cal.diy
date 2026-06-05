@@ -1,19 +1,48 @@
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
 import { buildInvoiceModel } from "../lib/invoice";
+import type { InvoiceMeta } from "../lib/invoicePdf";
 import { renderInvoicePdf } from "../lib/invoicePdf";
 import { readInvoicePdf, saveInvoicePdf } from "../lib/invoiceStorage";
 import { sendInvoiceEmail } from "../lib/mailer";
 import { resolveVatTreatment } from "../lib/vat";
 import type { InvoiceSettingsRepository } from "../repositories/InvoiceSettingsRepository";
+import type { Ne26BillingProfileRepository } from "../repositories/Ne26BillingProfileRepository";
 import type { ResourceBookingRepository } from "../repositories/ResourceBookingRepository";
 
 export interface IInvoiceServiceDeps {
   resourceBookingRepository: ResourceBookingRepository;
   invoiceSettingsRepository: InvoiceSettingsRepository;
+  ne26BillingProfileRepository: Ne26BillingProfileRepository;
 }
 
 export class InvoiceService {
   constructor(private deps: IInvoiceServiceDeps) {}
+
+  /**
+   * Resolve the invoice "Bill to" details: the full address comes from the
+   * exhibitor's saved billing profile (which also pre-fills Stripe Checkout),
+   * while country/VAT prefer the booking's values — these are synced back from
+   * what the buyer actually confirmed at checkout — so VAT display matches the
+   * VAT treatment used to compute the totals.
+   */
+  private async resolveBillTo(booking: {
+    bookerUserId: number | null;
+    bookerCountry: string | null;
+    bookerVatNumber: string | null;
+  }): Promise<NonNullable<InvoiceMeta["billTo"]>> {
+    const profile = booking.bookerUserId
+      ? await this.deps.ne26BillingProfileRepository.findByUserId(booking.bookerUserId)
+      : null;
+    return {
+      legalName: profile?.legalName || null,
+      addressLine1: profile?.addressLine1 || null,
+      addressLine2: profile?.addressLine2 || null,
+      postalCode: profile?.postalCode || null,
+      city: profile?.city || null,
+      country: booking.bookerCountry || profile?.country || null,
+      vatNumber: booking.bookerVatNumber || profile?.vatNumber || null,
+    };
+  }
 
   /**
    * Issue the invoice for a confirmed booking: allocate a sequential number,
@@ -46,6 +75,7 @@ export class InvoiceService {
     );
 
     const invoiceNumber = await this.deps.resourceBookingRepository.allocateInvoiceNumber();
+    const billTo = await this.resolveBillTo(booking);
     const pdf = await renderInvoicePdf(
       model,
       {
@@ -53,6 +83,7 @@ export class InvoiceService {
         issueDate: new Date(),
         bookerName: booking.bookerName,
         bookerEmail: booking.bookerEmail,
+        billTo,
         roomName: booking.resource.name,
         startUtc: booking.startTime,
         endUtc: booking.endTime,
@@ -142,6 +173,7 @@ export class InvoiceService {
     );
     if (count === 0) return false;
 
+    const billTo = await this.resolveBillTo(booking);
     const pdf = await renderInvoicePdf(
       model,
       {
@@ -151,6 +183,7 @@ export class InvoiceService {
         issueDate: new Date(),
         bookerName: booking.bookerName,
         bookerEmail: booking.bookerEmail,
+        billTo,
         roomName: booking.resource.name,
         startUtc: booking.startTime,
         endUtc: booking.endTime,

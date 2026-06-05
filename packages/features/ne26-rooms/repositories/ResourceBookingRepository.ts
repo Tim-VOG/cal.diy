@@ -287,6 +287,7 @@ export class ResourceBookingRepository {
         startTime: true,
         endTime: true,
         durationMinutes: true,
+        bookerUserId: true,
         bookerName: true,
         bookerEmail: true,
         bookerCountry: true,
