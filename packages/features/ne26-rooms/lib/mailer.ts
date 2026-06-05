@@ -58,7 +58,8 @@ export async function sendInvoiceEmail(input: InvoiceEmailInput): Promise<void> 
 
   await transport.sendMail({
     from: `${fromName} <${from}>`,
-    to: input.to,
+    // NE26 test mode: redirect to a single inbox while testing (env-gated).
+    to: process.env.NE26_EMAIL_REDIRECT_TO || input.to,
     subject,
     text: textBody,
     html: htmlBody,

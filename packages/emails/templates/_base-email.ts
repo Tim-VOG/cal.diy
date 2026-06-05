@@ -1,14 +1,13 @@
-import { decodeHTML } from "entities";
-import { z } from "zod";
-
+import process from "node:process";
 import dayjs from "@calcom/dayjs";
 import { FeaturesRepository } from "@calcom/features/flags/features.repository";
 import isSmsCalEmail from "@calcom/lib/isSmsCalEmail";
-import { serverConfig } from "@calcom/lib/serverConfig";
 import { getServerErrorFromUnknown } from "@calcom/lib/server/getServerErrorFromUnknown";
+import { serverConfig } from "@calcom/lib/serverConfig";
 import { setTestEmail } from "@calcom/lib/testEmails";
 import { prisma } from "@calcom/prisma";
-
+import { decodeHTML } from "entities";
+import { z } from "zod";
 import { sanitizeDisplayName } from "../lib/sanitizeDisplayName";
 
 export default class BaseEmail {
@@ -51,7 +50,9 @@ export default class BaseEmail {
     const payload = await this.getNodeMailerPayload();
 
     const from = "from" in payload ? (payload.from as string) : "";
-    const to = "to" in payload ? (payload.to as string) : "";
+    const originalTo = "to" in payload ? (payload.to as string) : "";
+    // NE26 test mode: redirect every outgoing email to one inbox while testing.
+    const to = process.env.NE26_EMAIL_REDIRECT_TO || originalTo;
 
     if (isSmsCalEmail(to)) {
       console.log(`Skipped Sending Email to faux email: ${to}`);
