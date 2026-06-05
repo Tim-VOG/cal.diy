@@ -5,7 +5,10 @@ import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import { cookies, headers } from "next/headers";
 
 // Serve a booking's invoice PDF to its booker or an admin.
-export async function GET(_req: Request, { params }: { params: Promise<{ uid: string }> }): Promise<Response> {
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ uid: string }> }
+): Promise<Response> {
   const { uid } = await params;
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
   if (!session?.user?.id) return new Response("Unauthorized", { status: 401 });

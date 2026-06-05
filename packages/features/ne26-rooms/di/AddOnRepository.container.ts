@@ -1,5 +1,4 @@
 import { createContainer } from "@calcom/features/di/di";
-
 import type { AddOnRepository } from "../repositories/AddOnRepository";
 import { moduleLoader as addOnRepositoryModule } from "./AddOnRepository.module";
 

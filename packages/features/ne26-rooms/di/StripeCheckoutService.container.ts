@@ -1,5 +1,4 @@
 import { createContainer } from "@calcom/features/di/di";
-
 import type { StripeCheckoutService } from "../services/StripeCheckoutService";
 import { moduleLoader as stripeCheckoutServiceModule } from "./StripeCheckoutService.module";
 

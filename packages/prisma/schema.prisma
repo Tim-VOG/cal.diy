@@ -3050,6 +3050,18 @@ model Ne26RoomSettings {
   updatedAt              DateTime @updatedAt
 }
 
+// Admin-managed legal / informational pages (Privacy Policy, Practical
+// Information, etc.) rendered publicly at /rooms/legal/[slug]. Body is Markdown.
+model Ne26LegalPage {
+  id        Int      @id @default(autoincrement())
+  slug      String   @unique
+  title     String
+  content   String   @db.Text
+  published Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 // Exhibitor billing details, entered once on the account and reused at checkout.
 model Ne26BillingProfile {
   id               Int      @id @default(autoincrement())

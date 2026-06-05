@@ -4,6 +4,11 @@ import { ZBookingUidInputSchema } from "./bookingUid.schema";
 import { ZCreateBlockInputSchema } from "./createBlock.schema";
 import { ZCreateBookingInputSchema } from "./createBooking.schema";
 import { ZIssueCreditNoteInputSchema } from "./issueCreditNote.schema";
+import {
+  ZCreateLegalPageInputSchema,
+  ZDeleteLegalPageInputSchema,
+  ZUpdateLegalPageInputSchema,
+} from "./legalPage.schema";
 import { ZPreviewVatInputSchema } from "./previewVat.schema";
 import {
   ZCreateAddOnInputSchema,
@@ -149,6 +154,40 @@ export const roomsRouter = router({
   deleteAddOn: authedAdminProcedure.input(ZDeleteAddOnInputSchema).mutation(async ({ input }) => {
     const { getAddOnRepository } = await import("@calcom/features/ne26-rooms/di/AddOnRepository.container");
     await getAddOnRepository().delete(input.id);
+    return { deleted: true };
+  }),
+
+  // Admin-only: list all legal / informational pages (published + drafts).
+  listLegalPages: authedAdminProcedure.query(async () => {
+    const { getNe26LegalPageRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26LegalPageRepository.container"
+    );
+    return getNe26LegalPageRepository().findAllForAdmin();
+  }),
+
+  // Admin-only: create a legal page.
+  createLegalPage: authedAdminProcedure.input(ZCreateLegalPageInputSchema).mutation(async ({ input }) => {
+    const { getNe26LegalPageRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26LegalPageRepository.container"
+    );
+    return getNe26LegalPageRepository().create(input);
+  }),
+
+  // Admin-only: update a legal page's slug / title / content / published state.
+  updateLegalPage: authedAdminProcedure.input(ZUpdateLegalPageInputSchema).mutation(async ({ input }) => {
+    const { getNe26LegalPageRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26LegalPageRepository.container"
+    );
+    const { id, ...data } = input;
+    return getNe26LegalPageRepository().update(id, data);
+  }),
+
+  // Admin-only: delete a legal page.
+  deleteLegalPage: authedAdminProcedure.input(ZDeleteLegalPageInputSchema).mutation(async ({ input }) => {
+    const { getNe26LegalPageRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26LegalPageRepository.container"
+    );
+    await getNe26LegalPageRepository().delete(input.id);
     return { deleted: true };
   }),
 

@@ -1,5 +1,4 @@
 import { createContainer } from "@calcom/features/di/di";
-
 import type { InvoiceSettingsRepository } from "../repositories/InvoiceSettingsRepository";
 import { moduleLoader as invoiceSettingsRepositoryModule } from "./InvoiceSettingsRepository.module";
 

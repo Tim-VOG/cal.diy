@@ -1,9 +1,7 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-
 import { ErrorCode } from "@calcom/lib/errorCodes";
 import { prisma } from "@calcom/prisma";
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
-
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { getResourceBookingRepository } from "../di/ResourceBookingRepository.container";
 import { getAtomicSlotStarts } from "../lib/atomicSlots";
 
@@ -33,7 +31,16 @@ function args(startUtc: string, status: ResourceBookingStatus, holdExpiresAt: Da
 describe("ResourceBookingRepository.createWithSlots — expired hold reclaim", () => {
   beforeAll(async () => {
     const room = await prisma.resource.create({
-      data: { name: "TEST Holds Room", slug: SLUG, category: "ENTRY", capacity: 6, surface: 18, price1h: 35000, price2h: 65000, price3h: 90000 },
+      data: {
+        name: "TEST Holds Room",
+        slug: SLUG,
+        category: "ENTRY",
+        capacity: 6,
+        surface: 18,
+        price1h: 35000,
+        price2h: 65000,
+        price3h: 90000,
+      },
       select: { id: true },
     });
     resourceId = room.id;
@@ -49,26 +56,48 @@ describe("ResourceBookingRepository.createWithSlots — expired hold reclaim", (
 
   it("reclaims an expired pending hold so a new booking can take the slot", async () => {
     await repo.createWithSlots(
-      args("2026-11-17T13:00:00.000Z", ResourceBookingStatus.PENDING, new Date(Date.now() - MS_PER_MINUTE), "stale@test.com")
+      args(
+        "2026-11-17T13:00:00.000Z",
+        ResourceBookingStatus.PENDING,
+        new Date(Date.now() - MS_PER_MINUTE),
+        "stale@test.com"
+      )
     );
     const fresh = await repo.createWithSlots(
-      args("2026-11-17T13:00:00.000Z", ResourceBookingStatus.PENDING, new Date(Date.now() + 15 * MS_PER_MINUTE), "new@test.com")
+      args(
+        "2026-11-17T13:00:00.000Z",
+        ResourceBookingStatus.PENDING,
+        new Date(Date.now() + 15 * MS_PER_MINUTE),
+        "new@test.com"
+      )
     );
 
     expect(fresh.uid).toBeTruthy();
     expect(await prisma.resourceBooking.count({ where: { resourceId } })).toBe(1); // stale hold deleted
     expect(
-      await prisma.resourceSlot.count({ where: { resourceId, slotStart: new Date("2026-11-17T13:00:00.000Z") } })
+      await prisma.resourceSlot.count({
+        where: { resourceId, slotStart: new Date("2026-11-17T13:00:00.000Z") },
+      })
     ).toBe(1);
   });
 
   it("does NOT reclaim an active hold (still a conflict)", async () => {
     await repo.createWithSlots(
-      args("2026-11-17T14:00:00.000Z", ResourceBookingStatus.PENDING, new Date(Date.now() + 15 * MS_PER_MINUTE), "active@test.com")
+      args(
+        "2026-11-17T14:00:00.000Z",
+        ResourceBookingStatus.PENDING,
+        new Date(Date.now() + 15 * MS_PER_MINUTE),
+        "active@test.com"
+      )
     );
     await expect(
       repo.createWithSlots(
-        args("2026-11-17T14:00:00.000Z", ResourceBookingStatus.PENDING, new Date(Date.now() + 15 * MS_PER_MINUTE), "other@test.com")
+        args(
+          "2026-11-17T14:00:00.000Z",
+          ResourceBookingStatus.PENDING,
+          new Date(Date.now() + 15 * MS_PER_MINUTE),
+          "other@test.com"
+        )
       )
     ).rejects.toMatchObject({ code: ErrorCode.BookingConflict });
   });
@@ -79,7 +108,12 @@ describe("ResourceBookingRepository.createWithSlots — expired hold reclaim", (
     );
     await expect(
       repo.createWithSlots(
-        args("2026-11-18T08:00:00.000Z", ResourceBookingStatus.PENDING, new Date(Date.now() + 15 * MS_PER_MINUTE), "late@test.com")
+        args(
+          "2026-11-18T08:00:00.000Z",
+          ResourceBookingStatus.PENDING,
+          new Date(Date.now() + 15 * MS_PER_MINUTE),
+          "late@test.com"
+        )
       )
     ).rejects.toMatchObject({ code: ErrorCode.BookingConflict });
   });

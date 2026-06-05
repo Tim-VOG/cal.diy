@@ -1,9 +1,7 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-
 import { ErrorCode } from "@calcom/lib/errorCodes";
 import { ErrorWithCode } from "@calcom/lib/errors";
 import { prisma } from "@calcom/prisma";
-
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { getResourceBookingService } from "../di/ResourceBookingService.container";
 
 const service = getResourceBookingService();
@@ -12,12 +10,27 @@ const SLUG = `test-booking-${Date.now()}`;
 let resourceId: number;
 let bookerUserId: number;
 
-const booker = { get userId() { return bookerUserId; }, email: "exhibitor@test.com", name: "Exhibitor" };
+const booker = {
+  get userId() {
+    return bookerUserId;
+  },
+  email: "exhibitor@test.com",
+  name: "Exhibitor",
+};
 
 describe("ResourceBookingService.createBooking", () => {
   beforeAll(async () => {
     const room = await prisma.resource.create({
-      data: { name: "TEST Booking Room", slug: SLUG, category: "ENTRY", capacity: 6, surface: 18, price1h: 35000, price2h: 65000, price3h: 90000 },
+      data: {
+        name: "TEST Booking Room",
+        slug: SLUG,
+        category: "ENTRY",
+        capacity: 6,
+        surface: 18,
+        price1h: 35000,
+        price2h: 65000,
+        price3h: 90000,
+      },
       select: { id: true },
     });
     resourceId = room.id;

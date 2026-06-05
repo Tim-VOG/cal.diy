@@ -8,6 +8,7 @@ const TABS = [
   { href: "/rooms/admin/rooms", label: "Rooms" },
   { href: "/rooms/admin/addons", label: "Add-ons" },
   { href: "/rooms/admin/blocks", label: "Blocked slots" },
+  { href: "/rooms/admin/pages", label: "Pages" },
   { href: "/rooms/admin/settings", label: "Settings" },
 ];
 
