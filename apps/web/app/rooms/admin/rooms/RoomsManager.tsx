@@ -1,8 +1,10 @@
 "use client";
 
+import type { EventDayDefinition } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { trpc } from "@calcom/trpc/react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import EventDaysForm from "./EventDaysForm";
 
 const CATEGORIES = ["PREMIUM", "INTERMEDIATE", "ENTRY"] as const;
 
@@ -36,10 +38,12 @@ export default function RoomsManager({
   rooms,
   bufferMinutes,
   slotGranularityMinutes,
+  eventDays,
 }: {
   rooms: RoomRow[];
   bufferMinutes: number;
   slotGranularityMinutes: number;
+  eventDays: EventDayDefinition[];
 }): JSX.Element {
   const router = useRouter();
   const [draft, setDraft] = useState<RoomRow[]>(rooms);
@@ -130,6 +134,8 @@ export default function RoomsManager({
           {updateSettings.isSuccess ? <span className="text-green-600 text-xs">Saved ✓</span> : null}
         </div>
       </div>
+
+      <EventDaysForm initial={eventDays} />
 
       {/* Room cards */}
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
