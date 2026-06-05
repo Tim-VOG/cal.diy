@@ -294,7 +294,7 @@ export default function RoomsAdminView({
       </div>
 
       {view === "calendar" ? (
-        <div className={`mt-4 ${selectedBooking ? "grid gap-6 lg:grid-cols-[1fr_360px]" : ""}`}>
+        <div className="mt-4">
           <BookingCalendar
             rows={filtered}
             roomNames={roomNames}

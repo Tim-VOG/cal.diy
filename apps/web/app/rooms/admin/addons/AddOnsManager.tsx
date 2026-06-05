@@ -1,7 +1,6 @@
 "use client";
 
 import { trpc } from "@calcom/trpc/react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -23,8 +22,9 @@ const PRICE_TYPES = [
 ] as const;
 type PriceType = (typeof PRICE_TYPES)[number]["value"];
 
-const cellInput =
-  "w-24 rounded-md border border-gray-200 px-2 py-1 text-sm focus:border-[#000643] focus:outline-none";
+const input =
+  "mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#000643] focus:outline-none";
+const label = "block font-medium text-gray-500 text-xs";
 
 export default function AddOnsManager({ addOns }: { addOns: AddOnRow[] }): JSX.Element {
   const router = useRouter();
@@ -70,31 +70,26 @@ export default function AddOnsManager({ addOns }: { addOns: AddOnRow[] }): JSX.E
 
   return (
     <div>
-      <Link href="/rooms/admin" className="text-gray-500 text-sm hover:text-[#000643]">
-        ← Back to admin
-      </Link>
-      <h1 className="mt-2 font-bold text-2xl text-[#000643]">Manage add-ons</h1>
-      <p className="mt-1 text-gray-600 text-sm">
-        Create, edit or remove add-ons. Prices are excl. VAT; VAT rate in %.
-      </p>
+      <h1 className="font-bold text-2xl text-[#000643]">Manage add-ons</h1>
+      <p className="mt-1 text-gray-600 text-sm">Create, edit or remove add-ons. Prices are excl. VAT.</p>
 
       {/* Create */}
-      <div className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+      <div className="mt-5 rounded-xl border border-gray-200 bg-white p-5">
         <h2 className="font-semibold text-[#000643] text-xs uppercase tracking-wide">New add-on</h2>
-        <div className="mt-3 flex flex-wrap items-end gap-3">
-          <label className="text-sm">
-            <span className="block font-medium text-gray-700">Name</span>
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <label>
+            <span className={label}>Name</span>
             <input
               type="text"
-              className={`${cellInput} w-44`}
+              className={input}
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
             />
           </label>
-          <label className="text-sm">
-            <span className="block font-medium text-gray-700">Pricing</span>
+          <label>
+            <span className={label}>Pricing</span>
             <select
-              className={`${cellInput} w-32`}
+              className={input}
               value={newType}
               onChange={(e) => setNewType(e.target.value as PriceType)}>
               {PRICE_TYPES.map((t) => (
@@ -104,149 +99,144 @@ export default function AddOnsManager({ addOns }: { addOns: AddOnRow[] }): JSX.E
               ))}
             </select>
           </label>
-          <label className="text-sm">
-            <span className="block font-medium text-gray-700">Price (excl. VAT)</span>
+          <label>
+            <span className={label}>Price (excl. VAT)</span>
             <input
               type="number"
               min={0}
-              className={`${cellInput} w-24`}
+              className={input}
               value={newPrice}
               onChange={(e) => setNewPrice(Math.max(0, Number(e.target.value)))}
             />
           </label>
-          <label className="text-sm">
-            <span className="block font-medium text-gray-700">VAT %</span>
+          <label>
+            <span className={label}>VAT %</span>
             <input
               type="number"
               min={0}
               max={100}
               step="0.1"
-              className={`${cellInput} w-20`}
+              className={input}
               value={newVat}
               onChange={(e) => setNewVat(Math.min(100, Math.max(0, Number(e.target.value))))}
             />
           </label>
-          <button
-            type="button"
-            disabled={!newName.trim() || create.isPending}
-            onClick={() =>
-              create.mutate({
-                name: newName.trim(),
-                priceType: newType,
-                price: Math.round(newPrice * 100),
-                vatRate: Math.round(newVat * 100),
-              })
-            }
-            className="rounded-md bg-[#000643] px-3 py-1.5 font-semibold text-white text-xs transition hover:opacity-90 disabled:opacity-40">
-            {create.isPending ? "Adding…" : "Add add-on"}
-          </button>
         </div>
+        <button
+          type="button"
+          disabled={!newName.trim() || create.isPending}
+          onClick={() =>
+            create.mutate({
+              name: newName.trim(),
+              priceType: newType,
+              price: Math.round(newPrice * 100),
+              vatRate: Math.round(newVat * 100),
+            })
+          }
+          className="mt-3 rounded-lg bg-[#000643] px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90 disabled:opacity-40">
+          {create.isPending ? "Adding…" : "Add add-on"}
+        </button>
       </div>
 
-      <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200 bg-white">
-        <table className="w-full text-left text-sm">
-          <thead className="border-gray-100 border-b bg-gray-50 text-gray-500 text-xs uppercase">
-            <tr>
-              <th className="px-3 py-2">Add-on</th>
-              <th className="px-3 py-2">Pricing</th>
-              <th className="px-3 py-2">Unit price</th>
-              <th className="px-3 py-2">VAT %</th>
-              <th className="px-3 py-2">Active</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {draft.map((r) => (
-              <tr key={r.id} className="border-gray-50 border-b last:border-0">
-                <td className="px-3 py-2">
-                  <input
-                    type="text"
-                    className={`${cellInput} w-44`}
-                    value={r.name}
-                    onChange={(e) => setField(r.id, "name", e.target.value)}
-                  />
-                  <input
-                    type="text"
-                    placeholder="Description"
-                    className={`${cellInput} mt-1 w-44`}
-                    value={r.description}
-                    onChange={(e) => setField(r.id, "description", e.target.value)}
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <select
-                    className={`${cellInput} w-32`}
-                    value={r.priceType}
-                    onChange={(e) => setField(r.id, "priceType", e.target.value)}>
-                    {PRICE_TYPES.map((t) => (
-                      <option key={t.value} value={t.value}>
-                        {t.label}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    type="number"
-                    min={0}
-                    step="1"
-                    className={cellInput}
-                    value={Math.round(r.price) / 100}
-                    onChange={(e) =>
-                      setField(r.id, "price", Math.round(Math.max(0, Number(e.target.value)) * 100))
-                    }
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step="0.1"
-                    className={`${cellInput} w-20`}
-                    value={r.vatRate / 100}
-                    onChange={(e) =>
-                      setField(
-                        r.id,
-                        "vatRate",
-                        Math.round(Math.min(100, Math.max(0, Number(e.target.value))) * 100)
-                      )
-                    }
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    type="checkbox"
-                    checked={r.isActive}
-                    onChange={(e) => setField(r.id, "isActive", e.target.checked)}
-                    className="h-4 w-4 accent-[#000643]"
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => save(r)}
-                      disabled={savingId === r.id}
-                      className="rounded-md bg-[#000643] px-3 py-1 font-semibold text-white text-xs transition hover:opacity-90 disabled:opacity-40">
-                      {savingId === r.id ? "Saving…" : "Save"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (window.confirm(`Delete "${r.name}"? (Refused if used by bookings.)`)) {
-                          remove.mutate({ id: r.id });
-                        }
-                      }}
-                      className="rounded-md border border-red-200 px-2 py-1 font-medium text-red-600 text-xs transition hover:border-red-400">
-                      Delete
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* Add-on cards */}
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {draft.map((r) => (
+          <div key={r.id} className="flex flex-col rounded-xl border border-gray-200 bg-white p-5">
+            <div className="flex items-start justify-between gap-3">
+              <input
+                type="text"
+                className={`${input} mt-0 font-semibold text-[#000643]`}
+                value={r.name}
+                onChange={(e) => setField(r.id, "name", e.target.value)}
+              />
+              <label className="flex shrink-0 items-center gap-1.5 pt-2 text-gray-600 text-xs">
+                <input
+                  type="checkbox"
+                  checked={r.isActive}
+                  onChange={(e) => setField(r.id, "isActive", e.target.checked)}
+                  className="h-4 w-4 accent-[#000643]"
+                />
+                Active
+              </label>
+            </div>
+
+            <div className="mt-3 grid grid-cols-3 gap-3">
+              <label>
+                <span className={label}>Pricing</span>
+                <select
+                  className={input}
+                  value={r.priceType}
+                  onChange={(e) => setField(r.id, "priceType", e.target.value)}>
+                  {PRICE_TYPES.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span className={label}>Price ({r.currency})</span>
+                <input
+                  type="number"
+                  min={0}
+                  className={input}
+                  value={Math.round(r.price) / 100}
+                  onChange={(e) =>
+                    setField(r.id, "price", Math.round(Math.max(0, Number(e.target.value)) * 100))
+                  }
+                />
+              </label>
+              <label>
+                <span className={label}>VAT %</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="0.1"
+                  className={input}
+                  value={r.vatRate / 100}
+                  onChange={(e) =>
+                    setField(
+                      r.id,
+                      "vatRate",
+                      Math.round(Math.min(100, Math.max(0, Number(e.target.value))) * 100)
+                    )
+                  }
+                />
+              </label>
+            </div>
+
+            <label className="mt-3 block">
+              <span className={label}>Description</span>
+              <textarea
+                rows={2}
+                className={input}
+                value={r.description}
+                onChange={(e) => setField(r.id, "description", e.target.value)}
+              />
+            </label>
+
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => save(r)}
+                disabled={savingId === r.id}
+                className="rounded-lg bg-[#000643] px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90 disabled:opacity-40">
+                {savingId === r.id ? "Saving…" : "Save"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm(`Delete "${r.name}"? (Refused if used by bookings.)`)) {
+                    remove.mutate({ id: r.id });
+                  }
+                }}
+                className="rounded-lg border border-red-200 px-3 py-2 font-medium text-red-600 text-sm transition hover:border-red-400">
+                Delete
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
 
       {error ? <p className="mt-3 text-red-600 text-sm">{error.message}</p> : null}
