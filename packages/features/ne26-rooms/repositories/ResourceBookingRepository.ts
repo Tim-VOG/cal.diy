@@ -277,6 +277,27 @@ export class ResourceBookingRepository {
     });
   }
 
+  /** A single exhibitor's own bookings (excluding admin blocks), with details. */
+  findByBookerUserIdWithDetails(userId: number) {
+    return this.prismaClient.resourceBooking.findMany({
+      where: { isBlock: false, bookerUserId: userId },
+      orderBy: [{ startTime: "asc" }, { createdAt: "asc" }],
+      select: {
+        uid: true,
+        status: true,
+        startTime: true,
+        endTime: true,
+        durationMinutes: true,
+        amountTotal: true,
+        currency: true,
+        invoiceNumber: true,
+        creditNoteNumber: true,
+        resource: { select: { name: true, category: true } },
+        addOns: { select: { quantity: true, addOn: { select: { name: true } } } },
+      },
+    });
+  }
+
   /** Booking with everything the invoice needs (booker, room, add-on VAT rates). */
   findByUidForInvoice(uid: string) {
     return this.prismaClient.resourceBooking.findUnique({

@@ -19,7 +19,7 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
   return (
     <div className="flex min-h-screen flex-col bg-gray-50 text-black">
       <header className="bg-[#000643] text-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-4 sm:px-6">
           <Link
             href="/rooms"
             className="flex items-center gap-2 sm:gap-4"
@@ -36,6 +36,12 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
             <span className="hidden text-sm opacity-70 md:inline">17–19 November 2026</span>
             {isLoggedIn ? (
               <>
+                <Link
+                  href="/rooms/bookings"
+                  className="shrink-0 text-sm opacity-80 transition hover:opacity-100">
+                  <span className="sm:hidden">Bookings</span>
+                  <span className="hidden sm:inline">My bookings</span>
+                </Link>
                 <Link
                   href="/rooms/account"
                   className="shrink-0 text-sm opacity-80 transition hover:opacity-100">
