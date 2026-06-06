@@ -19,38 +19,42 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
   return (
     <div className="flex min-h-screen flex-col bg-gray-50 text-black">
       <header className="bg-[#000643] text-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-4 sm:px-6">
           <Link
             href="/rooms"
-            className="flex items-center gap-4"
+            className="flex items-center gap-3 sm:gap-4"
             aria-label="VO Europe — NATO Edge 26 Rooms — home">
-            {/* Both logos are white-on-transparent, so they sit on the navy bar. */}
+            {/* Both logos are white-on-transparent, so they sit on the navy bar.
+                The VO Europe wordmark is hidden on small screens to leave room. */}
             {/* biome-ignore lint/performance/noImgElement: static brand asset, next/image adds no value here */}
-            <img src="/VOEU.png" alt="VO Europe" className="h-7 w-auto" />
-            <span className="h-7 w-px bg-white/25" aria-hidden />
+            <img src="/VOEU.png" alt="VO Europe" className="hidden h-7 w-auto sm:block" />
+            <span className="hidden h-7 w-px bg-white/25 sm:block" aria-hidden />
             {/* biome-ignore lint/performance/noImgElement: static brand asset, next/image adds no value here */}
-            <img src="/NE26.png" alt="NATO Edge 26" className="h-8 w-auto" />
+            <img src="/NE26.png" alt="NATO Edge 26" className="h-7 w-auto sm:h-8" />
           </Link>
-          <div className="flex items-center gap-5">
-            <span className="hidden text-sm opacity-70 sm:inline">17–19 November 2026</span>
+          <div className="flex items-center gap-3 sm:gap-5">
+            <span className="hidden text-sm opacity-70 md:inline">17–19 November 2026</span>
             {isLoggedIn ? (
               <>
-                <Link href="/rooms/account" className="text-sm opacity-80 transition hover:opacity-100">
-                  Billing details
+                <Link
+                  href="/rooms/account"
+                  className="shrink-0 text-sm opacity-80 transition hover:opacity-100">
+                  <span className="sm:hidden">Billing</span>
+                  <span className="hidden sm:inline">Billing details</span>
                 </Link>
                 <LogoutButton />
               </>
             ) : (
               <Link
                 href="/rooms/login"
-                className="rounded-md border border-white/30 px-3 py-1 text-sm transition hover:bg-white/10">
+                className="shrink-0 rounded-md border border-white/30 px-3 py-1 text-sm transition hover:bg-white/10">
                 Log in
               </Link>
             )}
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">{children}</main>
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6">{children}</main>
       <Footer />
     </div>
   );

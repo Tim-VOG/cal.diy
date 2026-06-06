@@ -5,7 +5,7 @@ import Link from "next/link";
 export default function Footer(): JSX.Element {
   return (
     <footer className="mt-16 bg-black text-white">
-      <div className="mx-auto max-w-5xl px-6 py-12">
+      <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6">
         <p className="text-sm text-white/70">
           VO Europe SA, Rue Haute 139, 1000 Brussels, Belgium — BCE / VAT BE 0849 627 948.
         </p>

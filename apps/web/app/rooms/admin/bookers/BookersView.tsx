@@ -100,8 +100,8 @@ export default function BookersView({ bookers }: { bookers: Booker[] }): JSX.Ele
                 </button>
 
                 {open ? (
-                  <div className="border-gray-100 border-t px-5 py-3">
-                    <table className="w-full text-left text-sm">
+                  <div className="overflow-x-auto border-gray-100 border-t px-5 py-3">
+                    <table className="w-full min-w-[36rem] text-left text-sm">
                       <thead className="text-gray-400 text-xs uppercase">
                         <tr>
                           <th className="py-1">Room</th>
