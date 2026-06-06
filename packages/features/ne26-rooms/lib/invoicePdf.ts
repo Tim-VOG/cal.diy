@@ -80,6 +80,7 @@ export async function renderInvoicePdf(
   const page = doc.addPage([595, 842]); // A4
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const boldItalic = await doc.embedFont(StandardFonts.HelveticaBoldOblique);
   const { width } = page.getSize();
   const left = 50;
   const right = width - 50;
@@ -89,6 +90,30 @@ export async function renderInvoicePdf(
     page.drawText(ascii(s), { x, y: yy, size, font: f, color });
   const textRight = (s: string, xRight: number, yy: number, size = 10, f = font, color = rgb(0, 0, 0)) =>
     page.drawText(ascii(s), { x: xRight - f.widthOfTextAtSize(ascii(s), size), y: yy, size, font: f, color });
+
+  // Tiny vector icons (navy) for the booking block — pdf-lib has no icon font.
+  const clockIcon = (x: number, cy: number) => {
+    const r = 4.5;
+    page.drawEllipse({ x: x + r, y: cy, xScale: r, yScale: r, borderColor: NAVY, borderWidth: 0.8 });
+    page.drawLine({
+      start: { x: x + r, y: cy },
+      end: { x: x + r, y: cy + r - 1 },
+      thickness: 0.8,
+      color: NAVY,
+    });
+    page.drawLine({
+      start: { x: x + r, y: cy },
+      end: { x: x + r + r - 1.5, y: cy },
+      thickness: 0.8,
+      color: NAVY,
+    });
+  };
+  const roomIcon = (x: number, yBottom: number) => {
+    const w = 9;
+    const h = 9;
+    page.drawRectangle({ x, y: yBottom, width: w, height: h, borderColor: NAVY, borderWidth: 0.8 });
+    page.drawRectangle({ x: x + w / 2 - 1.1, y: yBottom, width: 2.2, height: h * 0.55, color: NAVY });
+  };
 
   // A credit note shows the same breakdown with negated amounts.
   const isCredit = meta.kind === "credit_note";
@@ -187,29 +212,46 @@ export async function renderInvoicePdf(
   textRight(isCredit ? "Total credited" : "Total incl. VAT", colHt, y, 11, bold, NAVY);
   textRight(amt(model.totalTtc), colTtc, y, 11, bold, NAVY);
 
-  if (model.vatMention) {
-    y -= 24;
-    text(model.vatMention, left, y, 8, font, GREY);
-  }
-
-  // Booking recap — highlighted block under the amounts, restating what was
-  // purchased (room + slot, Europe/Brussels).
-  y -= 40;
-  const boxH = 46;
+  // Booking recap — highlighted block restating what was purchased, with icons.
+  y -= 36;
+  const bTop = y;
+  const bBottom = y - 54;
   page.drawRectangle({
     x: left,
-    y: y - boxH + 26,
+    y: bBottom,
     width: right - left,
-    height: boxH,
+    height: bTop - bBottom,
     color: rgb(0.95, 0.96, 1),
     borderColor: NAVY,
     borderWidth: 0.6,
   });
-  text("BOOKING", left + 12, y, 8, bold, NAVY);
-  y -= 16;
-  text(meta.roomName, left + 12, y, 11, bold, NAVY);
-  y -= 13;
-  text(`${dt(meta.startUtc)} to ${dt(meta.endUtc)} (Europe/Brussels)`, left + 12, y, 9, font, GREY);
+  let by = bTop - 15;
+  text("BOOKING", left + 14, by, 8, bold, NAVY);
+  by -= 18;
+  roomIcon(left + 14, by - 1);
+  text(meta.roomName, left + 30, by, 11, bold, NAVY);
+  by -= 15;
+  clockIcon(left + 14, by + 3);
+  text(`${dt(meta.startUtc)} to ${dt(meta.endUtc)} (Europe/Brussels)`, left + 30, by, 9, font, GREY);
+  y = bBottom;
+
+  // VAT legal mention (reverse charge / exemption) — its own amber block, bold italic.
+  if (model.vatMention) {
+    y -= 16;
+    const vTop = y;
+    const vBottom = y - 26;
+    page.drawRectangle({
+      x: left,
+      y: vBottom,
+      width: right - left,
+      height: vTop - vBottom,
+      color: rgb(1, 0.96, 0.85),
+      borderColor: rgb(0.85, 0.65, 0.13),
+      borderWidth: 0.6,
+    });
+    text(model.vatMention, left + 14, vTop - 17, 9, boldItalic, rgb(0.5, 0.36, 0.03));
+    y = vBottom;
+  }
 
   // Footer — three configurable columns (each multi-line), falling back to the
   // legacy single-line footer when no column is set.
