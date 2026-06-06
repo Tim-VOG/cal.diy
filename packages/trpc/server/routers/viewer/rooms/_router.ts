@@ -306,4 +306,64 @@ export const roomsRouter = router({
 
     return { ...booking, checkoutUrl: checkout.url };
   }),
+
+  // Resume an abandoned PENDING booking: rebuild its checkout and return the URL.
+  resumeBooking: authedProcedure.input(ZBookingUidInputSchema).mutation(async ({ ctx, input }) => {
+    const { getResourceBookingService } = await import(
+      "@calcom/features/ne26-rooms/di/ResourceBookingService.container"
+    );
+    const { getStripeCheckoutService } = await import(
+      "@calcom/features/ne26-rooms/di/StripeCheckoutService.container"
+    );
+    const { getNe26BillingProfileRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26BillingProfileRepository.container"
+    );
+    const { getRoomVatPreviewService } = await import(
+      "@calcom/features/ne26-rooms/di/RoomVatPreviewService.container"
+    );
+    const { WEBAPP_URL } = await import("@calcom/lib/constants");
+
+    const resume = await getResourceBookingService().prepareResume(input.uid, ctx.user.id);
+
+    const billingRepo = getNe26BillingProfileRepository();
+    const profile = await billingRepo.findByUserId(ctx.user.id);
+    let customerId: string | undefined;
+    if (profile) {
+      const existing = await billingRepo.findStripeCustomerId(ctx.user.id);
+      customerId = await getStripeCheckoutService().ensureCustomer({
+        customerId: existing,
+        email: ctx.user.email,
+        name: ctx.user.name,
+        legalName: profile.legalName,
+        country: profile.country,
+        addressLine1: profile.addressLine1,
+        addressLine2: profile.addressLine2,
+        postalCode: profile.postalCode,
+        city: profile.city,
+      });
+      if (customerId !== existing) await billingRepo.setStripeCustomerId(ctx.user.id, customerId);
+    }
+
+    const vat = await getRoomVatPreviewService().preview({
+      userId: ctx.user.id,
+      slug: resume.slug,
+      durationHours: resume.durationHours,
+      addOns: resume.addOns,
+    });
+    const vatLines = vat.vatBreakdown
+      .filter((v) => v.vat > 0)
+      .map((v) => ({ name: `VAT ${v.vatRate / 100}%`, quantity: 1, unitAmount: v.vat }));
+
+    const checkout = await getStripeCheckoutService().createCheckoutSession({
+      bookingUid: input.uid,
+      currency: resume.currency,
+      lines: [...resume.checkoutLines, ...vatLines],
+      customerEmail: ctx.user.email,
+      customerId,
+      successUrl: `${WEBAPP_URL}/rooms/booked/${input.uid}`,
+      cancelUrl: `${WEBAPP_URL}/rooms/bookings`,
+    });
+
+    return { checkoutUrl: checkout.url };
+  }),
 });

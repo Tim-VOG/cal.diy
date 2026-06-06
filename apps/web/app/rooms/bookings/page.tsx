@@ -5,6 +5,7 @@ import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import ResumePaymentButton from "./ResumePaymentButton";
 
 export const metadata: Metadata = {
   title: "My bookings · NATO Edge 26",
@@ -94,8 +95,10 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                     className="text-[#000643] text-sm underline hover:opacity-80">
                     Invoice {b.invoiceNumber}
                   </a>
+                ) : b.status === "PENDING" ? (
+                  <ResumePaymentButton uid={b.uid} />
                 ) : (
-                  <span className="text-gray-400 text-xs">Awaiting payment</span>
+                  <span className="text-gray-400 text-xs">—</span>
                 )}
               </div>
             </div>

@@ -159,6 +159,37 @@ export class ResourceBookingRepository {
     });
   }
 
+  /** A PENDING booking with everything needed to rebuild its Stripe checkout. */
+  findResumableByUid(uid: string) {
+    return this.prismaClient.resourceBooking.findUnique({
+      where: { uid },
+      select: {
+        uid: true,
+        status: true,
+        startTime: true,
+        endTime: true,
+        durationMinutes: true,
+        currency: true,
+        bookerUserId: true,
+        holdExpiresAt: true,
+        resource: {
+          select: { name: true, slug: true, price1h: true, price2h: true, price3h: true },
+        },
+        addOns: {
+          select: { quantity: true, lineTotal: true, addOn: { select: { name: true, slug: true } } },
+        },
+      },
+    });
+  }
+
+  /** Extend a PENDING booking's hold (e.g. when the booker resumes payment). */
+  async extendHoldByUid(uid: string, until: Date): Promise<void> {
+    await this.prismaClient.resourceBooking.updateMany({
+      where: { uid, status: ResourceBookingStatus.PENDING },
+      data: { holdExpiresAt: until },
+    });
+  }
+
   /**
    * Confirm a paid booking. Scoped to PENDING so a replayed/duplicate webhook is
    * a no-op (idempotent) and a cancelled booking is never silently revived.
