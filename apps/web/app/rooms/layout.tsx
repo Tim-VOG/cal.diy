@@ -22,13 +22,13 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-4 sm:px-6">
           <Link
             href="/rooms"
-            className="flex items-center gap-3 sm:gap-4"
+            className="flex items-center gap-2 sm:gap-4"
             aria-label="VO Europe — NATO Edge 26 Rooms — home">
             {/* Both logos are white-on-transparent, so they sit on the navy bar.
-                The VO Europe wordmark is hidden on small screens to leave room. */}
+                Slightly smaller on mobile so both fit beside the controls. */}
             {/* biome-ignore lint/performance/noImgElement: static brand asset, next/image adds no value here */}
-            <img src="/VOEU.png" alt="VO Europe" className="hidden h-7 w-auto sm:block" />
-            <span className="hidden h-7 w-px bg-white/25 sm:block" aria-hidden />
+            <img src="/VOEU.png" alt="VO Europe" className="h-5 w-auto sm:h-7" />
+            <span className="h-5 w-px bg-white/25 sm:h-7" aria-hidden />
             {/* biome-ignore lint/performance/noImgElement: static brand asset, next/image adds no value here */}
             <img src="/NE26.png" alt="NATO Edge 26" className="h-7 w-auto sm:h-8" />
           </Link>
