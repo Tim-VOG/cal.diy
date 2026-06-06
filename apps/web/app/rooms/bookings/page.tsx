@@ -38,7 +38,10 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
   if (!session?.user?.id) redirect("/rooms/login?callbackUrl=/rooms/bookings");
 
-  const bookings = await getResourceBookingRepository().findByBookerUserIdWithDetails(session.user.id);
+  // Clear abandoned, unpaid bookings whose hold has expired so they don't linger.
+  const bookingRepo = getResourceBookingRepository();
+  await bookingRepo.deleteExpiredHolds(new Date());
+  const bookings = await bookingRepo.findByBookerUserIdWithDetails(session.user.id);
 
   return (
     <div>

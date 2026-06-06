@@ -19,6 +19,8 @@ export default async function RoomsAdminPage(): Promise<JSX.Element> {
   if (!session?.user?.id) redirect("/rooms/login?callbackUrl=/rooms/admin");
   if (session.user.role !== "ADMIN") notFound();
 
+  // Drop abandoned, unpaid bookings whose hold expired before listing.
+  await getResourceBookingRepository().deleteExpiredHolds(new Date());
   const [bookings, allRooms, roomSettings] = await Promise.all([
     getResourceBookingRepository().findAllWithDetails(),
     getResourceRepository().findAllForAdmin(),

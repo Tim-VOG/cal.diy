@@ -191,6 +191,22 @@ export class ResourceBookingRepository {
   }
 
   /**
+   * Delete PENDING bookings whose hold has expired, freeing their slots
+   * (cascade). Called opportunistically on list reads so abandoned, unpaid
+   * bookings disappear ~after the hold window instead of lingering. Returns the
+   * number removed.
+   */
+  async deleteExpiredHolds(now: Date): Promise<number> {
+    const result = await this.prismaClient.resourceBooking.deleteMany({
+      where: {
+        status: ResourceBookingStatus.PENDING,
+        holdExpiresAt: { not: null, lt: now },
+      },
+    });
+    return result.count;
+  }
+
+  /**
    * Confirm a paid booking. Scoped to PENDING so a replayed/duplicate webhook is
    * a no-op (idempotent) and a cancelled booking is never silently revived.
    * Returns the number of rows updated (1 = confirmed, 0 = already handled/gone).
