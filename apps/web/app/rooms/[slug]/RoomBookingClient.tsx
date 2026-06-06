@@ -208,6 +208,7 @@ function SelectionSummary({
   total,
   vat,
   isAuthed,
+  billingComplete,
   booking,
   errorMessage,
   isPending,
@@ -224,6 +225,7 @@ function SelectionSummary({
   total: number | null;
   vat: VatPreview | undefined;
   isAuthed: boolean;
+  billingComplete: boolean;
   booking: BookingResult | undefined;
   errorMessage: string | null;
   isPending: boolean;
@@ -286,7 +288,24 @@ function SelectionSummary({
             <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-red-700 text-sm">{errorMessage}</p>
           ) : null}
 
-          {isAuthed ? (
+          {!isAuthed ? (
+            <a
+              href={`/rooms/login?callbackUrl=/rooms/${room.slug}`}
+              className="mt-5 block w-full rounded-lg bg-[#000643] px-4 py-2.5 text-center font-semibold text-sm text-white transition hover:opacity-90">
+              Log in to book
+            </a>
+          ) : !billingComplete ? (
+            <>
+              <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-amber-800 text-sm">
+                Add your billing details first — they appear on your invoice.
+              </p>
+              <a
+                href="/rooms/account"
+                className="mt-3 block w-full rounded-lg bg-[#000643] px-4 py-2.5 text-center font-semibold text-sm text-white transition hover:opacity-90">
+                Complete billing details
+              </a>
+            </>
+          ) : (
             <button
               type="button"
               disabled={!canBook}
@@ -294,12 +313,6 @@ function SelectionSummary({
               className="mt-5 w-full rounded-lg bg-[#000643] px-4 py-2.5 font-semibold text-sm text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
               {isPending ? "Holding…" : "Continue to payment"}
             </button>
-          ) : (
-            <a
-              href={`/rooms/login?callbackUrl=/rooms/${room.slug}`}
-              className="mt-5 block w-full rounded-lg bg-[#000643] px-4 py-2.5 text-center font-semibold text-sm text-white transition hover:opacity-90">
-              Log in to book
-            </a>
           )}
           <p className="mt-2 text-center text-gray-400 text-xs">Secure payment via Stripe.</p>
         </>
@@ -312,10 +325,12 @@ export default function RoomBookingClient({
   availability,
   addOns,
   isAuthed,
+  billingComplete,
 }: {
   availability: RoomAvailability;
   addOns: PublicAddOn[];
   isAuthed: boolean;
+  billingComplete: boolean;
 }): JSX.Element {
   const { room, days } = availability;
   const priceForDuration: Record<DurationHours, number> = {
@@ -516,6 +531,7 @@ export default function RoomBookingClient({
         total={total}
         vat={vatPreview.data}
         isAuthed={isAuthed}
+        billingComplete={billingComplete}
         booking={createBooking.data}
         errorMessage={createBooking.error?.message ?? null}
         isPending={createBooking.isPending}

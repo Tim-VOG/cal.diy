@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import authedProcedure, { authedAdminProcedure } from "../../../procedures/authedProcedure";
 import { router } from "../../../trpc";
 import { ZBookingUidInputSchema } from "./bookingUid.schema";
@@ -240,6 +241,15 @@ export const roomsRouter = router({
     // mirrors into a Stripe Customer so Checkout opens pre-filled.
     const billingRepo = getNe26BillingProfileRepository();
     const profile = await billingRepo.findByUserId(ctx.user.id);
+
+    // Billing details are printed on the invoice, so they're required to book.
+    const { isBillingProfileComplete } = await import("@calcom/features/ne26-rooms/lib/billing");
+    if (!isBillingProfileComplete(profile)) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Please complete your billing details before booking — they appear on your invoice.",
+      });
+    }
 
     let customerId: string | undefined;
     if (profile) {
