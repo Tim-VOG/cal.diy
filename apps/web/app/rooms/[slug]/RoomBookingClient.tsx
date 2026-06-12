@@ -104,13 +104,16 @@ function AddOnList({
   return (
     <>
       <h2 className="mt-6 font-semibold text-gray-500 text-sm uppercase tracking-wide">Add-ons</h2>
-      <div className="mt-2 space-y-2">
+      {/* w-fit: every row shrinks to fit, all matching the widest add-on. */}
+      <div className="mt-2 flex w-fit max-w-full flex-col gap-2">
         {addOns.map((addOn) => {
           const isSelected = addOn.slug in selected;
           const quantity = selected[addOn.slug] ?? 1;
           const infoOpen = infoSlug === addOn.slug;
           return (
-            <div key={addOn.slug} className="rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm">
+            <div
+              key={addOn.slug}
+              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
                   <label className="flex items-center gap-2">
@@ -161,7 +164,7 @@ function AddOnList({
                 ) : null}
               </div>
               {addOn.description && infoOpen ? (
-                <p className="mt-2 border-gray-100 border-t pt-2 text-gray-600 text-xs leading-relaxed">
+                <p className="mt-2 max-w-xs border-gray-100 border-t pt-2 text-gray-600 text-xs leading-relaxed">
                   {addOn.description}
                 </p>
               ) : null}
