@@ -13,6 +13,8 @@ export const ZUpdateResourceInputSchema = z.object({
   price3h: z.number().int().min(0).optional(),
   /** URL or /public path for the room card image. */
   imageUrl: z.string().max(500).optional(),
+  /** Up to 4 extra photos (URLs/paths) for the room detail gallery. */
+  galleryImages: z.array(z.string().max(500)).max(4).optional(),
   isActive: z.boolean().optional(),
 });
 

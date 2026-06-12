@@ -2,6 +2,7 @@
 
 import type { DurationHours } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { computeAddOnLine } from "@calcom/features/ne26-rooms/lib/pricing";
+import { buildRoomPhotoList } from "@calcom/features/ne26-rooms/lib/roomImages";
 import type { RoomAvailability } from "@calcom/features/ne26-rooms/services/RoomAvailabilityService";
 import type { VatPreview } from "@calcom/features/ne26-rooms/services/RoomVatPreviewService";
 import { AddOnPriceType } from "@calcom/prisma/enums";
@@ -9,6 +10,7 @@ import { trpc } from "@calcom/trpc/react";
 import { Building, Clock, Euro, Scaling, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AMENITIES } from "../amenities";
+import RoomGallery from "./RoomGallery";
 
 const TZ = "Europe/Brussels";
 const MS_PER_HOUR = 60 * 60 * 1000;
@@ -339,6 +341,7 @@ export default function RoomBookingClient({
     3: room.price3h,
   };
   const addOnsBySlug = useMemo(() => new Map(addOns.map((a) => [a.slug, a])), [addOns]);
+  const photos = useMemo(() => buildRoomPhotoList(room.imageUrl, room.galleryImages), [room]);
 
   const [selectedDate, setSelectedDate] = useState(days[0]?.date ?? "");
   const [selectedStartUtc, setSelectedStartUtc] = useState<string | null>(null);
@@ -457,6 +460,8 @@ export default function RoomBookingClient({
             </span>
           ))}
         </div>
+
+        <RoomGallery photos={photos} roomName={room.name} />
 
         {/* Day selector */}
         <div className="mt-6 flex gap-2">

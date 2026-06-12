@@ -1,6 +1,7 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
 import { getResourceRepository } from "@calcom/features/ne26-rooms/di/ResourceRepository.container";
+import { normalizeGalleryImages } from "@calcom/features/ne26-rooms/lib/roomImages";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
@@ -38,6 +39,7 @@ export default async function ManageRoomsPage(): Promise<JSX.Element> {
         price3h: r.price3h,
         currency: r.currency,
         imageUrl: r.imageUrl ?? "",
+        galleryImages: normalizeGalleryImages(r.galleryImages),
         isActive: r.isActive,
       }))}
     />

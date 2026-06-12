@@ -2881,30 +2881,32 @@ enum AddOnPriceType {
 }
 
 model Resource {
-  id          Int               @id @default(autoincrement())
-  name        String
-  slug        String            @unique
-  category    ResourceCategory
-  capacity    Int
+  id            Int               @id @default(autoincrement())
+  name          String
+  slug          String            @unique
+  category      ResourceCategory
+  capacity      Int
   // Floor area in square metres.
-  surface     Int
+  surface       Int
   // Price per duration in the smallest currency unit (cents); not necessarily
   // proportional (a 3h package can be cheaper than 3x the 1h price).
-  price1h     Int
-  price2h     Int
-  price3h     Int
-  currency    String            @default("EUR")
-  description String?
+  price1h       Int
+  price2h       Int
+  price3h       Int
+  currency      String            @default("EUR")
+  description   String?
   // Card image: a URL or a path under /public (e.g. "/rooms/suite-1.jpg").
-  imageUrl    String?
-  isActive    Boolean           @default(true)
+  imageUrl      String?
+  // Extra photos for the room detail gallery (up to 4): JSON array of URLs/paths.
+  galleryImages Json?
+  isActive      Boolean           @default(true)
   // Technical user backing this room for the availability engine (Couche 1).
-  owner       User?             @relation("ResourceOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
-  ownerUserId Int?
-  bookings    ResourceBooking[]
-  slots       ResourceSlot[]
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  owner         User?             @relation("ResourceOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  ownerUserId   Int?
+  bookings      ResourceBooking[]
+  slots         ResourceSlot[]
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 
   @@index([ownerUserId])
   @@index([isActive])

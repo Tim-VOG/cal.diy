@@ -20,6 +20,7 @@ export interface RoomRow {
   price3h: number;
   currency: string;
   imageUrl: string;
+  galleryImages: string[];
   isActive: boolean;
 }
 
@@ -75,8 +76,21 @@ export default function RoomsManager({
       price2h: row.price2h,
       price3h: row.price3h,
       imageUrl: row.imageUrl,
+      galleryImages: row.galleryImages.map((s) => s.trim()).filter(Boolean),
       isActive: row.isActive,
     });
+  }
+
+  function setGalleryImage(id: number, index: number, value: string): void {
+    setDraft((rows) =>
+      rows.map((r) => {
+        if (r.id !== id) return r;
+        const gallery = [...r.galleryImages];
+        while (gallery.length < 4) gallery.push("");
+        gallery[index] = value;
+        return { ...r, galleryImages: gallery };
+      })
+    );
   }
 
   const currency = draft[0]?.currency ?? "EUR";
@@ -220,7 +234,7 @@ export default function RoomsManager({
               />
             </label>
             <label className="mt-3 block">
-              <span className={label}>Image (URL / path)</span>
+              <span className={label}>Cover image (URL / path)</span>
               <input
                 type="text"
                 placeholder="/rooms/suite-1.jpg"
@@ -229,6 +243,21 @@ export default function RoomsManager({
                 onChange={(e) => setField(r.id, "imageUrl", e.target.value)}
               />
             </label>
+            <div className="mt-3">
+              <span className={label}>Gallery photos (up to 4)</span>
+              <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {[0, 1, 2, 3].map((i) => (
+                  <input
+                    key={i}
+                    type="text"
+                    placeholder={`/rooms/photo-${i + 1}.jpg`}
+                    className={`${input} mt-0`}
+                    value={r.galleryImages[i] ?? ""}
+                    onChange={(e) => setGalleryImage(r.id, i, e.target.value)}
+                  />
+                ))}
+              </div>
+            </div>
 
             <button
               type="button"
