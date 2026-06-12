@@ -1,6 +1,8 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { getAddOnRepository } from "@calcom/features/ne26-rooms/di/AddOnRepository.container";
+import { getNe26BillingProfileRepository } from "@calcom/features/ne26-rooms/di/Ne26BillingProfileRepository.container";
 import { getRoomAvailabilityService } from "@calcom/features/ne26-rooms/di/RoomAvailabilityService.container";
+import { isBillingProfileComplete } from "@calcom/features/ne26-rooms/lib/billing";
 import type { RoomAvailability } from "@calcom/features/ne26-rooms/services/RoomAvailabilityService";
 import { ErrorCode } from "@calcom/lib/errorCodes";
 import { ErrorWithCode } from "@calcom/lib/errors";
@@ -40,7 +42,17 @@ export default async function RoomDetailPage({ params }: { params: Params }): Pr
   const data = await loadRoom(slug);
   if (!data) notFound();
 
-  const addOns = await getAddOnRepository().findManyActive();
+  const [addOns, profile] = await Promise.all([
+    getAddOnRepository().findManyActive(),
+    getNe26BillingProfileRepository().findByUserId(session.user.id),
+  ]);
 
-  return <RoomBookingClient availability={data} addOns={addOns} isAuthed />;
+  return (
+    <RoomBookingClient
+      availability={data}
+      addOns={addOns}
+      isAuthed
+      billingComplete={isBillingProfileComplete(profile)}
+    />
+  );
 }

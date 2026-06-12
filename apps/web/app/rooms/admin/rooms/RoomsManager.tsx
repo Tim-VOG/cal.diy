@@ -1,13 +1,17 @@
 "use client";
 
+import type { EventDayDefinition } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { trpc } from "@calcom/trpc/react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import EventDaysForm from "./EventDaysForm";
+
+const CATEGORIES = ["PREMIUM", "INTERMEDIATE", "ENTRY"] as const;
 
 export interface RoomRow {
   id: number;
   name: string;
+  description: string;
   category: string;
   capacity: number;
   surface: number;
@@ -16,13 +20,14 @@ export interface RoomRow {
   price3h: number;
   currency: string;
   imageUrl: string;
+  galleryImages: string[];
   isActive: boolean;
 }
 
-const cellInput =
-  "w-24 rounded-md border border-gray-200 px-2 py-1 text-sm focus:border-[#000643] focus:outline-none";
+const input =
+  "mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#000643] focus:outline-none";
+const label = "block font-medium text-gray-500 text-xs";
 
-// Prices are stored in cents; the admin edits them in whole currency units.
 function toUnits(cents: number): number {
   return Math.round(cents) / 100;
 }
@@ -33,14 +38,19 @@ function toCents(units: number): number {
 export default function RoomsManager({
   rooms,
   bufferMinutes,
+  slotGranularityMinutes,
+  eventDays,
 }: {
   rooms: RoomRow[];
   bufferMinutes: number;
+  slotGranularityMinutes: number;
+  eventDays: EventDayDefinition[];
 }): JSX.Element {
   const router = useRouter();
   const [draft, setDraft] = useState<RoomRow[]>(rooms);
   const [savingId, setSavingId] = useState<number | null>(null);
   const [buffer, setBuffer] = useState(bufferMinutes);
+  const [granularity, setGranularity] = useState(slotGranularityMinutes);
   const update = trpc.viewer.rooms.updateResource.useMutation({
     onSettled: () => setSavingId(null),
     onSuccess: () => router.refresh(),
@@ -57,33 +67,60 @@ export default function RoomsManager({
     setSavingId(row.id);
     update.mutate({
       id: row.id,
+      name: row.name,
+      description: row.description,
+      category: row.category as (typeof CATEGORIES)[number],
       capacity: row.capacity,
       surface: row.surface,
       price1h: row.price1h,
       price2h: row.price2h,
       price3h: row.price3h,
       imageUrl: row.imageUrl,
+      galleryImages: row.galleryImages.map((s) => s.trim()).filter(Boolean),
       isActive: row.isActive,
     });
   }
 
+  function setGalleryImage(id: number, index: number, value: string): void {
+    setDraft((rows) =>
+      rows.map((r) => {
+        if (r.id !== id) return r;
+        const gallery = [...r.galleryImages];
+        while (gallery.length < 4) gallery.push("");
+        gallery[index] = value;
+        return { ...r, galleryImages: gallery };
+      })
+    );
+  }
+
+  const currency = draft[0]?.currency ?? "EUR";
+
   return (
     <div>
-      <Link href="/rooms/admin" className="text-gray-500 text-sm hover:text-[#000643]">
-        ← Back to admin
-      </Link>
-      <h1 className="mt-2 font-bold text-2xl text-[#000643]">Manage rooms</h1>
+      <h1 className="font-bold text-2xl text-[#000643]">Manage rooms</h1>
       <p className="mt-1 text-gray-600 text-sm">
-        Edit prices (in {draft[0]?.currency ?? "EUR"}), capacity, surface and whether a room is bookable.
+        Edit each room's details. Prices are excl. VAT, in {currency}.
       </p>
 
+      {/* Booking settings */}
       <div className="mt-5 rounded-xl border border-gray-200 bg-white p-5">
         <h2 className="font-semibold text-[#000643] text-xs uppercase tracking-wide">Booking settings</h2>
         <p className="mt-1 text-gray-500 text-xs">
-          Turnover buffer enforced after every booking, so the next one can&apos;t start within it. Use a
-          multiple of 15 minutes (0 disables it).
+          Slot granularity = the start step offered to bookers. Buffer = turnover gap after each booking
+          (multiple of 15; 0 disables it).
         </p>
-        <div className="mt-3 flex items-end gap-2">
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="text-sm">
+            <span className="block font-medium text-gray-700">Slot granularity</span>
+            <select
+              className="mt-1 w-36 rounded-md border border-gray-200 px-2 py-1 text-sm focus:border-[#000643] focus:outline-none"
+              value={granularity}
+              onChange={(e) => setGranularity(Number(e.target.value))}>
+              <option value={60}>1 hour</option>
+              <option value={30}>30 minutes</option>
+              <option value={15}>15 minutes</option>
+            </select>
+          </label>
           <label className="text-sm">
             <span className="block font-medium text-gray-700">Buffer (minutes)</span>
             <input
@@ -98,97 +135,139 @@ export default function RoomsManager({
           </label>
           <button
             type="button"
-            onClick={() => updateSettings.mutate({ bufferMinutes: buffer })}
+            onClick={() =>
+              updateSettings.mutate({
+                bufferMinutes: buffer,
+                slotGranularityMinutes: granularity as 15 | 30 | 60,
+              })
+            }
             disabled={updateSettings.isPending}
             className="rounded-md bg-[#000643] px-3 py-1.5 font-semibold text-white text-xs transition hover:opacity-90 disabled:opacity-40">
-            {updateSettings.isPending ? "Saving…" : "Save buffer"}
+            {updateSettings.isPending ? "Saving…" : "Save settings"}
           </button>
           {updateSettings.isSuccess ? <span className="text-green-600 text-xs">Saved ✓</span> : null}
         </div>
       </div>
 
-      <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200 bg-white">
-        <table className="w-full text-left text-sm">
-          <thead className="border-gray-100 border-b bg-gray-50 text-gray-500 text-xs uppercase">
-            <tr>
-              <th className="px-3 py-2">Room</th>
-              <th className="px-3 py-2">Cap.</th>
-              <th className="px-3 py-2">m²</th>
-              <th className="px-3 py-2">1h</th>
-              <th className="px-3 py-2">2h</th>
-              <th className="px-3 py-2">3h</th>
-              <th className="px-3 py-2">Image (URL / path)</th>
-              <th className="px-3 py-2">Active</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {draft.map((r) => (
-              <tr key={r.id} className="border-gray-50 border-b last:border-0">
-                <td className="px-3 py-2">
-                  <div className="font-medium">{r.name}</div>
-                  <div className="text-gray-400 text-xs">{r.category}</div>
-                </td>
-                <td className="px-3 py-2">
+      <EventDaysForm initial={eventDays} />
+
+      {/* Room cards */}
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {draft.map((r) => (
+          <div key={r.id} className="flex flex-col rounded-xl border border-gray-200 bg-white p-5">
+            <div className="flex items-start justify-between gap-3">
+              <input
+                type="text"
+                className={`${input} mt-0 font-semibold text-[#000643]`}
+                value={r.name}
+                onChange={(e) => setField(r.id, "name", e.target.value)}
+              />
+              <label className="flex shrink-0 items-center gap-1.5 pt-2 text-gray-600 text-xs">
+                <input
+                  type="checkbox"
+                  checked={r.isActive}
+                  onChange={(e) => setField(r.id, "isActive", e.target.checked)}
+                  className="h-4 w-4 accent-[#000643]"
+                />
+                Active
+              </label>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <label>
+                <span className={label}>Category</span>
+                <select
+                  className={input}
+                  value={r.category}
+                  onChange={(e) => setField(r.id, "category", e.target.value)}>
+                  {CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span className={label}>Capacity</span>
+                <input
+                  type="number"
+                  min={0}
+                  className={input}
+                  value={r.capacity}
+                  onChange={(e) => setField(r.id, "capacity", Math.max(0, Number(e.target.value)))}
+                />
+              </label>
+              <label>
+                <span className={label}>Surface (m²)</span>
+                <input
+                  type="number"
+                  min={0}
+                  className={input}
+                  value={r.surface}
+                  onChange={(e) => setField(r.id, "surface", Math.max(0, Number(e.target.value)))}
+                />
+              </label>
+              <div />
+              {(["price1h", "price2h", "price3h"] as const).map((key, i) => (
+                <label key={key}>
+                  <span className={label}>
+                    {i + 1}h price ({currency})
+                  </span>
                   <input
                     type="number"
                     min={0}
-                    className={`${cellInput} w-16`}
-                    value={r.capacity}
-                    onChange={(e) => setField(r.id, "capacity", Math.max(0, Number(e.target.value)))}
+                    className={input}
+                    value={toUnits(r[key])}
+                    onChange={(e) => setField(r.id, key, toCents(Math.max(0, Number(e.target.value))))}
                   />
-                </td>
-                <td className="px-3 py-2">
+                </label>
+              ))}
+            </div>
+
+            <label className="mt-3 block">
+              <span className={label}>Description</span>
+              <textarea
+                rows={2}
+                className={input}
+                value={r.description}
+                onChange={(e) => setField(r.id, "description", e.target.value)}
+              />
+            </label>
+            <label className="mt-3 block">
+              <span className={label}>Cover image (URL / path)</span>
+              <input
+                type="text"
+                placeholder="/rooms/suite-1.jpg"
+                className={input}
+                value={r.imageUrl}
+                onChange={(e) => setField(r.id, "imageUrl", e.target.value)}
+              />
+            </label>
+            <div className="mt-3">
+              <span className={label}>Gallery photos (up to 4)</span>
+              <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {[0, 1, 2, 3].map((i) => (
                   <input
-                    type="number"
-                    min={0}
-                    className={`${cellInput} w-16`}
-                    value={r.surface}
-                    onChange={(e) => setField(r.id, "surface", Math.max(0, Number(e.target.value)))}
-                  />
-                </td>
-                {(["price1h", "price2h", "price3h"] as const).map((key) => (
-                  <td key={key} className="px-3 py-2">
-                    <input
-                      type="number"
-                      min={0}
-                      step="1"
-                      className={cellInput}
-                      value={toUnits(r[key])}
-                      onChange={(e) => setField(r.id, key, toCents(Math.max(0, Number(e.target.value))))}
-                    />
-                  </td>
-                ))}
-                <td className="px-3 py-2">
-                  <input
+                    key={i}
                     type="text"
-                    placeholder="/rooms/suite-1.jpg"
-                    className={`${cellInput} w-48`}
-                    value={r.imageUrl}
-                    onChange={(e) => setField(r.id, "imageUrl", e.target.value)}
+                    placeholder={`/rooms/photo-${i + 1}.jpg`}
+                    className={`${input} mt-0`}
+                    value={r.galleryImages[i] ?? ""}
+                    onChange={(e) => setGalleryImage(r.id, i, e.target.value)}
                   />
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    type="checkbox"
-                    checked={r.isActive}
-                    onChange={(e) => setField(r.id, "isActive", e.target.checked)}
-                    className="h-4 w-4 accent-[#000643]"
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <button
-                    type="button"
-                    onClick={() => save(r)}
-                    disabled={savingId === r.id}
-                    className="rounded-md bg-[#000643] px-3 py-1 font-semibold text-white text-xs transition hover:opacity-90 disabled:opacity-40">
-                    {savingId === r.id ? "Saving…" : "Save"}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                ))}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => save(r)}
+              disabled={savingId === r.id}
+              className="mt-4 self-start rounded-lg bg-[#000643] px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90 disabled:opacity-40">
+              {savingId === r.id ? "Saving…" : "Save room"}
+            </button>
+          </div>
+        ))}
       </div>
 
       {update.error ? <p className="mt-3 text-red-600 text-sm">{update.error.message}</p> : null}

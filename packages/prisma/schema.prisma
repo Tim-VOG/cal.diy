@@ -2881,30 +2881,32 @@ enum AddOnPriceType {
 }
 
 model Resource {
-  id          Int               @id @default(autoincrement())
-  name        String
-  slug        String            @unique
-  category    ResourceCategory
-  capacity    Int
+  id            Int               @id @default(autoincrement())
+  name          String
+  slug          String            @unique
+  category      ResourceCategory
+  capacity      Int
   // Floor area in square metres.
-  surface     Int
+  surface       Int
   // Price per duration in the smallest currency unit (cents); not necessarily
   // proportional (a 3h package can be cheaper than 3x the 1h price).
-  price1h     Int
-  price2h     Int
-  price3h     Int
-  currency    String            @default("EUR")
-  description String?
+  price1h       Int
+  price2h       Int
+  price3h       Int
+  currency      String            @default("EUR")
+  description   String?
   // Card image: a URL or a path under /public (e.g. "/rooms/suite-1.jpg").
-  imageUrl    String?
-  isActive    Boolean           @default(true)
+  imageUrl      String?
+  // Extra photos for the room detail gallery (up to 4): JSON array of URLs/paths.
+  galleryImages Json?
+  isActive      Boolean           @default(true)
   // Technical user backing this room for the availability engine (Couche 1).
-  owner       User?             @relation("ResourceOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
-  ownerUserId Int?
-  bookings    ResourceBooking[]
-  slots       ResourceSlot[]
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  owner         User?             @relation("ResourceOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  ownerUserId   Int?
+  bookings      ResourceBooking[]
+  slots         ResourceSlot[]
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 
   @@index([ownerUserId])
   @@index([isActive])
@@ -3034,12 +3036,36 @@ model Ne26InvoiceSettings {
 
 // Singleton booking configuration for NE26 rooms (admin-editable).
 model Ne26RoomSettings {
-  id            Int      @id @default(1)
+  id                     Int      @id @default(1)
   // Turnover buffer in minutes required after each booking; reserved as slots so
-  // the next booking can't start within it. Should be a multiple of the slot
-  // granularity (15 min).
-  bufferMinutes Int      @default(15)
-  updatedAt     DateTime @updatedAt
+  // the next booking can't start within it. 0 = no buffer. Multiple of 15.
+  bufferMinutes          Int      @default(0)
+  // Start step offered to bookers, in minutes (60 = hourly, 30, or 15). The
+  // internal atomic slot stays 15 min; this only controls which marks are
+  // offered as start times and the admin calendar columns.
+  slotGranularityMinutes Int      @default(60)
+  // Opening hours per event day, Brussels time. JSON array of
+  // { date: "YYYY-MM-DD", openHourBrussels, closeHourBrussels }. Drives
+  // availability, the admin calendar and the block editor. Null = built-in
+  // NE26 defaults (17/18/19 Nov 2026).
+  eventDays              Json?
+  // Public landing page (/rooms) content, editable from the admin. Title shows
+  // above "Book a meeting room"; intro is a short paragraph below it.
+  landingTitle           String?
+  landingIntro           String?  @db.Text
+  updatedAt              DateTime @updatedAt
+}
+
+// Admin-managed legal / informational pages (Privacy Policy, Practical
+// Information, etc.) rendered publicly at /rooms/legal/[slug]. Body is Markdown.
+model Ne26LegalPage {
+  id        Int      @id @default(autoincrement())
+  slug      String   @unique
+  title     String
+  content   String   @db.Text
+  published Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // Exhibitor billing details, entered once on the account and reused at checkout.

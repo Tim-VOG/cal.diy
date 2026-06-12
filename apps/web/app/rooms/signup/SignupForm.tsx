@@ -20,7 +20,7 @@ function usernameFromEmail(email: string): string {
 export default function SignupForm(): JSX.Element {
   const router = useRouter();
   const params = useSearchParams();
-  const callbackUrl = params.get("callbackUrl") || "/rooms";
+  const callbackUrl = params?.get("callbackUrl") || "/rooms";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);

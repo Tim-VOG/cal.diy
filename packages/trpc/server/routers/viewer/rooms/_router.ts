@@ -1,11 +1,21 @@
+import { TRPCError } from "@trpc/server";
 import authedProcedure, { authedAdminProcedure } from "../../../procedures/authedProcedure";
 import { router } from "../../../trpc";
 import { ZBookingUidInputSchema } from "./bookingUid.schema";
 import { ZCreateBlockInputSchema } from "./createBlock.schema";
 import { ZCreateBookingInputSchema } from "./createBooking.schema";
 import { ZIssueCreditNoteInputSchema } from "./issueCreditNote.schema";
+import {
+  ZCreateLegalPageInputSchema,
+  ZDeleteLegalPageInputSchema,
+  ZUpdateLegalPageInputSchema,
+} from "./legalPage.schema";
 import { ZPreviewVatInputSchema } from "./previewVat.schema";
-import { ZUpdateAddOnInputSchema } from "./updateAddOn.schema";
+import {
+  ZCreateAddOnInputSchema,
+  ZDeleteAddOnInputSchema,
+  ZUpdateAddOnInputSchema,
+} from "./updateAddOn.schema";
 import { ZUpdateBillingProfileInputSchema } from "./updateBillingProfile.schema";
 import { ZUpdateInvoiceSettingsInputSchema } from "./updateInvoiceSettings.schema";
 import { ZUpdateResourceInputSchema } from "./updateResource.schema";
@@ -127,11 +137,59 @@ export const roomsRouter = router({
     return getAddOnRepository().findAllForAdmin();
   }),
 
-  // Admin-only: update an add-on's price / VAT rate / active state.
+  // Admin-only: update an add-on's name / price / VAT rate / type / active state.
   updateAddOn: authedAdminProcedure.input(ZUpdateAddOnInputSchema).mutation(async ({ input }) => {
     const { getAddOnRepository } = await import("@calcom/features/ne26-rooms/di/AddOnRepository.container");
     const { id, ...data } = input;
     return getAddOnRepository().update(id, data);
+  }),
+
+  // Admin-only: create a new add-on (slug derived from the name).
+  createAddOn: authedAdminProcedure.input(ZCreateAddOnInputSchema).mutation(async ({ input }) => {
+    const { getAddOnRepository } = await import("@calcom/features/ne26-rooms/di/AddOnRepository.container");
+    const slugify = (await import("@calcom/lib/slugify")).default;
+    return getAddOnRepository().create({ ...input, slug: slugify(input.name) });
+  }),
+
+  // Admin-only: delete an add-on (refused if used by bookings — deactivate instead).
+  deleteAddOn: authedAdminProcedure.input(ZDeleteAddOnInputSchema).mutation(async ({ input }) => {
+    const { getAddOnRepository } = await import("@calcom/features/ne26-rooms/di/AddOnRepository.container");
+    await getAddOnRepository().delete(input.id);
+    return { deleted: true };
+  }),
+
+  // Admin-only: list all legal / informational pages (published + drafts).
+  listLegalPages: authedAdminProcedure.query(async () => {
+    const { getNe26LegalPageRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26LegalPageRepository.container"
+    );
+    return getNe26LegalPageRepository().findAllForAdmin();
+  }),
+
+  // Admin-only: create a legal page.
+  createLegalPage: authedAdminProcedure.input(ZCreateLegalPageInputSchema).mutation(async ({ input }) => {
+    const { getNe26LegalPageRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26LegalPageRepository.container"
+    );
+    return getNe26LegalPageRepository().create(input);
+  }),
+
+  // Admin-only: update a legal page's slug / title / content / published state.
+  updateLegalPage: authedAdminProcedure.input(ZUpdateLegalPageInputSchema).mutation(async ({ input }) => {
+    const { getNe26LegalPageRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26LegalPageRepository.container"
+    );
+    const { id, ...data } = input;
+    return getNe26LegalPageRepository().update(id, data);
+  }),
+
+  // Admin-only: delete a legal page.
+  deleteLegalPage: authedAdminProcedure.input(ZDeleteLegalPageInputSchema).mutation(async ({ input }) => {
+    const { getNe26LegalPageRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26LegalPageRepository.container"
+    );
+    await getNe26LegalPageRepository().delete(input.id);
+    return { deleted: true };
   }),
 
   // Admin-only: current room blocks (maintenance / internal use).
@@ -184,6 +242,15 @@ export const roomsRouter = router({
     const billingRepo = getNe26BillingProfileRepository();
     const profile = await billingRepo.findByUserId(ctx.user.id);
 
+    // Billing details are printed on the invoice, so they're required to book.
+    const { isBillingProfileComplete } = await import("@calcom/features/ne26-rooms/lib/billing");
+    if (!isBillingProfileComplete(profile)) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Please complete your billing details before booking — they appear on your invoice.",
+      });
+    }
+
     let customerId: string | undefined;
     if (profile) {
       const existing = await billingRepo.findStripeCustomerId(ctx.user.id);
@@ -212,10 +279,25 @@ export const roomsRouter = router({
         : undefined,
     });
 
+    // Prices are HT (excl. VAT): add VAT lines so Stripe charges TTC. VAT is
+    // resolved from the buyer's profile + the admin matrix (reverse charge -> none).
+    const { getRoomVatPreviewService } = await import(
+      "@calcom/features/ne26-rooms/di/RoomVatPreviewService.container"
+    );
+    const vat = await getRoomVatPreviewService().preview({
+      userId: ctx.user.id,
+      slug: input.slug,
+      durationHours: input.durationHours,
+      addOns: input.addOns,
+    });
+    const vatLines = vat.vatBreakdown
+      .filter((v) => v.vat > 0)
+      .map((v) => ({ name: `VAT ${v.vatRate / 100}%`, quantity: 1, unitAmount: v.vat }));
+
     const checkout = await getStripeCheckoutService().createCheckoutSession({
       bookingUid: booking.uid,
       currency: booking.currency,
-      lines: booking.checkoutLines,
+      lines: [...booking.checkoutLines, ...vatLines],
       customerEmail: ctx.user.email,
       customerId,
       successUrl: `${WEBAPP_URL}/rooms/booked/${booking.uid}`,
@@ -223,5 +305,65 @@ export const roomsRouter = router({
     });
 
     return { ...booking, checkoutUrl: checkout.url };
+  }),
+
+  // Resume an abandoned PENDING booking: rebuild its checkout and return the URL.
+  resumeBooking: authedProcedure.input(ZBookingUidInputSchema).mutation(async ({ ctx, input }) => {
+    const { getResourceBookingService } = await import(
+      "@calcom/features/ne26-rooms/di/ResourceBookingService.container"
+    );
+    const { getStripeCheckoutService } = await import(
+      "@calcom/features/ne26-rooms/di/StripeCheckoutService.container"
+    );
+    const { getNe26BillingProfileRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26BillingProfileRepository.container"
+    );
+    const { getRoomVatPreviewService } = await import(
+      "@calcom/features/ne26-rooms/di/RoomVatPreviewService.container"
+    );
+    const { WEBAPP_URL } = await import("@calcom/lib/constants");
+
+    const resume = await getResourceBookingService().prepareResume(input.uid, ctx.user.id);
+
+    const billingRepo = getNe26BillingProfileRepository();
+    const profile = await billingRepo.findByUserId(ctx.user.id);
+    let customerId: string | undefined;
+    if (profile) {
+      const existing = await billingRepo.findStripeCustomerId(ctx.user.id);
+      customerId = await getStripeCheckoutService().ensureCustomer({
+        customerId: existing,
+        email: ctx.user.email,
+        name: ctx.user.name,
+        legalName: profile.legalName,
+        country: profile.country,
+        addressLine1: profile.addressLine1,
+        addressLine2: profile.addressLine2,
+        postalCode: profile.postalCode,
+        city: profile.city,
+      });
+      if (customerId !== existing) await billingRepo.setStripeCustomerId(ctx.user.id, customerId);
+    }
+
+    const vat = await getRoomVatPreviewService().preview({
+      userId: ctx.user.id,
+      slug: resume.slug,
+      durationHours: resume.durationHours,
+      addOns: resume.addOns,
+    });
+    const vatLines = vat.vatBreakdown
+      .filter((v) => v.vat > 0)
+      .map((v) => ({ name: `VAT ${v.vatRate / 100}%`, quantity: 1, unitAmount: v.vat }));
+
+    const checkout = await getStripeCheckoutService().createCheckoutSession({
+      bookingUid: input.uid,
+      currency: resume.currency,
+      lines: [...resume.checkoutLines, ...vatLines],
+      customerEmail: ctx.user.email,
+      customerId,
+      successUrl: `${WEBAPP_URL}/rooms/booked/${input.uid}`,
+      cancelUrl: `${WEBAPP_URL}/rooms/bookings`,
+    });
+
+    return { checkoutUrl: checkout.url };
   }),
 });

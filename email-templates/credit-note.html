@@ -1,0 +1,57 @@
+<!--
+  NE26 — Refund / cancellation + credit-note email (credit-note PDF attached)
+  Dynamic placeholders (keep as-is): {{name}}, {{roomName}}, {{amount}}, {{creditNoteNumber}}
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Your NATO Edge 26 refund</title>
+  </head>
+  <body style="margin:0; padding:0; background-color:#f4f4f7; font-family:Helvetica,Arial,sans-serif; color:#1a1a1a;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f7;">
+      <tr>
+        <td align="center" style="padding:24px 12px;">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px; max-width:600px; background-color:#ffffff; border-radius:12px; overflow:hidden;">
+            <tr>
+              <td style="padding:32px 40px 8px 40px;">
+                <img src="https://rooms.vo-eu.be/emails/logo.png" alt="VO Europe" height="22" style="height:22px; width:auto; border:0; display:block;" />
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:16px 40px 8px 40px;">
+                <h1 style="margin:0 0 16px 0; font-size:24px; line-height:30px; font-weight:700; color:#000643;">
+                  Booking cancelled &amp; refunded
+                </h1>
+                <p style="margin:0 0 12px 0; font-size:15px; line-height:24px;">Hi {{name}},</p>
+                <p style="margin:0 0 12px 0; font-size:15px; line-height:24px;">
+                  Your booking of <strong>{{roomName}}</strong> at NATO Edge 26 has been cancelled and refunded.
+                </p>
+                <p style="margin:0 0 20px 0; font-size:15px; line-height:24px;">
+                  A refund of <strong>{{amount}}</strong> has been issued. Credit note
+                  <strong>{{creditNoteNumber}}</strong> is attached.
+                </p>
+
+                <p style="margin:0 0 4px 0; font-size:15px; line-height:24px;">Best regards,</p>
+                <p style="margin:0 0 8px 0; font-size:15px; line-height:24px; color:#000643; font-weight:600;">
+                  NATO Edge 26 — Meeting Rooms
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:24px 40px 32px 40px; border-top:1px solid #eee;">
+                <p style="margin:0; font-size:12px; line-height:18px; color:#999;">
+                  VO Europe SA, Rue Haute 139, 1000 Brussels, Belgium — BCE / VAT BE 0849 627 948<br />
+                  NATO Edge 26 · Meeting Rooms · rooms.vo-eu.be
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

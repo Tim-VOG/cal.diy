@@ -1,15 +1,14 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-
 import { prisma } from "@calcom/prisma";
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
-
-import { getResourceBookingRepository } from "../di/ResourceBookingRepository.container";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { getInvoiceService } from "../di/InvoiceService.container";
+import { getResourceBookingRepository } from "../di/ResourceBookingRepository.container";
 import { getAtomicSlotStarts } from "../lib/atomicSlots";
 import { readInvoicePdf } from "../lib/invoiceStorage";
 
 // Don't hit real SMTP; assert the mailer is invoked correctly.
 vi.mock("../lib/mailer", () => ({ sendInvoiceEmail: vi.fn().mockResolvedValue(undefined) }));
+
 import { sendInvoiceEmail } from "../lib/mailer";
 
 const service = getInvoiceService();
@@ -40,7 +39,16 @@ async function confirmedBooking(): Promise<string> {
 describe("InvoiceService.issueInvoice", () => {
   beforeAll(async () => {
     const room = await prisma.resource.create({
-      data: { name: "TEST Invoice Room", slug: SLUG, category: "ENTRY", capacity: 6, surface: 18, price1h: 35000, price2h: 65000, price3h: 90000 },
+      data: {
+        name: "TEST Invoice Room",
+        slug: SLUG,
+        category: "ENTRY",
+        capacity: 6,
+        surface: 18,
+        price1h: 35000,
+        price2h: 65000,
+        price3h: 90000,
+      },
       select: { id: true },
     });
     resourceId = room.id;

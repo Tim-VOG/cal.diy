@@ -1,5 +1,4 @@
 import { createContainer } from "@calcom/features/di/di";
-
 import type { RoomAvailabilityService } from "../services/RoomAvailabilityService";
 import { moduleLoader as roomAvailabilityServiceModule } from "./RoomAvailabilityService.module";
 

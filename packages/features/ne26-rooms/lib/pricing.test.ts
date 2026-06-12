@@ -1,7 +1,5 @@
-import { describe, expect, it } from "vitest";
-
 import { AddOnPriceType } from "@calcom/prisma/enums";
-
+import { describe, expect, it } from "vitest";
 import { computeAddOnLine } from "./pricing";
 
 describe("computeAddOnLine", () => {
@@ -10,7 +8,10 @@ describe("computeAddOnLine", () => {
   });
 
   it("PER_PERSON multiplies by the requested quantity", () => {
-    expect(computeAddOnLine(AddOnPriceType.PER_PERSON, 3500, 6, 2)).toEqual({ quantity: 6, lineTotal: 21000 });
+    expect(computeAddOnLine(AddOnPriceType.PER_PERSON, 3500, 6, 2)).toEqual({
+      quantity: 6,
+      lineTotal: 21000,
+    });
   });
 
   it("PER_PERSON floors to at least 1", () => {

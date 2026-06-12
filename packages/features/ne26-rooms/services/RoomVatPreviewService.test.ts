@@ -67,10 +67,11 @@ describe("RoomVatPreviewService", () => {
     const res = await makeService(profile("BE")).preview(input);
     expect(res.zeroRated).toBe(false);
     expect(res.hasBuyerCountry).toBe(true);
-    expect(res.totalTtc).toBe(35000);
-    // 35000 inc. 21% → HT 28926, VAT 6074
-    expect(res.totalHt).toBe(28926);
-    expect(res.vatBreakdown).toEqual([{ vatRate: 2100, vat: 6074 }]);
+    // 35000 HT + 21% VAT = 42350 TTC
+    expect(res.totalHt).toBe(35000);
+    expect(res.totalVat).toBe(7350);
+    expect(res.totalTtc).toBe(42350);
+    expect(res.vatBreakdown).toEqual([{ vatRate: 2100, vat: 7350 }]);
   });
 
   it("zero-rates an EU buyer with a VAT number (reverse charge)", async () => {

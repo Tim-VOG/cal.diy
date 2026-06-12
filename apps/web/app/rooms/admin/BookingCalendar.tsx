@@ -1,6 +1,7 @@
 "use client";
 
-import { EVENT_SCHEDULE, SLOT_GRANULARITY_MINUTES } from "@calcom/features/ne26-rooms/lib/eventSchedule";
+import { buildEventSchedule, type EventDayDefinition } from "@calcom/features/ne26-rooms/lib/eventSchedule";
+import { useMemo } from "react";
 import type { AdminBookingRow } from "./RoomsAdminView";
 
 const TZ = "Europe/Brussels";
@@ -31,19 +32,29 @@ const BLOCK_CLASS: Record<string, string> = {
 export default function BookingCalendar({
   rows,
   roomNames,
+  granularityMinutes,
+  eventDays,
   selectedUid,
   onSelect,
 }: {
   rows: AdminBookingRow[];
   roomNames: string[];
+  granularityMinutes: number;
+  eventDays: EventDayDefinition[];
   selectedUid: string | null;
   onSelect: (uid: string) => void;
 }): JSX.Element {
+  const stepMs = Math.max(15, granularityMinutes) * 60 * 1000;
+  const schedule = useMemo(() => buildEventSchedule(eventDays), [eventDays]);
   return (
     <div className="space-y-8">
-      {EVENT_SCHEDULE.map((day) => {
-        const hours = day.openSlotStartsUtc.map((d) => d.toISOString());
-        // A booking starts on one of the day's sellable hours; index by room + start.
+      {schedule.map((day) => {
+        // Columns at the configured granularity (e.g. hourly), measured from open.
+        const dayOpenMs = day.openSlotStartsUtc[0]?.getTime() ?? 0;
+        const hours = day.openSlotStartsUtc
+          .filter((d) => (d.getTime() - dayOpenMs) % stepMs === 0)
+          .map((d) => d.toISOString());
+        // A booking starts on one of the columns; index by room + start.
         const byRoomStart = new Map<string, AdminBookingRow>();
         for (const row of rows) {
           if (hours.includes(row.startUtc)) byRoomStart.set(`${row.roomName}|${row.startUtc}`, row);
@@ -53,14 +64,16 @@ export default function BookingCalendar({
           <div key={day.date}>
             <h3 className="font-semibold text-[#000643] text-sm">{dayLabel(day.date)}</h3>
             <div className="mt-2 overflow-x-auto rounded-xl border border-gray-200 bg-white">
-              <table className="w-full border-collapse text-sm">
+              <table className="border-collapse text-sm">
                 <thead className="bg-gray-50 text-gray-500 text-xs">
                   <tr>
-                    <th className="border-gray-100 border-b border-r px-3 py-2 text-left font-medium">
+                    <th className="sticky left-0 z-20 w-[8rem] min-w-[8rem] border-gray-100 border-b border-r bg-gray-50 px-3 py-2 text-left font-medium">
                       Room
                     </th>
                     {hours.map((h) => (
-                      <th key={h} className="border-gray-100 border-b px-2 py-2 text-center font-medium">
+                      <th
+                        key={h}
+                        className="min-w-[3.25rem] border-gray-100 border-b px-2 py-2 text-center font-medium">
                         {hourLabel(h)}
                       </th>
                     ))}
@@ -75,7 +88,7 @@ export default function BookingCalendar({
                       if (booking) {
                         const span = Math.max(
                           1,
-                          Math.min(booking.durationMinutes / SLOT_GRANULARITY_MINUTES, hours.length - i)
+                          Math.min(Math.round(booking.durationMinutes / granularityMinutes), hours.length - i)
                         );
                         const selected = booking.uid === selectedUid;
                         cells.push(
@@ -93,13 +106,15 @@ export default function BookingCalendar({
                         );
                         i += span;
                       } else {
-                        cells.push(<td key={hours[i]} className="border-gray-100 border-b px-2 py-2" />);
+                        cells.push(
+                          <td key={hours[i]} className="min-w-[3.25rem] border-gray-100 border-b px-2 py-2" />
+                        );
                         i += 1;
                       }
                     }
                     return (
                       <tr key={room}>
-                        <td className="border-gray-100 border-b border-r px-3 py-2 font-medium text-gray-700">
+                        <td className="sticky left-0 z-10 w-[8rem] min-w-[8rem] border-gray-100 border-b border-r bg-white px-3 py-2 font-medium text-gray-700">
                           {room}
                         </td>
                         {cells}

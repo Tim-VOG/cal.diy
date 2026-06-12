@@ -1,8 +1,6 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-
 import { prisma } from "@calcom/prisma";
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
-
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { getResourceBookingRepository } from "../di/ResourceBookingRepository.container";
 import { getResourceBookingService } from "../di/ResourceBookingService.container";
 import { getAtomicSlotStarts } from "../lib/atomicSlots";
@@ -35,7 +33,16 @@ async function createPendingBooking(startUtc: string, email: string): Promise<st
 describe("ResourceBookingService.confirmPayment", () => {
   beforeAll(async () => {
     const room = await prisma.resource.create({
-      data: { name: "TEST Confirm Room", slug: SLUG, category: "ENTRY", capacity: 6, surface: 18, price1h: 35000, price2h: 65000, price3h: 90000 },
+      data: {
+        name: "TEST Confirm Room",
+        slug: SLUG,
+        category: "ENTRY",
+        capacity: 6,
+        surface: 18,
+        price1h: 35000,
+        price2h: 65000,
+        price3h: 90000,
+      },
       select: { id: true },
     });
     resourceId = room.id;
@@ -67,6 +74,8 @@ describe("ResourceBookingService.confirmPayment", () => {
   });
 
   it("returns false for an unknown booking", async () => {
-    expect(await service.confirmPayment({ bookingUid: "does-not-exist", stripePaymentId: "pi_x" })).toBe(false);
+    expect(await service.confirmPayment({ bookingUid: "does-not-exist", stripePaymentId: "pi_x" })).toBe(
+      false
+    );
   });
 });

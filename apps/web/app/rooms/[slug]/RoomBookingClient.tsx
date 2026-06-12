@@ -2,13 +2,15 @@
 
 import type { DurationHours } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { computeAddOnLine } from "@calcom/features/ne26-rooms/lib/pricing";
+import { buildRoomPhotoList } from "@calcom/features/ne26-rooms/lib/roomImages";
 import type { RoomAvailability } from "@calcom/features/ne26-rooms/services/RoomAvailabilityService";
 import type { VatPreview } from "@calcom/features/ne26-rooms/services/RoomVatPreviewService";
 import { AddOnPriceType } from "@calcom/prisma/enums";
 import { trpc } from "@calcom/trpc/react";
-import { Building, Clock, Euro, Scaling, Users } from "lucide-react";
+import { Building, Clock, Euro, Info, Scaling, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AMENITIES } from "../amenities";
+import RoomGallery from "./RoomGallery";
 
 const TZ = "Europe/Brussels";
 const MS_PER_HOUR = 60 * 60 * 1000;
@@ -97,52 +99,74 @@ function AddOnList({
   onToggle: (slug: string, checked: boolean) => void;
   onSetQuantity: (slug: string, quantity: number) => void;
 }): JSX.Element | null {
+  const [infoSlug, setInfoSlug] = useState<string | null>(null);
   if (addOns.length === 0) return null;
   return (
     <>
       <h2 className="mt-6 font-semibold text-gray-500 text-sm uppercase tracking-wide">Add-ons</h2>
-      <div className="mt-2 space-y-2">
+      {/* w-fit: every row shrinks to fit, all matching the widest add-on. */}
+      <div className="mt-2 flex w-fit max-w-full flex-col gap-2">
         {addOns.map((addOn) => {
           const isSelected = addOn.slug in selected;
           const quantity = selected[addOn.slug] ?? 1;
+          const infoOpen = infoSlug === addOn.slug;
           return (
             <div
               key={addOn.slug}
-              className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={isSelected}
-                  onChange={(e) => onToggle(addOn.slug, e.target.checked)}
-                  className="h-4 w-4 accent-[#000643]"
-                />
-                <span>
-                  <span className="font-medium">{addOn.name}</span>
-                  <span className="ml-2 text-gray-400">{priceHint(addOn)}</span>
-                </span>
-              </label>
-              {isSelected && addOn.priceType === AddOnPriceType.PER_PERSON ? (
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center rounded-lg border border-gray-200">
+              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={(e) => onToggle(addOn.slug, e.target.checked)}
+                      className="h-4 w-4 accent-[#000643]"
+                    />
+                    <span>
+                      <span className="font-medium">{addOn.name}</span>
+                      <span className="ml-2 text-gray-400">{priceHint(addOn)}</span>
+                    </span>
+                  </label>
+                  {addOn.description ? (
                     <button
                       type="button"
-                      onClick={() => onSetQuantity(addOn.slug, quantity - 1)}
-                      disabled={quantity <= 1}
-                      aria-label={`Fewer ${addOn.name}`}
-                      className="px-2.5 py-1 text-[#000643] text-lg leading-none disabled:cursor-not-allowed disabled:text-gray-300">
-                      −
+                      aria-label={`About ${addOn.name}`}
+                      aria-expanded={infoOpen}
+                      onClick={() => setInfoSlug((s) => (s === addOn.slug ? null : addOn.slug))}
+                      className={`shrink-0 transition ${infoOpen ? "text-[#000643]" : "text-gray-400 hover:text-[#000643]"}`}>
+                      <Info className="h-4 w-4" aria-hidden />
                     </button>
-                    <span className="w-8 text-center font-medium text-sm tabular-nums">{quantity}</span>
-                    <button
-                      type="button"
-                      onClick={() => onSetQuantity(addOn.slug, quantity + 1)}
-                      aria-label={`More ${addOn.name}`}
-                      className="px-2.5 py-1 text-[#000643] text-lg leading-none">
-                      +
-                    </button>
-                  </div>
-                  <span className="text-gray-400 text-xs">people</span>
+                  ) : null}
                 </div>
+                {isSelected && addOn.priceType === AddOnPriceType.PER_PERSON ? (
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center rounded-lg border border-gray-200">
+                      <button
+                        type="button"
+                        onClick={() => onSetQuantity(addOn.slug, quantity - 1)}
+                        disabled={quantity <= 1}
+                        aria-label={`Fewer ${addOn.name}`}
+                        className="px-2.5 py-1 text-[#000643] text-lg leading-none disabled:cursor-not-allowed disabled:text-gray-300">
+                        −
+                      </button>
+                      <span className="w-8 text-center font-medium text-sm tabular-nums">{quantity}</span>
+                      <button
+                        type="button"
+                        onClick={() => onSetQuantity(addOn.slug, quantity + 1)}
+                        aria-label={`More ${addOn.name}`}
+                        className="px-2.5 py-1 text-[#000643] text-lg leading-none">
+                        +
+                      </button>
+                    </div>
+                    <span className="text-gray-400 text-xs">people</span>
+                  </div>
+                ) : null}
+              </div>
+              {addOn.description && infoOpen ? (
+                <p className="mt-2 max-w-xs border-gray-100 border-t pt-2 text-gray-600 text-xs leading-relaxed">
+                  {addOn.description}
+                </p>
               ) : null}
             </div>
           );
@@ -156,14 +180,14 @@ function vatPct(bp: number): string {
   return `${bp / 100}%`;
 }
 
-// VAT recap derived from the buyer's saved billing profile. The total charged
-// (TTC) is unchanged — this only breaks it down. Without a saved country we
-// can't resolve VAT here, so we point the buyer to their billing details.
+// VAT recap derived from the buyer's saved billing profile: prices are HT, so
+// this adds the VAT and shows the incl.-VAT total actually charged. Without a
+// saved country we can't resolve VAT here, so we point to the billing details.
 function VatRecap({ vat }: { vat: VatPreview }): JSX.Element {
   if (!vat.hasBuyerCountry) {
     return (
       <p className="mt-2 text-gray-400 text-xs">
-        VAT is calculated at payment.{" "}
+        VAT is added at payment.{" "}
         <a href="/rooms/account" className="underline hover:text-[#000643]">
           Add your billing details
         </a>{" "}
@@ -171,29 +195,28 @@ function VatRecap({ vat }: { vat: VatPreview }): JSX.Element {
       </p>
     );
   }
-  if (vat.zeroRated) {
-    return (
-      <div className="mt-2 text-gray-500 text-xs">
-        <div className="flex justify-between">
-          <span>VAT (0%)</span>
-          <span>{formatPrice(0, vat.currency)}</span>
-        </div>
-        {vat.mention ? <p className="mt-1 text-gray-400">{vat.mention}</p> : null}
-      </div>
-    );
-  }
   return (
     <div className="mt-2 space-y-0.5 text-gray-500 text-xs">
-      <div className="flex justify-between">
-        <span>Excl. VAT</span>
-        <span>{formatPrice(vat.totalHt, vat.currency)}</span>
+      {vat.zeroRated ? (
+        <>
+          <div className="flex justify-between">
+            <span>VAT (0%)</span>
+            <span>{formatPrice(0, vat.currency)}</span>
+          </div>
+          {vat.mention ? <p className="text-gray-400">{vat.mention}</p> : null}
+        </>
+      ) : (
+        vat.vatBreakdown.map((v) => (
+          <div key={v.vatRate} className="flex justify-between">
+            <span>VAT {vatPct(v.vatRate)}</span>
+            <span>{formatPrice(v.vat, vat.currency)}</span>
+          </div>
+        ))
+      )}
+      <div className="flex justify-between border-gray-100 border-t pt-1 font-bold text-[#000643]">
+        <span>Total incl. VAT</span>
+        <span>{formatPrice(vat.totalTtc, vat.currency)}</span>
       </div>
-      {vat.vatBreakdown.map((v) => (
-        <div key={v.vatRate} className="flex justify-between">
-          <span>incl. VAT {vatPct(v.vatRate)}</span>
-          <span>{formatPrice(v.vat, vat.currency)}</span>
-        </div>
-      ))}
     </div>
   );
 }
@@ -209,6 +232,7 @@ function SelectionSummary({
   total,
   vat,
   isAuthed,
+  billingComplete,
   booking,
   errorMessage,
   isPending,
@@ -225,6 +249,7 @@ function SelectionSummary({
   total: number | null;
   vat: VatPreview | undefined;
   isAuthed: boolean;
+  billingComplete: boolean;
   booking: BookingResult | undefined;
   errorMessage: string | null;
   isPending: boolean;
@@ -269,10 +294,10 @@ function SelectionSummary({
                     <span>{formatPrice(line.lineTotal, room.currency)}</span>
                   </div>
                 ))}
-                <div className="mt-1 flex items-center justify-between border-gray-100 border-t pt-2 font-bold text-[#000643]">
+                <div className="mt-1 flex items-center justify-between border-gray-100 border-t pt-2 font-medium text-gray-700">
                   <span className="flex items-center gap-1">
                     <Euro className="h-4 w-4 shrink-0" aria-hidden />
-                    Total
+                    Total excl. VAT
                   </span>
                   <span>{total !== null ? formatPrice(total, room.currency) : ""}</span>
                 </div>
@@ -287,7 +312,24 @@ function SelectionSummary({
             <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-red-700 text-sm">{errorMessage}</p>
           ) : null}
 
-          {isAuthed ? (
+          {!isAuthed ? (
+            <a
+              href={`/rooms/login?callbackUrl=/rooms/${room.slug}`}
+              className="mt-5 block w-full rounded-lg bg-[#000643] px-4 py-2.5 text-center font-semibold text-sm text-white transition hover:opacity-90">
+              Log in to book
+            </a>
+          ) : !billingComplete ? (
+            <>
+              <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-amber-800 text-sm">
+                Add your billing details first — they appear on your invoice.
+              </p>
+              <a
+                href="/rooms/account"
+                className="mt-3 block w-full rounded-lg bg-[#000643] px-4 py-2.5 text-center font-semibold text-sm text-white transition hover:opacity-90">
+                Complete billing details
+              </a>
+            </>
+          ) : (
             <button
               type="button"
               disabled={!canBook}
@@ -295,12 +337,6 @@ function SelectionSummary({
               className="mt-5 w-full rounded-lg bg-[#000643] px-4 py-2.5 font-semibold text-sm text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
               {isPending ? "Holding…" : "Continue to payment"}
             </button>
-          ) : (
-            <a
-              href={`/rooms/login?callbackUrl=/rooms/${room.slug}`}
-              className="mt-5 block w-full rounded-lg bg-[#000643] px-4 py-2.5 text-center font-semibold text-sm text-white transition hover:opacity-90">
-              Log in to book
-            </a>
           )}
           <p className="mt-2 text-center text-gray-400 text-xs">Secure payment via Stripe.</p>
         </>
@@ -313,10 +349,12 @@ export default function RoomBookingClient({
   availability,
   addOns,
   isAuthed,
+  billingComplete,
 }: {
   availability: RoomAvailability;
   addOns: PublicAddOn[];
   isAuthed: boolean;
+  billingComplete: boolean;
 }): JSX.Element {
   const { room, days } = availability;
   const priceForDuration: Record<DurationHours, number> = {
@@ -325,10 +363,12 @@ export default function RoomBookingClient({
     3: room.price3h,
   };
   const addOnsBySlug = useMemo(() => new Map(addOns.map((a) => [a.slug, a])), [addOns]);
+  const photos = useMemo(() => buildRoomPhotoList(room.imageUrl, room.galleryImages), [room]);
 
   const [selectedDate, setSelectedDate] = useState(days[0]?.date ?? "");
   const [selectedStartUtc, setSelectedStartUtc] = useState<string | null>(null);
-  const [selectedDuration, setSelectedDuration] = useState<DurationHours | null>(null);
+  // Duration is chosen first; start slots that can't fit it are then disabled.
+  const [selectedDuration, setSelectedDuration] = useState<DurationHours>(1);
   const [selectedAddOns, setSelectedAddOns] = useState<Record<string, number>>({});
 
   const createBooking = trpc.viewer.rooms.createBooking.useMutation();
@@ -370,9 +410,16 @@ export default function RoomBookingClient({
     { enabled: isAuthed && Boolean(selectedStartUtc) && selectedDuration != null }
   );
 
-  function pickStart(startUtc: string, availableDurations: DurationHours[]): void {
+  function pickStart(startUtc: string): void {
     setSelectedStartUtc(startUtc);
-    setSelectedDuration(availableDurations[0] ?? null);
+    createBooking.reset();
+  }
+
+  // Available start slots adapt to the chosen duration (not the reverse): if the
+  // current start can't fit the new duration, clear it so the booker re-picks.
+  function chooseDuration(d: DurationHours): void {
+    setSelectedDuration(d);
+    if (selectedStart && !selectedStart.availableDurations.includes(d)) setSelectedStartUtc(null);
     createBooking.reset();
   }
 
@@ -436,6 +483,8 @@ export default function RoomBookingClient({
           ))}
         </div>
 
+        <RoomGallery photos={photos} roomName={room.name} />
+
         {/* Day selector */}
         <div className="mt-6 flex gap-2">
           {days.map((d) => (
@@ -445,7 +494,6 @@ export default function RoomBookingClient({
               onClick={() => {
                 setSelectedDate(d.date);
                 setSelectedStartUtc(null);
-                setSelectedDuration(null);
                 createBooking.reset();
               }}
               className={`${CELL_BASE} ${CELL_CLASS[cellState(d.date === selectedDate, true)]}`}>
@@ -454,49 +502,42 @@ export default function RoomBookingClient({
           ))}
         </div>
 
-        {/* Start times */}
+        {/* Duration first — start slots below adapt to it */}
+        <h2 className="mt-6 font-semibold text-gray-500 text-sm uppercase tracking-wide">Duration</h2>
+        <div className="mt-2 flex gap-2">
+          {DURATIONS.map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => chooseDuration(d)}
+              className={`${CELL_BASE} ${CELL_CLASS[cellState(d === selectedDuration, true)]}`}>
+              {d}h — {formatPrice(priceForDuration[d], room.currency)}
+            </button>
+          ))}
+        </div>
+
+        {/* Start times — only those that can fit the chosen duration are enabled */}
         <h2 className="mt-6 flex items-center gap-1.5 font-semibold text-gray-500 text-sm uppercase tracking-wide">
           <Clock className="h-4 w-4 shrink-0" aria-hidden />
           Start time
+          <span className="font-normal normal-case text-gray-400">({selectedDuration}h)</span>
         </h2>
         <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
           {day?.starts.map((s) => {
-            const isAvailable = s.availableDurations.length > 0;
-            const state = cellState(s.startUtc === selectedStartUtc, isAvailable);
+            const fitsDuration = s.availableDurations.includes(selectedDuration);
+            const state = cellState(s.startUtc === selectedStartUtc, fitsDuration);
             return (
               <button
                 key={s.startUtc}
                 type="button"
-                disabled={!isAvailable}
-                onClick={() => pickStart(s.startUtc, s.availableDurations)}
+                disabled={!fitsDuration}
+                onClick={() => pickStart(s.startUtc)}
                 className={`${CELL_BASE} ${CELL_CLASS[state]} ${state === "disabled" ? "line-through" : ""}`}>
                 {formatTime(s.startUtc)}
               </button>
             );
           })}
         </div>
-
-        {/* Duration */}
-        {selectedStart ? (
-          <>
-            <h2 className="mt-6 font-semibold text-gray-500 text-sm uppercase tracking-wide">Duration</h2>
-            <div className="mt-2 flex gap-2">
-              {DURATIONS.map((d) => {
-                const enabled = selectedStart.availableDurations.includes(d);
-                return (
-                  <button
-                    key={d}
-                    type="button"
-                    disabled={!enabled}
-                    onClick={() => setSelectedDuration(d)}
-                    className={`${CELL_BASE} ${CELL_CLASS[cellState(d === selectedDuration, enabled)]}`}>
-                    {d}h — {formatPrice(priceForDuration[d], room.currency)}
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        ) : null}
 
         <AddOnList
           addOns={addOns}
@@ -517,6 +558,7 @@ export default function RoomBookingClient({
         total={total}
         vat={vatPreview.data}
         isAuthed={isAuthed}
+        billingComplete={billingComplete}
         booking={createBooking.data}
         errorMessage={createBooking.error?.message ?? null}
         isPending={createBooking.isPending}

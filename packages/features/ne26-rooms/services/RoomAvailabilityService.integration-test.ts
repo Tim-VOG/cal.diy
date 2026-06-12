@@ -1,8 +1,6 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-
 import { prisma } from "@calcom/prisma";
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
-
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { getResourceBookingRepository } from "../di/ResourceBookingRepository.container";
 import { getRoomAvailabilityService } from "../di/RoomAvailabilityService.container";
 import { getAtomicSlotStarts } from "../lib/atomicSlots";
@@ -19,7 +17,12 @@ function dayStarts(days: Awaited<ReturnType<typeof service.getAvailabilityBySlug
   return day.starts;
 }
 
-async function book(startUtc: string, durationMinutes: number, status: ResourceBookingStatus, holdExpiresAt?: Date) {
+async function book(
+  startUtc: string,
+  durationMinutes: number,
+  status: ResourceBookingStatus,
+  holdExpiresAt?: Date
+) {
   const startTime = new Date(startUtc);
   await bookingRepo.createWithSlots({
     resourceId,
@@ -41,7 +44,16 @@ let resourceId: number;
 describe("RoomAvailabilityService.getAvailabilityBySlug", () => {
   beforeAll(async () => {
     const room = await prisma.resource.create({
-      data: { name: "TEST Availability Room", slug: SLUG, category: "ENTRY", capacity: 6, surface: 18, price1h: 25000, price2h: 50000, price3h: 65000 },
+      data: {
+        name: "TEST Availability Room",
+        slug: SLUG,
+        category: "ENTRY",
+        capacity: 6,
+        surface: 18,
+        price1h: 25000,
+        price2h: 50000,
+        price3h: 65000,
+      },
       select: { id: true },
     });
     resourceId = room.id;
@@ -70,18 +82,34 @@ describe("RoomAvailabilityService.getAvailabilityBySlug", () => {
     await book("2026-11-17T13:00:00.000Z", 60, ResourceBookingStatus.CONFIRMED);
     const { days } = await service.getAvailabilityBySlug(SLUG);
     // 13:00Z taken -> no durations; 14:00Z still offers 1h/2h.
-    expect(dayStarts(days, "2026-11-17")[0]).toEqual({ startUtc: "2026-11-17T13:00:00.000Z", availableDurations: [] });
-    expect(dayStarts(days, "2026-11-17")[1]).toEqual({ startUtc: "2026-11-17T14:00:00.000Z", availableDurations: [1, 2] });
+    expect(dayStarts(days, "2026-11-17")[0]).toEqual({
+      startUtc: "2026-11-17T13:00:00.000Z",
+      availableDurations: [],
+    });
+    expect(dayStarts(days, "2026-11-17")[1]).toEqual({
+      startUtc: "2026-11-17T14:00:00.000Z",
+      availableDurations: [1, 2],
+    });
   });
 
   it("blocks a pending hour while its hold is active", async () => {
-    await book("2026-11-17T14:00:00.000Z", 60, ResourceBookingStatus.PENDING, new Date(Date.now() + 15 * MS_PER_MINUTE));
+    await book(
+      "2026-11-17T14:00:00.000Z",
+      60,
+      ResourceBookingStatus.PENDING,
+      new Date(Date.now() + 15 * MS_PER_MINUTE)
+    );
     const { days } = await service.getAvailabilityBySlug(SLUG);
     expect(dayStarts(days, "2026-11-17")[1].availableDurations).toEqual([]);
   });
 
   it("ignores a pending hour whose hold has expired", async () => {
-    await book("2026-11-17T14:00:00.000Z", 60, ResourceBookingStatus.PENDING, new Date(Date.now() - MS_PER_MINUTE));
+    await book(
+      "2026-11-17T14:00:00.000Z",
+      60,
+      ResourceBookingStatus.PENDING,
+      new Date(Date.now() - MS_PER_MINUTE)
+    );
     const { days } = await service.getAvailabilityBySlug(SLUG);
     // Expired hold no longer blocks -> 14:00Z is open again.
     expect(dayStarts(days, "2026-11-17")[1].availableDurations).toEqual([1, 2]);

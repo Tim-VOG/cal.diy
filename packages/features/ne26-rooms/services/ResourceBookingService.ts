@@ -2,7 +2,7 @@ import { ErrorCode } from "@calcom/lib/errorCodes";
 import { ErrorWithCode } from "@calcom/lib/errors";
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
 import { getAtomicSlotStarts, getBufferSlotStarts } from "../lib/atomicSlots";
-import { type DurationHours, OPEN_SLOT_MS } from "../lib/eventSchedule";
+import { buildEventSchedule, buildOpenSlotMs, type DurationHours } from "../lib/eventSchedule";
 import { computeAddOnLine } from "../lib/pricing";
 import type { AddOnRepository } from "../repositories/AddOnRepository";
 import type { Ne26RoomSettingsRepository } from "../repositories/Ne26RoomSettingsRepository";
@@ -83,17 +83,19 @@ export class ResourceBookingService {
       throw new ErrorWithCode(ErrorCode.NotFound, `Room "${input.slug}" not found`);
     }
 
+    const settings = await this.deps.ne26RoomSettingsRepository.get();
+    const openSlotMs = buildOpenSlotMs(buildEventSchedule(settings.eventDays));
+
     const durationMinutes = input.durationHours * 60;
     const slotStarts = getAtomicSlotStarts(input.startUtc, durationMinutes);
     for (const slot of slotStarts) {
-      if (!OPEN_SLOT_MS.has(slot.getTime())) {
+      if (!openSlotMs.has(slot.getTime())) {
         throw new ErrorWithCode(ErrorCode.BadRequest, "Selected time is outside the event opening hours.");
       }
     }
     // Reserve the turnover buffer after the booking so the next one can't start
     // within it. Added to the slot set, so the DB unique index enforces the gap.
-    const { bufferMinutes } = await this.deps.ne26RoomSettingsRepository.get();
-    const bufferSlots = getBufferSlotStarts(input.startUtc, durationMinutes, bufferMinutes);
+    const bufferSlots = getBufferSlotStarts(input.startUtc, durationMinutes, settings.bufferMinutes);
 
     const endTime = new Date(input.startUtc.getTime() + durationMinutes * MS_PER_MINUTE);
     const roomPrice = { 1: room.price1h, 2: room.price2h, 3: room.price3h }[input.durationHours];
@@ -142,6 +144,66 @@ export class ResourceBookingService {
   }
 
   /**
+   * Prepare a fresh Stripe Checkout for an existing PENDING booking so the booker
+   * can finish an abandoned payment from "My bookings". The booking's slots are
+   * still reserved at the DB level for as long as the row exists, so this is safe;
+   * we extend the hold and rebuild the same line items. Throws if the booking is
+   * missing, not the caller's, or no longer PENDING.
+   */
+  async prepareResume(
+    uid: string,
+    userId: number
+  ): Promise<{
+    currency: string;
+    checkoutLines: CheckoutLine[];
+    slug: string;
+    durationHours: DurationHours;
+    addOns: { slug: string; quantity: number }[];
+  }> {
+    const booking = await this.deps.resourceBookingRepository.findResumableByUid(uid);
+    if (!booking || booking.bookerUserId !== userId) {
+      throw new ErrorWithCode(ErrorCode.NotFound, "Booking not found.");
+    }
+    if (booking.status !== ResourceBookingStatus.PENDING) {
+      throw new ErrorWithCode(ErrorCode.BadRequest, "This booking can no longer be paid.");
+    }
+
+    const durationHours = (booking.durationMinutes / 60) as DurationHours;
+    const roomPrice = {
+      1: booking.resource.price1h,
+      2: booking.resource.price2h,
+      3: booking.resource.price3h,
+    }[durationHours];
+    const checkoutLines: CheckoutLine[] = [
+      {
+        name: `${booking.resource.name} — meeting room (${durationHours}h)`,
+        description: formatSlotRange(booking.startTime, booking.endTime),
+        quantity: 1,
+        unitAmount: roomPrice,
+      },
+      ...booking.addOns.map((a) => ({
+        name: a.addOn.name,
+        quantity: a.quantity,
+        unitAmount: Math.round(a.lineTotal / a.quantity),
+      })),
+    ];
+
+    // Give the booker another full hold window to complete payment.
+    await this.deps.resourceBookingRepository.extendHoldByUid(
+      uid,
+      new Date(Date.now() + HOLD_MINUTES * MS_PER_MINUTE)
+    );
+
+    return {
+      currency: booking.currency,
+      checkoutLines,
+      slug: booking.resource.slug,
+      durationHours,
+      addOns: booking.addOns.map((a) => ({ slug: a.addOn.slug, quantity: a.quantity })),
+    };
+  }
+
+  /**
    * Mark a booking paid (called from the Stripe webhook). Idempotent: returns
    * false if the booking was already confirmed, cancelled, or no longer exists
    * (e.g. its hold expired and it was reclaimed before payment landed).
@@ -175,10 +237,13 @@ export class ResourceBookingService {
     const room = await this.deps.resourceRepository.findBySlug(input.slug);
     if (!room) throw new ErrorWithCode(ErrorCode.NotFound, `Room "${input.slug}" not found`);
 
+    const settings = await this.deps.ne26RoomSettingsRepository.get();
+    const openSlotMs = buildOpenSlotMs(buildEventSchedule(settings.eventDays));
+
     const durationMinutes = input.durationHours * 60;
     const slotStarts = getAtomicSlotStarts(input.startUtc, durationMinutes);
     for (const slot of slotStarts) {
-      if (!OPEN_SLOT_MS.has(slot.getTime())) {
+      if (!openSlotMs.has(slot.getTime())) {
         throw new ErrorWithCode(ErrorCode.BadRequest, "Selected time is outside the event opening hours.");
       }
     }

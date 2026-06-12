@@ -83,6 +83,8 @@ export const DI_TOKENS = {
   ROOM_VAT_PREVIEW_SERVICE_MODULE: Symbol("RoomVatPreviewServiceModule"),
   NE26_ROOM_SETTINGS_REPOSITORY: Symbol("Ne26RoomSettingsRepository"),
   NE26_ROOM_SETTINGS_REPOSITORY_MODULE: Symbol("Ne26RoomSettingsRepositoryModule"),
+  NE26_LEGAL_PAGE_REPOSITORY: Symbol("Ne26LegalPageRepository"),
+  NE26_LEGAL_PAGE_REPOSITORY_MODULE: Symbol("Ne26LegalPageRepositoryModule"),
   DESTINATION_CALENDAR_REPOSITORY: Symbol("DestinationCalendarRepository"),
   DESTINATION_CALENDAR_REPOSITORY_MODULE: Symbol("DestinationCalendarRepositoryModule"),
   MANAGED_EVENT_REASSIGNMENT_SERVICE: Symbol("ManagedEventReassignmentService"),

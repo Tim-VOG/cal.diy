@@ -1,5 +1,4 @@
 import { createContainer } from "@calcom/features/di/di";
-
 import type { ResourceBookingService } from "../services/ResourceBookingService";
 import { moduleLoader as resourceBookingServiceModule } from "./ResourceBookingService.module";
 

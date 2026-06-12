@@ -1,6 +1,7 @@
 import {
   type DurationHours,
   EVENT_SCHEDULE,
+  type EventDaySchedule,
   SELECTABLE_DURATIONS,
   SLOT_GRANULARITY_MS,
 } from "./eventSchedule";
@@ -33,18 +34,26 @@ export interface EventDayAvailability {
  * @param takenSlotStartsUtc slots occupied by CONFIRMED or actively-held PENDING
  *   bookings (incl. their reserved buffer); the caller resolves "active hold".
  * @param bufferMinutes turnover buffer required after a booking (admin setting).
+ * @param schedule open slot marks per day; defaults to the built-in NE26 hours.
  */
 export function computeAvailability(
   takenSlotStartsUtc: Date[],
-  bufferMinutes: number
+  bufferMinutes: number,
+  startStepMinutes = 60,
+  schedule: readonly EventDaySchedule[] = EVENT_SCHEDULE
 ): EventDayAvailability[] {
   const taken = new Set(takenSlotStartsUtc.map((d) => d.getTime()));
   const bufferCount = Math.max(0, Math.ceil((bufferMinutes * 60 * 1000) / SLOT_GRANULARITY_MS));
+  const stepMs = Math.max(SLOT_GRANULARITY_MS, startStepMinutes * 60 * 1000);
 
-  return EVENT_SCHEDULE.map((day) => {
+  return schedule.map((day) => {
     const openSlots = new Set(day.openSlotStartsUtc.map((d) => d.getTime()));
+    // Offer starts only on the admin's step (e.g. hourly), measured from the
+    // day's opening; the atomic occupancy/buffer checks stay at 15 min.
+    const dayOpenMs = day.openSlotStartsUtc[0]?.getTime() ?? 0;
+    const offered = day.openSlotStartsUtc.filter((d) => (d.getTime() - dayOpenMs) % stepMs === 0);
 
-    const starts: AvailableStart[] = day.openSlotStartsUtc.map((start) => {
+    const starts: AvailableStart[] = offered.map((start) => {
       const startMs = start.getTime();
       const availableDurations = SELECTABLE_DURATIONS.filter((duration) => {
         const slotCount = (duration * MS_PER_HOUR) / SLOT_GRANULARITY_MS;

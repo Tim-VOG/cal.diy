@@ -45,80 +45,89 @@ export default function BookingSidePanel({
   onClose: () => void;
 }): JSX.Element {
   return (
-    <aside className="h-fit rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="font-bold text-[#000643] text-lg">{booking.roomName}</h2>
-          <span
-            className={`mt-1 inline-block rounded-full px-2 py-0.5 font-medium text-xs ${STATUS_BADGE[booking.status] ?? ""}`}>
-            {booking.status}
-          </span>
+    <>
+      {/* Backdrop — overlays the page so the calendar keeps its full width. */}
+      <button
+        type="button"
+        aria-label="Close panel"
+        onClick={onClose}
+        className="fixed inset-0 z-40 cursor-default bg-black/30"
+      />
+      <aside className="fixed top-0 right-0 z-50 h-full w-full max-w-sm overflow-y-auto border-gray-200 border-l bg-white p-5 shadow-xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="font-bold text-[#000643] text-lg">{booking.roomName}</h2>
+            <span
+              className={`mt-1 inline-block rounded-full px-2 py-0.5 font-medium text-xs ${STATUS_BADGE[booking.status] ?? ""}`}>
+              {booking.status}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-md p-1 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700">
+            <X className="h-5 w-5" aria-hidden />
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="rounded-md p-1 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700">
-          <X className="h-5 w-5" aria-hidden />
-        </button>
-      </div>
 
-      <div className="mt-4">
-        <Row label="When">
-          {fmtDateTime(booking.startUtc)} – {fmtDateTime(booking.endUtc)}
-        </Row>
-        <Row label="Duration">{booking.durationMinutes / 60}h</Row>
-        <Row label="Booker">{booking.bookerName}</Row>
-        <Row label="Email">{booking.bookerEmail}</Row>
-        <Row label="Amount">{fmtMoney(booking.amountTotal, booking.currency)}</Row>
-        <Row label="Payment">{booking.stripePaymentId ?? "—"}</Row>
-        <Row label="Add-ons">
-          {booking.addOns.length === 0
-            ? "—"
-            : booking.addOns.map((a) => `${a.name}×${a.quantity}`).join(", ")}
-        </Row>
-        <Row label="Invoice">
-          {booking.invoiceNumber ? (
-            <a
-              href={`/rooms/invoice/${booking.uid}`}
-              target="_blank"
-              rel="noreferrer"
-              className="text-[#000643] underline hover:opacity-80">
-              {booking.invoiceNumber}
-            </a>
-          ) : (
-            "—"
-          )}
-        </Row>
-        <Row label="Credit note">
-          {booking.creditNoteNumber ? (
-            <a
-              href={`/rooms/credit-note/${booking.uid}`}
-              target="_blank"
-              rel="noreferrer"
-              className="text-[#000643] underline hover:opacity-80">
-              {booking.creditNoteNumber}
-            </a>
-          ) : (
-            "—"
-          )}
-        </Row>
-      </div>
+        <div className="mt-4">
+          <Row label="When">
+            {fmtDateTime(booking.startUtc)} – {fmtDateTime(booking.endUtc)}
+          </Row>
+          <Row label="Duration">{booking.durationMinutes / 60}h</Row>
+          <Row label="Booker">{booking.bookerName}</Row>
+          <Row label="Email">{booking.bookerEmail}</Row>
+          <Row label="Amount">{fmtMoney(booking.amountTotal, booking.currency)}</Row>
+          <Row label="Payment">{booking.stripePaymentId ?? "—"}</Row>
+          <Row label="Add-ons">
+            {booking.addOns.length === 0
+              ? "—"
+              : booking.addOns.map((a) => `${a.name}×${a.quantity}`).join(", ")}
+          </Row>
+          <Row label="Invoice">
+            {booking.invoiceNumber ? (
+              <a
+                href={`/rooms/invoice/${booking.uid}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[#000643] underline hover:opacity-80">
+                {booking.invoiceNumber}
+              </a>
+            ) : (
+              "—"
+            )}
+          </Row>
+          <Row label="Credit note">
+            {booking.creditNoteNumber ? (
+              <a
+                href={`/rooms/credit-note/${booking.uid}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[#000643] underline hover:opacity-80">
+                {booking.creditNoteNumber}
+              </a>
+            ) : (
+              "—"
+            )}
+          </Row>
+        </div>
 
-      <div className="mt-4 border-gray-100 border-t pt-4">
-        <BookingActions
-          uid={booking.uid}
-          status={booking.status}
-          hasInvoice={Boolean(booking.invoiceNumber)}
-          hasCreditNote={Boolean(booking.creditNoteNumber)}
-        />
-      </div>
+        <div className="mt-4 border-gray-100 border-t pt-4">
+          <BookingActions
+            uid={booking.uid}
+            status={booking.status}
+            hasInvoice={Boolean(booking.invoiceNumber)}
+            hasCreditNote={Boolean(booking.creditNoteNumber)}
+          />
+        </div>
 
-      <a
-        href={`/rooms/admin/${booking.uid}`}
-        className="mt-3 inline-block text-[#000643] text-sm hover:underline">
-        Open full detail →
-      </a>
-    </aside>
+        <a
+          href={`/rooms/admin/${booking.uid}`}
+          className="mt-3 inline-block text-[#000643] text-sm hover:underline">
+          Open full detail →
+        </a>
+      </aside>
+    </>
   );
 }

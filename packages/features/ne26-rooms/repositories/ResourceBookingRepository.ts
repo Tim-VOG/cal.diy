@@ -159,6 +159,53 @@ export class ResourceBookingRepository {
     });
   }
 
+  /** A PENDING booking with everything needed to rebuild its Stripe checkout. */
+  findResumableByUid(uid: string) {
+    return this.prismaClient.resourceBooking.findUnique({
+      where: { uid },
+      select: {
+        uid: true,
+        status: true,
+        startTime: true,
+        endTime: true,
+        durationMinutes: true,
+        currency: true,
+        bookerUserId: true,
+        holdExpiresAt: true,
+        resource: {
+          select: { name: true, slug: true, price1h: true, price2h: true, price3h: true },
+        },
+        addOns: {
+          select: { quantity: true, lineTotal: true, addOn: { select: { name: true, slug: true } } },
+        },
+      },
+    });
+  }
+
+  /** Extend a PENDING booking's hold (e.g. when the booker resumes payment). */
+  async extendHoldByUid(uid: string, until: Date): Promise<void> {
+    await this.prismaClient.resourceBooking.updateMany({
+      where: { uid, status: ResourceBookingStatus.PENDING },
+      data: { holdExpiresAt: until },
+    });
+  }
+
+  /**
+   * Delete PENDING bookings whose hold has expired, freeing their slots
+   * (cascade). Called opportunistically on list reads so abandoned, unpaid
+   * bookings disappear ~after the hold window instead of lingering. Returns the
+   * number removed.
+   */
+  async deleteExpiredHolds(now: Date): Promise<number> {
+    const result = await this.prismaClient.resourceBooking.deleteMany({
+      where: {
+        status: ResourceBookingStatus.PENDING,
+        holdExpiresAt: { not: null, lt: now },
+      },
+    });
+    return result.count;
+  }
+
   /**
    * Confirm a paid booking. Scoped to PENDING so a replayed/duplicate webhook is
    * a no-op (idempotent) and a cancelled booking is never silently revived.
@@ -277,6 +324,27 @@ export class ResourceBookingRepository {
     });
   }
 
+  /** A single exhibitor's own bookings (excluding admin blocks), with details. */
+  findByBookerUserIdWithDetails(userId: number) {
+    return this.prismaClient.resourceBooking.findMany({
+      where: { isBlock: false, bookerUserId: userId },
+      orderBy: [{ startTime: "asc" }, { createdAt: "asc" }],
+      select: {
+        uid: true,
+        status: true,
+        startTime: true,
+        endTime: true,
+        durationMinutes: true,
+        amountTotal: true,
+        currency: true,
+        invoiceNumber: true,
+        creditNoteNumber: true,
+        resource: { select: { name: true, category: true } },
+        addOns: { select: { quantity: true, addOn: { select: { name: true } } } },
+      },
+    });
+  }
+
   /** Booking with everything the invoice needs (booker, room, add-on VAT rates). */
   findByUidForInvoice(uid: string) {
     return this.prismaClient.resourceBooking.findUnique({
@@ -287,6 +355,7 @@ export class ResourceBookingRepository {
         startTime: true,
         endTime: true,
         durationMinutes: true,
+        bookerUserId: true,
         bookerName: true,
         bookerEmail: true,
         bookerCountry: true,

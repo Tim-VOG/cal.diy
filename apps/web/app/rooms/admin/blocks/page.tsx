@@ -1,4 +1,5 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
+import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
 import { getResourceBookingService } from "@calcom/features/ne26-rooms/di/ResourceBookingService.container";
 import { getResourceRepository } from "@calcom/features/ne26-rooms/di/ResourceRepository.container";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
@@ -17,13 +18,16 @@ export default async function ManageBlocksPage(): Promise<JSX.Element> {
   if (!session?.user?.id) redirect("/rooms/login?callbackUrl=/rooms/admin/blocks");
   if (session.user.role !== "ADMIN") notFound();
 
-  const [blocks, rooms] = await Promise.all([
+  const [blocks, rooms, roomSettings] = await Promise.all([
     getResourceBookingService().listBlocks(),
     getResourceRepository().findAllForAdmin(),
+    getNe26RoomSettingsRepository().get(),
   ]);
 
   return (
     <BlocksManager
+      granularityMinutes={roomSettings.slotGranularityMinutes}
+      eventDays={roomSettings.eventDays}
       rooms={rooms.filter((r) => r.isActive).map((r) => ({ slug: r.slug, name: r.name }))}
       blocks={blocks.map((b) => ({
         uid: b.uid,

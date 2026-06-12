@@ -22,6 +22,7 @@ export default async function ManageAddOnsPage(): Promise<JSX.Element> {
       addOns={addOns.map((a) => ({
         id: a.id,
         name: a.name,
+        description: a.description ?? "",
         priceType: a.priceType,
         price: a.price,
         currency: a.currency,

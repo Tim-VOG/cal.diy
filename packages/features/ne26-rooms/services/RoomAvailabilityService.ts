@@ -1,6 +1,7 @@
 import { ErrorCode } from "@calcom/lib/errorCodes";
 import { ErrorWithCode } from "@calcom/lib/errors";
 import { computeAvailability, type EventDayAvailability } from "../lib/availability";
+import { buildEventSchedule } from "../lib/eventSchedule";
 import type { Ne26RoomSettingsRepository } from "../repositories/Ne26RoomSettingsRepository";
 import type { ResourceBookingRepository } from "../repositories/ResourceBookingRepository";
 import type { ResourceRepository } from "../repositories/ResourceRepository";
@@ -37,6 +38,14 @@ export class RoomAvailabilityService {
       this.deps.ne26RoomSettingsRepository.get(),
     ]);
 
-    return { room: publicRoom, days: computeAvailability(takenSlotStarts, settings.bufferMinutes) };
+    return {
+      room: publicRoom,
+      days: computeAvailability(
+        takenSlotStarts,
+        settings.bufferMinutes,
+        settings.slotGranularityMinutes,
+        buildEventSchedule(settings.eventDays)
+      ),
+    };
   }
 }
