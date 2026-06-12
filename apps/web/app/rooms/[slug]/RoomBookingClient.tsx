@@ -7,7 +7,7 @@ import type { RoomAvailability } from "@calcom/features/ne26-rooms/services/Room
 import type { VatPreview } from "@calcom/features/ne26-rooms/services/RoomVatPreviewService";
 import { AddOnPriceType } from "@calcom/prisma/enums";
 import { trpc } from "@calcom/trpc/react";
-import { Building, Clock, Euro, Scaling, Users } from "lucide-react";
+import { Building, Clock, Euro, Info, Scaling, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AMENITIES } from "../amenities";
 import RoomGallery from "./RoomGallery";
@@ -99,6 +99,7 @@ function AddOnList({
   onToggle: (slug: string, checked: boolean) => void;
   onSetQuantity: (slug: string, quantity: number) => void;
 }): JSX.Element | null {
+  const [infoSlug, setInfoSlug] = useState<string | null>(null);
   if (addOns.length === 0) return null;
   return (
     <>
@@ -107,44 +108,62 @@ function AddOnList({
         {addOns.map((addOn) => {
           const isSelected = addOn.slug in selected;
           const quantity = selected[addOn.slug] ?? 1;
+          const infoOpen = infoSlug === addOn.slug;
           return (
-            <div
-              key={addOn.slug}
-              className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={isSelected}
-                  onChange={(e) => onToggle(addOn.slug, e.target.checked)}
-                  className="h-4 w-4 accent-[#000643]"
-                />
-                <span>
-                  <span className="font-medium">{addOn.name}</span>
-                  <span className="ml-2 text-gray-400">{priceHint(addOn)}</span>
-                </span>
-              </label>
-              {isSelected && addOn.priceType === AddOnPriceType.PER_PERSON ? (
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center rounded-lg border border-gray-200">
+            <div key={addOn.slug} className="rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={(e) => onToggle(addOn.slug, e.target.checked)}
+                      className="h-4 w-4 accent-[#000643]"
+                    />
+                    <span>
+                      <span className="font-medium">{addOn.name}</span>
+                      <span className="ml-2 text-gray-400">{priceHint(addOn)}</span>
+                    </span>
+                  </label>
+                  {addOn.description ? (
                     <button
                       type="button"
-                      onClick={() => onSetQuantity(addOn.slug, quantity - 1)}
-                      disabled={quantity <= 1}
-                      aria-label={`Fewer ${addOn.name}`}
-                      className="px-2.5 py-1 text-[#000643] text-lg leading-none disabled:cursor-not-allowed disabled:text-gray-300">
-                      −
+                      aria-label={`About ${addOn.name}`}
+                      aria-expanded={infoOpen}
+                      onClick={() => setInfoSlug((s) => (s === addOn.slug ? null : addOn.slug))}
+                      className={`shrink-0 transition ${infoOpen ? "text-[#000643]" : "text-gray-400 hover:text-[#000643]"}`}>
+                      <Info className="h-4 w-4" aria-hidden />
                     </button>
-                    <span className="w-8 text-center font-medium text-sm tabular-nums">{quantity}</span>
-                    <button
-                      type="button"
-                      onClick={() => onSetQuantity(addOn.slug, quantity + 1)}
-                      aria-label={`More ${addOn.name}`}
-                      className="px-2.5 py-1 text-[#000643] text-lg leading-none">
-                      +
-                    </button>
-                  </div>
-                  <span className="text-gray-400 text-xs">people</span>
+                  ) : null}
                 </div>
+                {isSelected && addOn.priceType === AddOnPriceType.PER_PERSON ? (
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center rounded-lg border border-gray-200">
+                      <button
+                        type="button"
+                        onClick={() => onSetQuantity(addOn.slug, quantity - 1)}
+                        disabled={quantity <= 1}
+                        aria-label={`Fewer ${addOn.name}`}
+                        className="px-2.5 py-1 text-[#000643] text-lg leading-none disabled:cursor-not-allowed disabled:text-gray-300">
+                        −
+                      </button>
+                      <span className="w-8 text-center font-medium text-sm tabular-nums">{quantity}</span>
+                      <button
+                        type="button"
+                        onClick={() => onSetQuantity(addOn.slug, quantity + 1)}
+                        aria-label={`More ${addOn.name}`}
+                        className="px-2.5 py-1 text-[#000643] text-lg leading-none">
+                        +
+                      </button>
+                    </div>
+                    <span className="text-gray-400 text-xs">people</span>
+                  </div>
+                ) : null}
+              </div>
+              {addOn.description && infoOpen ? (
+                <p className="mt-2 border-gray-100 border-t pt-2 text-gray-600 text-xs leading-relaxed">
+                  {addOn.description}
+                </p>
               ) : null}
             </div>
           );
