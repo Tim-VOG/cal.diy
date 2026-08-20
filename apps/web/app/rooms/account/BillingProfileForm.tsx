@@ -21,16 +21,25 @@ type TextFieldKey =
 // required there, so the browser must refuse the submit rather than let the
 // exhibitor save, get bounced back by the guard, and have to guess what was
 // missing.
-const TEXT_FIELDS: { key: TextFieldKey; label: string; full?: boolean; optional?: boolean }[] = [
+// `autoComplete` is what lets the browser fill this form from what it already
+// has. Without these tokens it offers nothing, which is why exhibitors felt they
+// were typing an address here that Stripe would have auto-filled for them.
+const TEXT_FIELDS: {
+  key: TextFieldKey;
+  label: string;
+  full?: boolean;
+  optional?: boolean;
+  autoComplete: string;
+}[] = [
   // The welcome desk asks for a person, not a company.
-  { key: "firstName", label: "First name" },
-  { key: "lastName", label: "Last name" },
-  { key: "legalName", label: "Company / legal name", full: true },
-  { key: "vatNumber", label: "VAT number", optional: true },
-  { key: "addressLine1", label: "Address line 1", full: true },
-  { key: "addressLine2", label: "Address line 2", full: true, optional: true },
-  { key: "postalCode", label: "Postal code" },
-  { key: "city", label: "City" },
+  { key: "firstName", label: "First name", autoComplete: "given-name" },
+  { key: "lastName", label: "Last name", autoComplete: "family-name" },
+  { key: "legalName", label: "Company / legal name", full: true, autoComplete: "organization" },
+  { key: "vatNumber", label: "VAT number", optional: true, autoComplete: "off" },
+  { key: "addressLine1", label: "Address line 1", full: true, autoComplete: "address-line1" },
+  { key: "addressLine2", label: "Address line 2", full: true, optional: true, autoComplete: "address-line2" },
+  { key: "postalCode", label: "Postal code", autoComplete: "postal-code" },
+  { key: "city", label: "City", autoComplete: "address-level2" },
 ];
 
 const EMPTY: BillingProfile = {
@@ -102,6 +111,7 @@ export default function BillingProfileForm({
             </span>
             <input
               type="text"
+              autoComplete={field.autoComplete}
               required={!field.optional}
               className={inputClass}
               value={form[field.key]}
@@ -114,6 +124,7 @@ export default function BillingProfileForm({
           <span className="font-medium text-gray-700 text-sm">Country</span>
           <select
             required
+            autoComplete="country"
             className={inputClass}
             value={form.country}
             onChange={(e) => setForm((f) => ({ ...f, country: e.target.value }))}>

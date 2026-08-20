@@ -60,7 +60,8 @@ export default function SavedSelections(): JSX.Element | null {
     <section className="mt-6 rounded-xl border border-[#000643]/15 bg-[#000643]/[0.03] p-4">
       <h2 className="font-semibold text-[#000643] text-sm uppercase tracking-wide">Your shortlist</h2>
       <p className="mt-1 text-gray-600 text-xs">
-        Rooms you have configured but not booked. Nothing is held until you pay.
+        Rooms you have configured but not booked. Nothing is held until you pay. Amounts exclude VAT,
+        which is determined at checkout from your billing country and VAT number.
       </p>
 
       <ul className="mt-3 divide-y divide-[#000643]/10">

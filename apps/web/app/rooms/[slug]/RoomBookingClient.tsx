@@ -307,6 +307,14 @@ function SelectionSummary({
                   <span>{total !== null ? formatPrice(total, room.currency) : ""}</span>
                 </div>
                 {isAuthed && vat ? <VatRecap vat={vat} /> : null}
+                {/* Prices are quoted excl. VAT and the rate depends on the
+                    buyer's country and VAT number, so the figure above is not
+                    always what gets charged. Say so where the total is, not
+                    buried in the terms. */}
+                <p className="mt-2 text-gray-500 text-xs">
+                  Prices exclude VAT. The applicable VAT is determined at checkout from your billing
+                  country and VAT number, in line with EU VAT rules.
+                </p>
               </div>
             </div>
           ) : (
