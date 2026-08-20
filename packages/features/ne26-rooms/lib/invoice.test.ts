@@ -48,3 +48,34 @@ describe("buildInvoiceModel (HT prices, VAT added on top)", () => {
     expect(m.vatMention).toBe("VAT reverse charge");
   });
 });
+
+describe("buildInvoiceModel — the room VAT rate is an input, not a constant", () => {
+  it("applies the rate it is given rather than the current default", () => {
+    // Re-rendering an issued document must use the rate FROZEN on the booking, so
+    // correcting the default later cannot alter a document already sent out.
+    const m = buildInvoiceModel({
+      amountTotal: 10000,
+      currency: "EUR",
+      roomName: "Suite 1",
+      durationMinutes: 60,
+      addOns: [],
+      roomVatRate: 1200,
+    });
+    expect(m.lines[0].vatRate).toBe(1200);
+    expect(m.lines[0].ht).toBe(10000);
+    expect(m.totalVat).toBe(1200); // 12% added on top of HT
+    expect(m.totalTtc).toBe(11200);
+  });
+
+  it("falls back to the default room rate when none is frozen", () => {
+    const m = buildInvoiceModel({
+      amountTotal: 10000,
+      currency: "EUR",
+      roomName: "Suite 1",
+      durationMinutes: 60,
+      addOns: [],
+    });
+    expect(m.lines[0].vatRate).toBe(2100);
+    expect(m.totalVat).toBe(2100);
+  });
+});

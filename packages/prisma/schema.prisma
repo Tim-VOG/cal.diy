@@ -2933,10 +2933,19 @@ model ResourceBooking {
   status           ResourceBookingStatus @default(PENDING)
   // PENDING hold expiry: a non-confirmed booking past this time can be released (§4.4).
   holdExpiresAt    DateTime?
+  // VAT treatment FROZEN when the invoice is issued. A later change to the room VAT
+  // rate or to the reverse-charge settings must never re-split an already-issued
+  // document: the stored invoice PDF wouldn't change, so the credit note would
+  // silently contradict it. Null means "not invoiced yet".
+  roomVatRate      Int?
+  vatZeroRated     Boolean               @default(false)
+  vatMention       String?
   // Total in cents = the room's price for the chosen duration + sum(add-on lineTotals).
   amountTotal      Int
   currency         String                @default("EUR")
-  stripePaymentId  String?
+  // Unique: one Stripe payment can only ever back one booking, and the refund
+  // webhook resolves the booking through this column.
+  stripePaymentId  String?               @unique
   invoiceNumber    String?               @unique
   invoicePdfUrl    String?
   creditNoteNumber String?               @unique
@@ -3000,6 +3009,10 @@ model BookingAddOn {
   // Unit price frozen at order time (cents) — never reference the live AddOn price.
   unitPrice Int
   lineTotal Int
+  // VAT rate frozen at order time too (basis points). The rate is part of the
+  // order, not a live lookup: correcting catering VAT in the admin must not
+  // re-split invoices that were already issued at the old rate.
+  vatRate   Int             @default(2100)
 
   @@index([bookingId])
   @@index([addOnId])

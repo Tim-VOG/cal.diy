@@ -307,7 +307,9 @@ export class ResourceBookingService {
   private async resolveAddOnLines(
     requested: { slug: string; quantity: number }[],
     durationHours: number
-  ): Promise<{ addOnId: number; name: string; quantity: number; unitPrice: number; lineTotal: number }[]> {
+  ): Promise<
+    { addOnId: number; name: string; quantity: number; unitPrice: number; lineTotal: number; vatRate: number }[]
+  > {
     if (!requested.length) return [];
 
     const catalog = await this.deps.addOnRepository.findManyActiveBySlugs(requested.map((a) => a.slug));
@@ -324,7 +326,16 @@ export class ResourceBookingService {
         req.quantity,
         durationHours
       );
-      return { addOnId: addOn.id, name: addOn.name, quantity, unitPrice: addOn.price, lineTotal };
+      // vatRate is frozen onto the line here: the rate is part of the order, not
+      // a live lookup at invoicing time.
+      return {
+        addOnId: addOn.id,
+        name: addOn.name,
+        quantity,
+        unitPrice: addOn.price,
+        lineTotal,
+        vatRate: addOn.vatRate,
+      };
     });
   }
 }

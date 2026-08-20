@@ -1,5 +1,6 @@
-// VAT rate for room rental, in basis points (2100 = 21%). Not stored on Resource;
-// confirm the correct Belgian treatment with VO accounting.
+// Default VAT rate for room rental, in basis points (2100 = 21%). Used for NEW
+// orders; an issued invoice keeps the rate frozen on the booking, so changing
+// this can never re-split a document that has already gone out.
 export const ROOM_VAT_RATE_BP = 2100;
 
 export interface InvoiceLine {
@@ -40,6 +41,12 @@ export interface InvoiceInput {
   durationMinutes: number;
   /** Add-on lineTotal is HT (excl. VAT). */
   addOns: { name: string; quantity: number; lineTotal: number; vatRate: number }[];
+  /**
+   * Room-rental VAT rate in basis points. Callers pass the rate FROZEN on the
+   * booking when re-rendering an issued document, and ROOM_VAT_RATE_BP for a new
+   * order or a live preview. Defaulted so existing callers keep today's rate.
+   */
+  roomVatRate?: number;
 }
 
 /**
@@ -63,7 +70,7 @@ export function buildInvoiceModel(input: InvoiceInput, vat?: VatTreatmentInput):
     lineFor(
       `${input.roomName} — meeting room rental (${input.durationMinutes / 60}h)`,
       roomHt,
-      ROOM_VAT_RATE_BP
+      input.roomVatRate ?? ROOM_VAT_RATE_BP
     ),
   ];
   for (const addOn of input.addOns) {

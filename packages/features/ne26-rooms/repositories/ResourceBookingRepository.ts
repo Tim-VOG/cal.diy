@@ -22,8 +22,8 @@ export interface CreateResourceBookingWithSlotsInput {
   holdExpiresAt?: Date | null;
   /** Admin block rather than a real sale. */
   isBlock?: boolean;
-  /** Add-on lines, with prices already frozen by the caller. */
-  addOns?: { addOnId: number; quantity: number; unitPrice: number; lineTotal: number }[];
+  /** Add-on lines, with prices and VAT rates already frozen by the caller. */
+  addOns?: { addOnId: number; quantity: number; unitPrice: number; lineTotal: number; vatRate: number }[];
 }
 
 export class ResourceBookingRepository {
@@ -115,6 +115,7 @@ export class ResourceBookingRepository {
               quantity: addOn.quantity,
               unitPrice: addOn.unitPrice,
               lineTotal: addOn.lineTotal,
+              vatRate: addOn.vatRate,
             })),
           });
         }
@@ -380,9 +381,19 @@ export class ResourceBookingRepository {
         invoiceNumber: true,
         creditNoteNumber: true,
         createdAt: true,
+        // Null means the payment was settled outside Stripe, so the invoice must
+        // not print "Paid via Stripe".
+        stripePaymentId: true,
+        // VAT frozen at invoice time; the credit note re-uses these rather than
+        // recomputing from the live settings.
+        roomVatRate: true,
+        vatZeroRated: true,
+        vatMention: true,
         resource: { select: { name: true } },
         addOns: {
-          select: { quantity: true, lineTotal: true, addOn: { select: { name: true, vatRate: true } } },
+          // vatRate comes from the LINE (frozen at order time), not from the
+          // live catalogue entry.
+          select: { quantity: true, lineTotal: true, vatRate: true, addOn: { select: { name: true } } },
         },
       },
     });
@@ -396,12 +407,29 @@ export class ResourceBookingRepository {
     return `NE26-2026-${String(rows[0].n).padStart(4, "0")}`;
   }
 
-  async setInvoice(uid: string, invoiceNumber: string, invoicePdfUrl: string): Promise<void> {
+  /**
+   * Persist the invoice AND the VAT treatment it was rendered with. Freezing the
+   * treatment here is what stops a later settings change from re-splitting the
+   * credit note of a document that has already gone out.
+   */
+  async setInvoice(
+    uid: string,
+    invoiceNumber: string,
+    invoicePdfUrl: string,
+    vat: { roomVatRate: number; zeroRated: boolean; mention: string | null }
+  ): Promise<void> {
     await this.prismaClient.resourceBooking.update({
       where: { uid },
-      data: { invoiceNumber, invoicePdfUrl },
+      data: {
+        invoiceNumber,
+        invoicePdfUrl,
+        roomVatRate: vat.roomVatRate,
+        vatZeroRated: vat.zeroRated,
+        vatMention: vat.mention,
+      },
     });
   }
+
 
   async allocateCreditNoteNumber(): Promise<string> {
     const rows = await this.prismaClient.$queryRaw<

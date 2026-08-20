@@ -1,6 +1,6 @@
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
 import { buildBookingIcs } from "../lib/ics";
-import { buildInvoiceModel } from "../lib/invoice";
+import { ROOM_VAT_RATE_BP, buildInvoiceModel } from "../lib/invoice";
 import type { InvoiceMeta } from "../lib/invoicePdf";
 import { renderInvoicePdf } from "../lib/invoicePdf";
 import { readInvoicePdf, saveInvoicePdf } from "../lib/invoiceStorage";
@@ -59,6 +59,8 @@ export class InvoiceService {
       { country: booking.bookerCountry, vatNumber: booking.bookerVatNumber },
       issuer
     );
+    // The rate in force for this order; frozen onto the booking below.
+    const roomVatRate = ROOM_VAT_RATE_BP;
     const model = buildInvoiceModel(
       {
         amountTotal: booking.amountTotal,
@@ -69,8 +71,9 @@ export class InvoiceService {
           name: a.addOn.name,
           quantity: a.quantity,
           lineTotal: a.lineTotal,
-          vatRate: a.addOn.vatRate,
+          vatRate: a.vatRate,
         })),
+        roomVatRate,
       },
       vat
     );
@@ -95,7 +98,11 @@ export class InvoiceService {
     await saveInvoicePdf(uid, pdf);
     // Persist before emailing: the invoice now exists (idempotency anchor); a
     // failed email is logged by the caller and can be resent, without re-issuing.
-    await this.deps.resourceBookingRepository.setInvoice(uid, invoiceNumber, `/rooms/invoice/${uid}`);
+    await this.deps.resourceBookingRepository.setInvoice(uid, invoiceNumber, `/rooms/invoice/${uid}`, {
+      roomVatRate,
+      zeroRated: vat.zeroRated,
+      mention: vat.mention,
+    });
     await sendInvoiceEmail({
       to: booking.bookerEmail,
       bookerName: booking.bookerName,
@@ -151,10 +158,11 @@ export class InvoiceService {
     }
 
     const issuer = await this.deps.invoiceSettingsRepository.get();
-    const vat = resolveVatTreatment(
-      { country: booking.bookerCountry, vatNumber: booking.bookerVatNumber },
-      issuer
-    );
+    // Re-use the treatment FROZEN when the invoice was issued — never recompute
+    // from the live settings. The invoice PDF is stored and immutable, so a rate
+    // corrected or a reverse-charge toggle flipped since then would produce a
+    // credit note that contradicts the invoice it credits.
+    const vat = { zeroRated: booking.vatZeroRated, mention: booking.vatMention };
     const model = buildInvoiceModel(
       {
         amountTotal: booking.amountTotal,
@@ -165,8 +173,9 @@ export class InvoiceService {
           name: a.addOn.name,
           quantity: a.quantity,
           lineTotal: a.lineTotal,
-          vatRate: a.addOn.vatRate,
+          vatRate: a.vatRate,
         })),
+        roomVatRate: booking.roomVatRate ?? ROOM_VAT_RATE_BP,
       },
       vat
     );

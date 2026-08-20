@@ -90,4 +90,48 @@ describe("InvoiceService.issueInvoice", () => {
     expect(second).toBe(first);
     expect(sendInvoiceEmail).toHaveBeenCalledTimes(1);
   });
+
+  // The defect this closes: nothing froze VAT, so the credit note was recomputed
+  // from the LIVE settings while the invoice PDF stayed as issued — an admin
+  // correcting the catering rate made the two documents disagree.
+  describe("VAT is frozen onto the order", () => {
+    it("records the treatment on the booking when the invoice is issued", async () => {
+      const uid = await confirmedBooking();
+      await service.issueInvoice(uid);
+
+      const booking = await prisma.resourceBooking.findUniqueOrThrow({
+        where: { uid },
+        select: { roomVatRate: true, vatZeroRated: true, vatMention: true },
+      });
+      expect(booking).toEqual({ roomVatRate: 2100, vatZeroRated: false, vatMention: null });
+    });
+
+    it("does not re-read the VAT matrix when crediting", async () => {
+      const uid = await confirmedBooking();
+      await service.issueInvoice(uid);
+
+      // Flip the matrix so a live recomputation would zero-rate this booking.
+      await prisma.resourceBooking.update({ where: { uid }, data: { bookerCountry: "US" } });
+      await prisma.ne26InvoiceSettings.upsert({
+        where: { id: 1 },
+        update: { nonEuExemptEnabled: true },
+        create: { id: 1, nonEuExemptEnabled: true },
+      });
+
+      try {
+        expect(await service.issueCreditNote(uid)).toBe(true);
+        // Still the treatment the invoice was issued with, not the new one.
+        const after = await prisma.resourceBooking.findUniqueOrThrow({
+          where: { uid },
+          select: { vatZeroRated: true, vatMention: true },
+        });
+        expect(after).toEqual({ vatZeroRated: false, vatMention: null });
+      } finally {
+        await prisma.ne26InvoiceSettings.update({
+          where: { id: 1 },
+          data: { nonEuExemptEnabled: false },
+        });
+      }
+    });
+  });
 });
