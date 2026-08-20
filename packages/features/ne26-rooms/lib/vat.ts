@@ -21,7 +21,7 @@ export interface VatTreatment {
  * the place-of-supply rules for event/room rental).
  */
 export function resolveVatTreatment(
-  buyer: { country: string | null; vatNumber: string | null },
+  buyer: { country: string | null; vatNumber: string | null; vatNumberVerified?: boolean },
   config: VatMatrixConfig
 ): VatTreatment {
   const country = (buyer.country ?? "").trim().toUpperCase();
@@ -29,8 +29,16 @@ export function resolveVatTreatment(
 
   const isEu = EU_COUNTRY_CODES.has(country);
   const hasVatNumber = Boolean(buyer.vatNumber?.trim());
+  // Reverse charge needs a VAT number something actually VERIFIED, not one the
+  // buyer typed. Prices are VAT-exclusive, so zero-rating removes the VAT we
+  // would have charged and declared — on an invalid number that 21% is VO's to
+  // owe. Nothing can set this to true yet: Stripe's Checkout customer_details
+  // carries the number but not its VIES status. So turning euReverseChargeEnabled
+  // on can no longer silently zero-rate — wire verification first, then thread it
+  // through here.
+  const isVerified = buyer.vatNumberVerified === true;
 
-  if (isEu && hasVatNumber && config.euReverseChargeEnabled) {
+  if (isEu && hasVatNumber && isVerified && config.euReverseChargeEnabled) {
     return { zeroRated: true, mention: config.euReverseChargeMention };
   }
   if (!isEu && config.nonEuExemptEnabled) {

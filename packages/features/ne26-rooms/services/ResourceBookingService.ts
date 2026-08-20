@@ -3,7 +3,7 @@ import { ErrorWithCode } from "@calcom/lib/errors";
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
 import { getAtomicSlotStarts, getBufferSlotStarts } from "../lib/atomicSlots";
 import { buildEventSchedule, buildOpenSlotMs, type DurationHours } from "../lib/eventSchedule";
-import { computeAddOnLine } from "../lib/pricing";
+import { type ResolvedAddOnLine, resolveAddOnLines } from "../lib/pricing";
 import type { AddOnRepository } from "../repositories/AddOnRepository";
 import type { Ne26RoomSettingsRepository } from "../repositories/Ne26RoomSettingsRepository";
 import type { ResourceBookingRepository } from "../repositories/ResourceBookingRepository";
@@ -115,7 +115,7 @@ export class ResourceBookingService {
     const endTime = new Date(input.startUtc.getTime() + durationMinutes * MS_PER_MINUTE);
     const roomPrice = { 1: room.price1h, 2: room.price2h, 3: room.price3h }[input.durationHours];
 
-    const addOnLines = await this.resolveAddOnLines(input.addOns ?? [], input.durationHours);
+    const addOnLines = await this.resolveAddOnLines(input.addOns ?? [], input.durationHours, room.capacity);
     const amountTotal = roomPrice + addOnLines.reduce((sum, line) => sum + line.lineTotal, 0);
     const holdExpiresAt = new Date(Date.now() + HOLD_MINUTES * MS_PER_MINUTE);
 
@@ -306,36 +306,12 @@ export class ResourceBookingService {
 
   private async resolveAddOnLines(
     requested: { slug: string; quantity: number }[],
-    durationHours: number
-  ): Promise<
-    { addOnId: number; name: string; quantity: number; unitPrice: number; lineTotal: number; vatRate: number }[]
-  > {
+    durationHours: number,
+    roomCapacity: number
+  ): Promise<ResolvedAddOnLine[]> {
     if (!requested.length) return [];
-
     const catalog = await this.deps.addOnRepository.findManyActiveBySlugs(requested.map((a) => a.slug));
-    const bySlug = new Map(catalog.map((a) => [a.slug, a]));
-
-    return requested.map((req) => {
-      const addOn = bySlug.get(req.slug);
-      if (!addOn) {
-        throw new ErrorWithCode(ErrorCode.BadRequest, `Unknown or inactive add-on "${req.slug}"`);
-      }
-      const { quantity, lineTotal } = computeAddOnLine(
-        addOn.priceType,
-        addOn.price,
-        req.quantity,
-        durationHours
-      );
-      // vatRate is frozen onto the line here: the rate is part of the order, not
-      // a live lookup at invoicing time.
-      return {
-        addOnId: addOn.id,
-        name: addOn.name,
-        quantity,
-        unitPrice: addOn.price,
-        lineTotal,
-        vatRate: addOn.vatRate,
-      };
-    });
+    return resolveAddOnLines(requested, catalog, { durationHours, roomCapacity });
   }
+
 }

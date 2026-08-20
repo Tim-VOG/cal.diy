@@ -74,12 +74,15 @@ describe("RoomVatPreviewService", () => {
     expect(res.vatBreakdown).toEqual([{ vatRate: 2100, vat: 7350 }]);
   });
 
-  it("zero-rates an EU buyer with a VAT number (reverse charge)", async () => {
+  it("charges VAT to an EU buyer whose VAT number is unverified", async () => {
+    // The saved profile carries a self-declared number and nothing verifies it,
+    // so the preview must quote VAT rather than promise a reverse charge the
+    // invoice would not grant. That is every EU buyer today.
     const res = await makeService(profile("FR", "FR123")).preview(input);
-    expect(res.zeroRated).toBe(true);
+    expect(res.zeroRated).toBe(false);
     expect(res.totalHt).toBe(35000);
-    expect(res.totalVat).toBe(0);
-    expect(res.mention).toBe("VAT reverse charge");
+    expect(res.totalVat).toBe(7350); // 21% added on top of HT
+    expect(res.mention).toBeNull();
   });
 
   it("flags a missing buyer country", async () => {

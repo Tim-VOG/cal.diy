@@ -76,7 +76,10 @@ async function main(): Promise<void> {
     const surface = SURFACE_M2[room.category];
     await prisma.resource.upsert({
       where: { slug: room.slug },
-      update: { name: room.name, category: room.category, capacity: room.capacity, surface, ...PRICES, description: room.description },
+      // Prices, capacity and surface are deliberately NOT updated: they are set
+      // by the team in the admin, and re-running this seed used to silently
+      // revert real tariffs to the placeholders above. Only `create` seeds them.
+      update: { name: room.name, category: room.category, description: room.description },
       create: { ...room, surface, ...PRICES },
     });
     console.log(
@@ -87,7 +90,9 @@ async function main(): Promise<void> {
   for (const addOn of addOns) {
     await prisma.addOn.upsert({
       where: { slug: addOn.slug },
-      update: { name: addOn.name, description: addOn.description, price: addOn.price, priceType: addOn.priceType, vatRate: addOn.vatRate },
+      // Same reasoning: price and vatRate are admin-editable, so re-seeding must
+      // not overwrite a corrected catering VAT rate or a negotiated price.
+      update: { name: addOn.name, description: addOn.description, priceType: addOn.priceType },
       create: addOn,
     });
     console.log(`  ➕ ${addOn.name} (${addOn.priceType}, ${addOn.price / 100} EUR, VAT ${addOn.vatRate / 100}%)`);

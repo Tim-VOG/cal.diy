@@ -24,10 +24,21 @@ describe("resolveVatTreatment", () => {
     });
   });
 
-  it("reverse-charges an EU business with a VAT number when enabled", () => {
+  it("reverse-charges an EU business whose VAT number was verified", () => {
+    expect(
+      resolveVatTreatment({ country: "fr", vatNumber: "FR123", vatNumberVerified: true }, CONFIG)
+    ).toEqual({ zeroRated: true, mention: "reverse charge" });
+  });
+
+  it("does NOT reverse-charge on a VAT number nobody verified", () => {
+    // The buyer types this number into Stripe Checkout. Prices are VAT-exclusive,
+    // so zero-rating removes the VAT we would otherwise charge and declare — and
+    // on a bogus number that 21% is VO's to owe. Verification is not wired yet,
+    // so this is the state every real EU buyer is in today: enabling the rule can
+    // no longer silently zero-rate.
     expect(resolveVatTreatment({ country: "fr", vatNumber: "FR123" }, CONFIG)).toEqual({
-      zeroRated: true,
-      mention: "reverse charge",
+      zeroRated: false,
+      mention: null,
     });
   });
 

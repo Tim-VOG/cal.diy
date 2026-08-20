@@ -2,7 +2,7 @@ import { ErrorCode } from "@calcom/lib/errorCodes";
 import { ErrorWithCode } from "@calcom/lib/errors";
 import type { DurationHours } from "../lib/eventSchedule";
 import { buildInvoiceModel } from "../lib/invoice";
-import { computeAddOnLine } from "../lib/pricing";
+import { resolveAddOnLines } from "../lib/pricing";
 import { resolveVatTreatment } from "../lib/vat";
 import type { AddOnRepository } from "../repositories/AddOnRepository";
 import type { InvoiceSettingsRepository } from "../repositories/InvoiceSettingsRepository";
@@ -58,17 +58,11 @@ export class RoomVatPreviewService {
     const catalog = requested.length
       ? await this.deps.addOnRepository.findManyActiveBySlugs(requested.map((a) => a.slug))
       : [];
-    const bySlug = new Map(catalog.map((a) => [a.slug, a]));
-    const addOnLines = requested.map((req) => {
-      const addOn = bySlug.get(req.slug);
-      if (!addOn) throw new ErrorWithCode(ErrorCode.BadRequest, `Unknown or inactive add-on "${req.slug}"`);
-      const { quantity, lineTotal } = computeAddOnLine(
-        addOn.priceType,
-        addOn.price,
-        req.quantity,
-        input.durationHours
-      );
-      return { name: addOn.name, quantity, lineTotal, vatRate: addOn.vatRate };
+    // Same resolver as createBooking, so the quoted total can't drift from the
+    // charged one and the preview rejects exactly what the booking rejects.
+    const addOnLines = resolveAddOnLines(requested, catalog, {
+      durationHours: input.durationHours,
+      roomCapacity: room.capacity,
     });
 
     const amountTotal = roomPrice + addOnLines.reduce((sum, l) => sum + l.lineTotal, 0);
