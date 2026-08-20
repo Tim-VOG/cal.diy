@@ -7,7 +7,7 @@ import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { AMENITIES } from "./amenities";
+import { servicesFor } from "./amenities";
 
 export const metadata: Metadata = {
   title: "Meeting Rooms · NATO Edge 26",
@@ -71,7 +71,7 @@ function RoomCard({ room }: { room: Room }): JSX.Element {
           </span>
         </div>
         <div className="mt-3 flex items-center gap-3 border-gray-100 border-t pt-3 text-gray-400">
-          {AMENITIES.map(({ icon: AmenityIcon, label }) => (
+          {servicesFor(room.category).map(({ icon: AmenityIcon, label }) => (
             <span key={label} title={label} aria-label={label}>
               <AmenityIcon className="h-4 w-4 shrink-0" aria-hidden />
             </span>

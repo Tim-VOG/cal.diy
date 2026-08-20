@@ -1,6 +1,10 @@
 "use client";
 
 import type { DurationHours } from "@calcom/features/ne26-rooms/lib/eventSchedule";
+import {
+  EXTENDED_USE_DISCOUNT_NOTE,
+  extendedUseDiscountPct,
+} from "@calcom/features/ne26-rooms/lib/discount";
 import { computeAddOnLine } from "@calcom/features/ne26-rooms/lib/pricing";
 import { buildRoomPhotoList } from "@calcom/features/ne26-rooms/lib/roomImages";
 import type { RoomAvailability } from "@calcom/features/ne26-rooms/services/RoomAvailabilityService";
@@ -9,7 +13,7 @@ import { AddOnPriceType } from "@calcom/prisma/enums";
 import { trpc } from "@calcom/trpc/react";
 import { Building, Clock, Euro, Info, Scaling, Users } from "lucide-react";
 import { useMemo, useState } from "react";
-import { AMENITIES } from "../amenities";
+import { servicesFor } from "../amenities";
 import RoomGallery from "./RoomGallery";
 
 const TZ = "Europe/Brussels";
@@ -474,13 +478,24 @@ export default function RoomBookingClient({
           </span>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2">
-          {AMENITIES.map(({ icon: AmenityIcon, label }) => (
-            <span key={label} className="flex items-center gap-1.5 text-gray-600 text-sm">
-              <AmenityIcon className="h-4 w-4 shrink-0 text-[#000643]" aria-hidden />
-              {label}
-            </span>
-          ))}
+        {/* Included in the price. Suites carry an extra line — that difference is
+            what justifies their premium over a same-capacity meeting room, so it
+            has to be visible where the buyer compares them. */}
+        <div className="mt-4 rounded-xl border border-gray-200 bg-white p-4">
+          <h2 className="font-semibold text-gray-500 text-xs uppercase tracking-wide">
+            Included in the price
+          </h2>
+          <ul className="mt-2 space-y-1.5">
+            {servicesFor(room.category).map(({ icon: ServiceIcon, label, detail }) => (
+              <li key={label} className="flex items-start gap-2 text-sm">
+                <ServiceIcon className="mt-0.5 h-4 w-4 shrink-0 text-[#000643]" aria-hidden />
+                <span>
+                  <span className="font-medium">{label}</span>
+                  {detail ? <span className="text-gray-500"> — {detail}</span> : null}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
 
         <RoomGallery photos={photos} roomName={room.name} />
@@ -504,17 +519,36 @@ export default function RoomBookingClient({
 
         {/* Duration first — start slots below adapt to it */}
         <h2 className="mt-6 font-semibold text-gray-500 text-sm uppercase tracking-wide">Duration</h2>
-        <div className="mt-2 flex gap-2">
-          {DURATIONS.map((d) => (
-            <button
-              key={d}
-              type="button"
-              onClick={() => chooseDuration(d)}
-              className={`${CELL_BASE} ${CELL_CLASS[cellState(d === selectedDuration, true)]}`}>
-              {d}h — {formatPrice(priceForDuration[d], room.currency)}
-            </button>
-          ))}
+        {/* flex-wrap: three "3h — 1 836 € -15%" buttons overflow a 375px screen. */}
+        <div className="mt-2 flex flex-wrap gap-2">
+          {DURATIONS.map((d) => {
+            // Derived from the room's own prices, so the badge always matches
+            // what is charged — change a tariff in the admin and this follows.
+            const discount = extendedUseDiscountPct(room.price1h, priceForDuration[d], d);
+            const isSelected = d === selectedDuration;
+            return (
+              <button
+                key={d}
+                type="button"
+                aria-pressed={isSelected}
+                onClick={() => chooseDuration(d)}
+                className={`${CELL_BASE} ${CELL_CLASS[cellState(isSelected, true)]}`}>
+                {d}h — {formatPrice(priceForDuration[d], room.currency)}
+                {discount ? (
+                  <span
+                    className={`ml-1.5 font-semibold ${isSelected ? "text-white/90" : "text-green-700"}`}>
+                    −{discount}%
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
         </div>
+        {/* The last sentence matters commercially: two separate 1h bookings do
+            not earn the 2h price, and buyers do ask. */}
+        <p className="mt-2 max-w-prose text-gray-500 text-xs leading-relaxed">
+          {EXTENDED_USE_DISCOUNT_NOTE}
+        </p>
 
         {/* Start times — only those that can fit the chosen duration are enabled */}
         <h2 className="mt-6 flex items-center gap-1.5 font-semibold text-gray-500 text-sm uppercase tracking-wide">
