@@ -339,7 +339,9 @@ describe("NE26 Stripe webhook", () => {
 
       // Silence would mean the difference never gets invoiced.
       expect(sendTeamEmail).toHaveBeenCalledTimes(1);
-      expect(vi.mocked(sendTeamEmail).mock.calls[0][0].body).toContain("5000 of 35000");
+      // Human amounts, not Stripe's minor units: "5000 of 35000" reads as a
+      // 5000 EUR refund on a 35000 EUR booking to whoever has to act on it.
+      expect(vi.mocked(sendTeamEmail).mock.calls[0][0].body).toContain("50.00 EUR of 350.00 EUR");
     });
 
     it("credits and frees the room on a full refund", async () => {

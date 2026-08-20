@@ -1,6 +1,7 @@
 import { ErrorCode } from "@calcom/lib/errorCodes";
 import { ErrorWithCode } from "@calcom/lib/errors";
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
+import { formatSlotRange } from "../lib/teamNotification";
 import { getAtomicSlotStarts, getBufferSlotStarts } from "../lib/atomicSlots";
 import { buildEventSchedule, buildOpenSlotMs, type DurationHours } from "../lib/eventSchedule";
 import { type ResolvedAddOnLine, resolveAddOnLines } from "../lib/pricing";
@@ -20,25 +21,6 @@ import type { ResourceRepository } from "../repositories/ResourceRepository";
 const HOLD_MINUTES = 35;
 const MS_PER_MINUTE = 60 * 1000;
 
-// Human, Brussels-time slot label for the Stripe Checkout line (e.g.
-// "Tue 17 Nov 2026, 14:00–16:00 (Europe/Brussels)").
-function formatSlotRange(start: Date, end: Date): string {
-  const day = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Brussels",
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  }).format(start);
-  const time = (d: Date) =>
-    new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Europe/Brussels",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(d);
-  return `${day}, ${time(start)}-${time(end)} (Europe/Brussels)`;
-}
 
 export interface IResourceBookingServiceDeps {
   resourceRepository: ResourceRepository;

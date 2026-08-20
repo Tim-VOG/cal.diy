@@ -1,5 +1,6 @@
 "use client";
 
+import { ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -38,6 +39,15 @@ export default function AdminNav(): JSX.Element {
           {tab.label}
         </Link>
       ))}
+
+      {/* The way back out. Without it, leaving the dashboard for the public site
+          means editing the URL by hand — which is how the admins were doing it. */}
+      <Link
+        href="/rooms"
+        className="-mb-px ml-auto flex items-center gap-1.5 border-transparent border-b-2 px-4 py-2 font-medium text-gray-500 text-sm transition hover:text-[#000643]">
+        <ExternalLink className="h-4 w-4 shrink-0" aria-hidden />
+        See platform
+      </Link>
     </nav>
   );
 }
