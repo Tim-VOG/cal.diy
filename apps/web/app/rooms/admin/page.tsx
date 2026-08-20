@@ -6,6 +6,7 @@ import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import ConfigHealth from "./ConfigHealth";
 import RoomsAdminView from "./RoomsAdminView";
 
 export const metadata: Metadata = {
@@ -46,11 +47,14 @@ export default async function RoomsAdminPage(): Promise<JSX.Element> {
   }));
 
   return (
-    <RoomsAdminView
-      rows={rows}
-      roomNames={roomNames}
-      slotGranularityMinutes={roomSettings.slotGranularityMinutes}
-      eventDays={roomSettings.eventDays}
-    />
+    <>
+      <ConfigHealth />
+      <RoomsAdminView
+        rows={rows}
+        roomNames={roomNames}
+        slotGranularityMinutes={roomSettings.slotGranularityMinutes}
+        eventDays={roomSettings.eventDays}
+      />
+    </>
   );
 }

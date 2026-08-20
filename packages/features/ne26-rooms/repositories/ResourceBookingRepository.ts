@@ -154,6 +154,24 @@ export class ResourceBookingRepository {
     return slots.map((slot) => slot.slotStart);
   }
 
+  /**
+   * How many rooms this exhibitor is currently holding without having paid.
+   *
+   * A hold takes a room off sale for its whole lifetime, so an account that
+   * keeps starting checkouts it never completes can quietly park inventory that
+   * nobody else can buy. Expired holds do not count — they no longer block
+   * anything.
+   */
+  async countActiveHoldsForUser(bookerUserId: number, now: Date): Promise<number> {
+    return this.prismaClient.resourceBooking.count({
+      where: {
+        bookerUserId,
+        status: ResourceBookingStatus.PENDING,
+        holdExpiresAt: { gt: now },
+      },
+    });
+  }
+
   findByUid(uid: string) {
     return this.prismaClient.resourceBooking.findUnique({
       where: { uid },

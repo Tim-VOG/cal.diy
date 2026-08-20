@@ -44,8 +44,27 @@ function toSettings(row: SettingsRow): RoomSettings {
 export class Ne26RoomSettingsRepository {
   constructor(private prismaClient: PrismaClient) {}
 
-  // Singleton row (id=1); upsert guarantees it exists without a seed step.
+  /**
+   * Settings for the singleton row (id=1).
+   *
+   * Read-first, and that matters: this is on the hot path — every listing, every
+   * room page and every availability computation calls it. Written as an upsert
+   * it took a row-level write lock on the same single row for every one of
+   * those, so concurrent buyers across nine rooms all queued behind each other
+   * on a row nobody was changing.
+   *
+   * The upsert is kept only for the one request that finds no row, so a fresh
+   * install still needs no seed step. Two racing first requests are fine: the
+   * create collides on the primary key, and the fallback read returns the row
+   * the winner just made.
+   */
   async get(): Promise<RoomSettings> {
+    const existing = await this.prismaClient.ne26RoomSettings.findUnique({
+      where: { id: 1 },
+      select: settingsSelect,
+    });
+    if (existing) return toSettings(existing);
+
     const row = await this.prismaClient.ne26RoomSettings.upsert({
       where: { id: 1 },
       create: { id: 1 },

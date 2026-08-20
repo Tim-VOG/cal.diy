@@ -180,4 +180,56 @@ describe("ResourceBookingService.createBooking", () => {
       expect(result.status).toBe("PENDING");
     });
   });
+
+  describe("unpaid hold cap", () => {
+    // Each hold takes a room off sale for 35 minutes, so an account that keeps
+    // starting checkouts it never finishes parks inventory nobody can buy.
+    async function hold(hourUtc: string) {
+      return service.createBooking({
+        slug: SLUG,
+        startUtc: new Date(hourUtc),
+        durationHours: 1,
+        booker,
+      });
+    }
+
+    it("refuses a fourth room held unpaid at the same time", async () => {
+      await hold("2026-11-18T08:00:00.000Z");
+      await hold("2026-11-18T09:00:00.000Z");
+      await hold("2026-11-18T10:00:00.000Z");
+
+      await expect(hold("2026-11-18T11:00:00.000Z")).rejects.toMatchObject({
+        code: ErrorCode.BadRequest,
+      });
+    });
+
+    it("counts only live holds — a lapsed one blocks nothing", async () => {
+      const first = await hold("2026-11-18T08:00:00.000Z");
+      await hold("2026-11-18T09:00:00.000Z");
+      await hold("2026-11-18T10:00:00.000Z");
+
+      // Age one hold out. It no longer takes its room off sale, so it must not
+      // count against the cap either.
+      await prisma.resourceBooking.update({
+        where: { uid: first.uid },
+        data: { holdExpiresAt: new Date(Date.now() - 60 * 1000) },
+      });
+
+      await expect(hold("2026-11-18T11:00:00.000Z")).resolves.toMatchObject({ status: "PENDING" });
+    });
+
+    it("does not count rooms the exhibitor has already paid for", async () => {
+      // Buying three rooms and coming back for a fourth is normal behaviour.
+      for (const hour of ["2026-11-18T08:00:00.000Z", "2026-11-18T09:00:00.000Z", "2026-11-18T10:00:00.000Z"]) {
+        const booking = await hold(hour);
+        await prisma.resourceBooking.update({
+          where: { uid: booking.uid },
+          data: { status: "CONFIRMED", holdExpiresAt: null },
+        });
+      }
+
+      await expect(hold("2026-11-18T11:00:00.000Z")).resolves.toMatchObject({ status: "PENDING" });
+    });
+  });
+
 });

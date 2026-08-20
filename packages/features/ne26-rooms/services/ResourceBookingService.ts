@@ -19,6 +19,18 @@ import type { ResourceRepository } from "../repositories/ResourceRepository";
 // holds are deleted, with no row left to attach the payment to. 35 leaves margin
 // for the latency between creating the booking and creating the session.
 const HOLD_MINUTES = 35;
+
+/**
+ * How many rooms one exhibitor may hold unpaid at the same time.
+ *
+ * A hold takes a room off sale for HOLD_MINUTES, so repeatedly starting
+ * checkouts and abandoning them parks inventory nobody else can buy — by
+ * accident (a confused buyer clicking Book on several rooms) or on purpose.
+ * Three is well above what a genuine exhibitor needs in one sitting: each
+ * completed payment clears its hold, so booking six rooms in a row never trips
+ * it.
+ */
+const MAX_ACTIVE_HOLDS_PER_USER = 3;
 const MS_PER_MINUTE = 60 * 1000;
 
 
@@ -89,6 +101,18 @@ export class ResourceBookingService {
     // deliberately exempt: ops must still be able to block a room mid-event.
     if (input.startUtc.getTime() < Date.now()) {
       throw new ErrorWithCode(ErrorCode.BadRequest, "That time has already started. Please pick a later slot.");
+    }
+    if (input.booker.userId) {
+      const held = await this.deps.resourceBookingRepository.countActiveHoldsForUser(
+        input.booker.userId,
+        new Date()
+      );
+      if (held >= MAX_ACTIVE_HOLDS_PER_USER) {
+        throw new ErrorWithCode(
+          ErrorCode.BadRequest,
+          `You already have ${held} rooms on hold awaiting payment. Please complete or cancel one before booking another.`
+        );
+      }
     }
     // Reserve the turnover buffer after the booking so the next one can't start
     // within it. Added to the slot set, so the DB unique index enforces the gap.
