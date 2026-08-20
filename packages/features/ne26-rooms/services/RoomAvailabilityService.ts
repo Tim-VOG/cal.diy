@@ -33,8 +33,11 @@ export class RoomAvailabilityService {
     }
 
     const { isActive: _isActive, ...publicRoom } = room;
+    // One `now` for both reads: resolving "active hold" and "past start" against
+    // the same instant keeps the returned grid internally consistent.
+    const now = new Date();
     const [takenSlotStarts, settings] = await Promise.all([
-      this.deps.resourceBookingRepository.findActiveSlotStarts(room.id, new Date()),
+      this.deps.resourceBookingRepository.findActiveSlotStarts(room.id, now),
       this.deps.ne26RoomSettingsRepository.get(),
     ]);
 
@@ -44,6 +47,7 @@ export class RoomAvailabilityService {
         takenSlotStarts,
         settings.bufferMinutes,
         settings.slotGranularityMinutes,
+        now,
         buildEventSchedule(settings.eventDays)
       ),
     };

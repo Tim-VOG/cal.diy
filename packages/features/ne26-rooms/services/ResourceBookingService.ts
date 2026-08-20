@@ -9,7 +9,15 @@ import type { Ne26RoomSettingsRepository } from "../repositories/Ne26RoomSetting
 import type { ResourceBookingRepository } from "../repositories/ResourceBookingRepository";
 import type { ResourceRepository } from "../repositories/ResourceRepository";
 
-const HOLD_MINUTES = 15;
+// How long an unpaid booking holds its slots while the buyer pays.
+//
+// Stripe refuses a Checkout session expiring in under 30 minutes, and that
+// session MUST expire with the hold: otherwise the session stays payable for
+// Stripe's 24h default while the hold lapses after 15, so a buyer who pays late
+// is charged for a slot that has already been released — and, since expired
+// holds are deleted, with no row left to attach the payment to. 35 leaves margin
+// for the latency between creating the booking and creating the session.
+const HOLD_MINUTES = 35;
 const MS_PER_MINUTE = 60 * 1000;
 
 // Human, Brussels-time slot label for the Stripe Checkout line (e.g.
@@ -93,6 +101,13 @@ export class ResourceBookingService {
         throw new ErrorWithCode(ErrorCode.BadRequest, "Selected time is outside the event opening hours.");
       }
     }
+    // The client's grid can be stale — a page left open, a bookmarked link, the
+    // hostess tablet sitting on the same screen all morning — so re-check here
+    // that the slot has not already started. Admin blocks (createBlock) are
+    // deliberately exempt: ops must still be able to block a room mid-event.
+    if (input.startUtc.getTime() < Date.now()) {
+      throw new ErrorWithCode(ErrorCode.BadRequest, "That time has already started. Please pick a later slot.");
+    }
     // Reserve the turnover buffer after the booking so the next one can't start
     // within it. Added to the slot set, so the DB unique index enforces the gap.
     const bufferSlots = getBufferSlotStarts(input.startUtc, durationMinutes, settings.bufferMinutes);
@@ -156,6 +171,8 @@ export class ResourceBookingService {
   ): Promise<{
     currency: string;
     checkoutLines: CheckoutLine[];
+    /** New hold expiry, so the resumed Checkout session can expire with it. */
+    holdExpiresAt: Date;
     slug: string;
     durationHours: DurationHours;
     addOns: { slug: string; quantity: number }[];
@@ -189,14 +206,14 @@ export class ResourceBookingService {
     ];
 
     // Give the booker another full hold window to complete payment.
-    await this.deps.resourceBookingRepository.extendHoldByUid(
-      uid,
-      new Date(Date.now() + HOLD_MINUTES * MS_PER_MINUTE)
-    );
+    const holdExpiresAt = new Date(Date.now() + HOLD_MINUTES * MS_PER_MINUTE);
+    await this.deps.resourceBookingRepository.extendHoldByUid(uid, holdExpiresAt);
 
     return {
       currency: booking.currency,
       checkoutLines,
+      // Returned so the resumed Checkout session can be made to expire with it.
+      holdExpiresAt,
       slug: booking.resource.slug,
       durationHours,
       addOns: booking.addOns.map((a) => ({ slug: a.addOn.slug, quantity: a.quantity })),

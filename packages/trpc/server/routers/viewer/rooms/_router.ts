@@ -300,6 +300,7 @@ export const roomsRouter = router({
       lines: [...booking.checkoutLines, ...vatLines],
       customerEmail: ctx.user.email,
       customerId,
+      holdExpiresAt: booking.holdExpiresAt,
       successUrl: `${WEBAPP_URL}/rooms/booked/${booking.uid}`,
       cancelUrl: `${WEBAPP_URL}/rooms/${input.slug}`,
     });
@@ -360,6 +361,7 @@ export const roomsRouter = router({
       lines: [...resume.checkoutLines, ...vatLines],
       customerEmail: ctx.user.email,
       customerId,
+      holdExpiresAt: resume.holdExpiresAt,
       successUrl: `${WEBAPP_URL}/rooms/booked/${input.uid}`,
       cancelUrl: `${WEBAPP_URL}/rooms/bookings`,
     });

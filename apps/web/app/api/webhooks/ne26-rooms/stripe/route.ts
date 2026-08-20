@@ -1,14 +1,21 @@
 import process from "node:process";
 import { getResourceBookingService } from "@calcom/features/ne26-rooms/di/ResourceBookingService.container";
 import { getStripeCheckoutService } from "@calcom/features/ne26-rooms/di/StripeCheckoutService.container";
+import {
+  checkoutOutcome,
+  isFullRefund,
+  ne26BookingUid,
+  paymentIdOf,
+} from "@calcom/features/ne26-rooms/lib/stripeEvents";
 import logger from "@calcom/lib/logger";
 import type Stripe from "stripe";
 
 const log = logger.getSubLogger({ prefix: ["[ne26-rooms-stripe-webhook]"] });
 
-// Stripe webhook for NE26 room payments. On checkout.session.completed we flip
-// the held PENDING booking to CONFIRMED. Its own signing secret keeps it
-// independent from Cal's other Stripe webhooks.
+// Stripe webhook for NE26 room payments. A settled payment flips the held
+// PENDING booking to CONFIRMED and invoices it; a failed or expired one releases
+// the hold. Its own signing secret keeps it independent from Cal's other Stripe
+// webhooks. The decision rules live in lib/stripeEvents.ts and are unit-tested.
 export async function POST(req: Request): Promise<Response> {
   const signature = req.headers.get("stripe-signature");
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET_NE26_ROOMS;
@@ -24,16 +31,13 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: "Invalid signature" }, { status: 400 });
   }
 
-  if (event.type === "checkout.session.completed") {
+  if (event.type.startsWith("checkout.session.")) {
     const session = event.data.object as Stripe.Checkout.Session;
-    const bookingUid = session.metadata?.bookingUid;
-    if (session.metadata?.source === "ne26-rooms" && bookingUid) {
-      const stripePaymentId =
-        typeof session.payment_intent === "string"
-          ? session.payment_intent
-          : (session.payment_intent?.id ?? session.id);
-      const bookingService = getResourceBookingService();
+    const bookingUid = ne26BookingUid(session);
+    const outcome = checkoutOutcome(event.type, session);
+    const bookingService = getResourceBookingService();
 
+    if (bookingUid && outcome === "confirm") {
       // Persist the billing details Stripe collected (drives the invoice + VAT)
       // before confirming, while the booking is still PENDING.
       const details = session.customer_details;
@@ -44,6 +48,7 @@ export async function POST(req: Request): Promise<Response> {
         name: details?.name ?? null,
       });
 
+      const stripePaymentId = paymentIdOf(session);
       const confirmed = await bookingService.confirmPayment({ bookingUid, stripePaymentId });
       if (confirmed) {
         // Best-effort invoicing: a failed PDF/email must not fail the webhook
@@ -57,22 +62,42 @@ export async function POST(req: Request): Promise<Response> {
           log.error(`Invoice issuance failed for booking ${bookingUid}`, e);
         }
       } else {
-        // Paid, but the booking was already handled or its hold expired and was
-        // reclaimed before payment landed — needs manual review/refund.
-        log.warn(
-          `Payment for booking ${bookingUid} could not be confirmed (already handled or hold expired).`
+        // Money is captured but no PENDING booking matched: it was already
+        // handled, or its hold lapsed and was cleared before the payment landed.
+        // Nothing downstream retries, so this needs a human to reconcile or
+        // refund — log at error level with everything needed to find it in Stripe.
+        log.error(
+          `UNRECONCILED PAYMENT: captured ${session.amount_total ?? "?"} ${
+            session.currency ?? "?"
+          } for booking ${bookingUid} (payment ${stripePaymentId}, session ${
+            session.id
+          }) but no pending booking matched — manual review/refund required.`
         );
       }
     }
+
+    if (bookingUid && outcome === "release") {
+      // Payment failed or the session expired: free the slots now rather than
+      // leaving a dead hold until something else clears it.
+      const released = await bookingService.cancelPending(bookingUid);
+      log.info(`Released hold for booking ${bookingUid} after ${event.type} (released=${released}).`);
+    }
   }
 
-  // A refund issues a credit note and frees the room's slots. Idempotent on the
-  // booking side, so a replayed event is harmless.
+  // A FULL refund issues a credit note and frees the room's slots. Idempotent on
+  // the booking side, so a replayed event is harmless.
   if (event.type === "charge.refunded") {
     const charge = event.data.object as Stripe.Charge;
     const paymentIntentId =
       typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id;
-    if (paymentIntentId) {
+
+    if (paymentIntentId && !isFullRefund(charge)) {
+      // Our credit note is all-or-nothing (full amount, booking cancelled, slots
+      // freed), so a partial refund must not go through it.
+      log.warn(
+        `Partial refund on payment ${paymentIntentId} (${charge.amount_refunded}/${charge.amount} ${charge.currency}) — no credit note issued, handle manually.`
+      );
+    } else if (paymentIntentId) {
       try {
         const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
         const issued = await getInvoiceService().issueCreditNoteByPaymentIntent(paymentIntentId);

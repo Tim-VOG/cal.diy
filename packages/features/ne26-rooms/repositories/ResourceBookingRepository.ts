@@ -54,7 +54,22 @@ export class ResourceBookingRepository {
           select: { id: true },
         });
         if (expiredHolds.length > 0) {
-          await tx.resourceBooking.deleteMany({ where: { id: { in: expiredHolds.map((b) => b.id) } } });
+          // Restate the predicate on the DELETE itself — never trust the ids from
+          // the SELECT alone. Under READ COMMITTED, a DELETE that meets a row
+          // version changed by a concurrent transaction re-evaluates its own
+          // WHERE against the NEW version. An id-only WHERE therefore still
+          // matches a hold the Stripe webhook has just flipped to CONFIRMED, and
+          // would delete a PAID booking (cascading its slots) to free the slot
+          // for this one. With the predicate restated, Postgres skips that row,
+          // our slot insert hits @@unique([resourceId, slotStart]) and we raise
+          // BookingConflict instead of silently reselling a paid slot.
+          await tx.resourceBooking.deleteMany({
+            where: {
+              id: { in: expiredHolds.map((b) => b.id) },
+              status: ResourceBookingStatus.PENDING,
+              holdExpiresAt: { lt: now },
+            },
+          });
         }
 
         const booking = await tx.resourceBooking.create({

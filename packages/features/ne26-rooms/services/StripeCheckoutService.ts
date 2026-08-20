@@ -5,6 +5,9 @@ import Stripe from "stripe";
 
 const STRIPE_API_VERSION = "2020-08-27";
 
+/** Stripe rejects a Checkout session expiring sooner than this. */
+const STRIPE_MIN_SESSION_LIFETIME_SECONDS = 30 * 60;
+
 export interface CreateCheckoutSessionInput {
   bookingUid: string;
   currency: string;
@@ -15,6 +18,26 @@ export interface CreateCheckoutSessionInput {
   customerEmail?: string;
   /** Existing Stripe Customer (mirrors our billing profile) to pre-fill Checkout. */
   customerId?: string;
+  /**
+   * When the booking's hold lapses. The session is set to expire with it, so the
+   * buyer can never pay against a hold that has already been released.
+   */
+  holdExpiresAt: Date;
+}
+
+/**
+ * Session expiry in epoch seconds, derived from the booking's hold. Clamped up to
+ * Stripe's 30-minute floor: a shorter session is rejected outright, which would
+ * fail the booking. The clamp can only make the session outlive the hold by
+ * seconds, and a payment landing in that sliver is safe — the reclaim DELETE
+ * re-checks the hold state, so it can no longer remove a paid booking.
+ */
+export function checkoutExpiresAtSeconds(holdExpiresAt: Date, now: Date): number {
+  const nowSeconds = Math.floor(now.getTime() / 1000);
+  return Math.max(
+    Math.floor(holdExpiresAt.getTime() / 1000),
+    nowSeconds + STRIPE_MIN_SESSION_LIFETIME_SECONDS
+  );
 }
 
 export interface EnsureCustomerInput {
@@ -96,6 +119,9 @@ export class StripeCheckoutService {
       })),
       metadata,
       payment_intent_data: { metadata },
+      // Die with the hold: a session outliving it lets the buyer pay for a slot
+      // that has already been released to someone else.
+      expires_at: checkoutExpiresAtSeconds(input.holdExpiresAt, new Date()),
       // Collect/confirm billing details here — the source for the invoice + VAT.
       // A pre-filled Customer (when present) seeds the address; the buyer can
       // still adjust and the webhook syncs any change back to our DB.

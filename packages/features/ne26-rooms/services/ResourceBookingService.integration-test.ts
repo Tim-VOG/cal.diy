@@ -1,11 +1,16 @@
 import { ErrorCode } from "@calcom/lib/errorCodes";
 import { ErrorWithCode } from "@calcom/lib/errors";
 import { prisma } from "@calcom/prisma";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { getResourceBookingService } from "../di/ResourceBookingService.container";
 
 const service = getResourceBookingService();
-const SLUG = `test-booking-${Date.now()}`;
+const STAMP = Date.now();
+const SLUG = `test-booking-${STAMP}`;
+// Test-local add-ons: the shared seeded catalogue is admin-editable, so pinning
+// totals against it would make this suite depend on production prices.
+const CATERING_SLUG = `test-catering-${STAMP}`;
+const SCREEN_SLUG = `test-screen-${STAMP}`;
 
 let resourceId: number;
 let bookerUserId: number;
@@ -14,7 +19,7 @@ const booker = {
   get userId() {
     return bookerUserId;
   },
-  email: "exhibitor@test.com",
+  email: `exhibitor-${STAMP}@test.com`,
   name: "Exhibitor",
 };
 
@@ -34,8 +39,29 @@ describe("ResourceBookingService.createBooking", () => {
       select: { id: true },
     });
     resourceId = room.id;
-    const user = await prisma.user.findFirstOrThrow({ where: { username: "pro" }, select: { id: true } });
+
+    // Own the booker rather than borrowing Cal's "pro" seed user: this suite
+    // threw in beforeAll on any database without the dev seed, and vitest then
+    // silently SKIPPED every test in it — so it has not actually run in CI.
+    const user = await prisma.user.create({
+      data: { email: booker.email, username: `exhibitor-${STAMP}`, name: booker.name },
+      select: { id: true },
+    });
     bookerUserId = user.id;
+
+    await prisma.addOn.createMany({
+      data: [
+        { name: "TEST Catering", slug: CATERING_SLUG, price: 3500, priceType: "PER_PERSON" },
+        { name: "TEST Screen", slug: SCREEN_SLUG, price: 5000, priceType: "FLAT" },
+      ],
+    });
+
+    // Pin the turnover buffer so the expected slot count is deterministic.
+    await prisma.ne26RoomSettings.upsert({
+      where: { id: 1 },
+      update: { bufferMinutes: 0 },
+      create: { id: 1, bufferMinutes: 0 },
+    });
   });
 
   afterEach(async () => {
@@ -44,6 +70,8 @@ describe("ResourceBookingService.createBooking", () => {
 
   afterAll(async () => {
     await prisma.resource.delete({ where: { id: resourceId } });
+    await prisma.addOn.deleteMany({ where: { slug: { in: [CATERING_SLUG, SCREEN_SLUG] } } });
+    await prisma.user.delete({ where: { id: bookerUserId } });
   });
 
   it("creates a PENDING booking with a hold and the correct total (room + add-ons)", async () => {
@@ -53,8 +81,8 @@ describe("ResourceBookingService.createBooking", () => {
       durationHours: 2,
       booker,
       addOns: [
-        { slug: "catering-lunch", quantity: 6 }, // PER_PERSON 3500 * 6 = 21000
-        { slug: "av-screen", quantity: 1 }, // FLAT 5000
+        { slug: CATERING_SLUG, quantity: 6 }, // PER_PERSON 3500 * 6 = 21000
+        { slug: SCREEN_SLUG, quantity: 1 }, // FLAT 5000
       ],
     });
 
@@ -68,7 +96,8 @@ describe("ResourceBookingService.createBooking", () => {
       select: { amountTotal: true, slots: true, addOns: true, bookerUserId: true },
     });
     expect(booking.bookerUserId).toBe(bookerUserId);
-    expect(booking.slots).toHaveLength(2); // 08:00 + 09:00 UTC
+    // 2h on the 15-minute grid = 8 slots (the buffer is pinned to 0 above).
+    expect(booking.slots).toHaveLength(8);
     expect(booking.addOns).toHaveLength(2);
   });
 
@@ -93,5 +122,62 @@ describe("ResourceBookingService.createBooking", () => {
         addOns: [{ slug: "does-not-exist", quantity: 1 }],
       })
     ).rejects.toBeInstanceOf(ErrorWithCode);
+  });
+
+  it("holds the slots long enough for Stripe Checkout to accept the session", async () => {
+    // Stripe refuses a Checkout session expiring in under 30 minutes, and the
+    // session must expire with the hold — so the hold can never be shorter.
+    const before = Date.now();
+    const result = await service.createBooking({
+      slug: SLUG,
+      startUtc: new Date("2026-11-18T08:00:00.000Z"),
+      durationHours: 1,
+      booker,
+    });
+    expect((result.holdExpiresAt.getTime() - before) / 60000).toBeGreaterThanOrEqual(30);
+  });
+
+  describe("mid-event, with the booking URL still live", () => {
+    // Wednesday 18 Nov, 11:00 Brussels: the state the hostess tablet and any
+    // broadcast link are in during the event. Only Date is faked, so Prisma's
+    // internal timers keep working.
+    beforeAll(() => {
+      vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-18T10:00:00.000Z") });
+    });
+    afterAll(() => {
+      vi.useRealTimers();
+    });
+
+    it("rejects a slot that has already started, even though it is within opening hours", async () => {
+      await expect(
+        service.createBooking({
+          slug: SLUG,
+          startUtc: new Date("2026-11-18T08:00:00.000Z"), // 09:00 Brussels, two hours ago
+          durationHours: 1,
+          booker,
+        })
+      ).rejects.toMatchObject({ code: ErrorCode.BadRequest });
+    });
+
+    it("rejects a slot from an earlier event day", async () => {
+      await expect(
+        service.createBooking({
+          slug: SLUG,
+          startUtc: new Date("2026-11-17T13:00:00.000Z"), // Tuesday, yesterday
+          durationHours: 1,
+          booker,
+        })
+      ).rejects.toMatchObject({ code: ErrorCode.BadRequest });
+    });
+
+    it("still sells a slot later the same day", async () => {
+      const result = await service.createBooking({
+        slug: SLUG,
+        startUtc: new Date("2026-11-18T12:00:00.000Z"), // 13:00 Brussels, two hours out
+        durationHours: 1,
+        booker,
+      });
+      expect(result.status).toBe("PENDING");
+    });
   });
 });

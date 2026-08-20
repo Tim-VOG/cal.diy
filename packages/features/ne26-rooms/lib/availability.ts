@@ -33,18 +33,27 @@ export interface EventDayAvailability {
  *
  * @param takenSlotStartsUtc slots occupied by CONFIRMED or actively-held PENDING
  *   bookings (incl. their reserved buffer); the caller resolves "active hold".
+ * A start that has already begun is never offered. The booking URL stays live
+ * during the event and the hostess tablet stays open on it, so without this a
+ * buyer can select — and pay for — a slot that started hours ago. `now` is
+ * always supplied by the caller rather than defaulted, so this stays a pure
+ * function and its tests stay deterministic once the event date has passed.
+ *
  * @param bufferMinutes turnover buffer required after a booking (admin setting).
+ * @param now current instant; a start at or before it is not bookable.
  * @param schedule open slot marks per day; defaults to the built-in NE26 hours.
  */
 export function computeAvailability(
   takenSlotStartsUtc: Date[],
   bufferMinutes: number,
   startStepMinutes = 60,
+  now: Date = new Date(),
   schedule: readonly EventDaySchedule[] = EVENT_SCHEDULE
 ): EventDayAvailability[] {
   const taken = new Set(takenSlotStartsUtc.map((d) => d.getTime()));
   const bufferCount = Math.max(0, Math.ceil((bufferMinutes * 60 * 1000) / SLOT_GRANULARITY_MS));
   const stepMs = Math.max(SLOT_GRANULARITY_MS, startStepMinutes * 60 * 1000);
+  const nowMs = now.getTime();
 
   return schedule.map((day) => {
     const openSlots = new Set(day.openSlotStartsUtc.map((d) => d.getTime()));
@@ -55,6 +64,8 @@ export function computeAvailability(
 
     const starts: AvailableStart[] = offered.map((start) => {
       const startMs = start.getTime();
+      // Past starts are closed outright, whatever the slot state.
+      if (startMs < nowMs) return { startUtc: start.toISOString(), availableDurations: [] };
       const availableDurations = SELECTABLE_DURATIONS.filter((duration) => {
         const slotCount = (duration * MS_PER_HOUR) / SLOT_GRANULARITY_MS;
         // Every slot of the booking must be open (within the window) and free.

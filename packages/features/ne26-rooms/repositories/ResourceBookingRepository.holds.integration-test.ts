@@ -117,4 +117,57 @@ describe("ResourceBookingRepository.createWithSlots — expired hold reclaim", (
       )
     ).rejects.toMatchObject({ code: ErrorCode.BookingConflict });
   });
+
+  // Regression: the reclaim DELETE must restate its predicate, not just reuse the
+  // ids from the SELECT. Under READ COMMITTED a DELETE that blocks on a row being
+  // updated re-evaluates its own WHERE against the new version, so an id-only
+  // WHERE deletes a hold the Stripe webhook has just CONFIRMED — destroying a
+  // PAID booking and reselling its slot. This drives that exact interleaving.
+  it("does NOT delete a hold that gets confirmed while a reclaim is in flight", async () => {
+    const stale = await repo.createWithSlots(
+      args("2026-11-18T09:00:00.000Z", ResourceBookingStatus.PENDING, new Date(Date.now() - MS_PER_MINUTE), "paid-late@test.com")
+    );
+    const { id: staleId } = await prisma.resourceBooking.findUniqueOrThrow({
+      where: { uid: stale.uid },
+      select: { id: true },
+    });
+
+    // The webhook's UPDATE takes the row lock and holds it, uncommitted.
+    let commitWebhook!: () => void;
+    const webhookMayCommit = new Promise<void>((resolve) => {
+      commitWebhook = resolve;
+    });
+    const webhook = prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`UPDATE "ResourceBooking" SET status = 'CONFIRMED'::"ResourceBookingStatus", "stripePaymentId" = 'pi_race_test' WHERE id = ${staleId}`;
+        await webhookMayCommit;
+      },
+      { timeout: 20000 }
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // A second exhibitor books the same slot. Its SELECT still sees the stale
+    // hold as PENDING (the UPDATE is uncommitted), then its DELETE blocks.
+    const competing = repo
+      .createWithSlots(
+        args("2026-11-18T09:00:00.000Z", ResourceBookingStatus.PENDING, new Date(Date.now() + 15 * MS_PER_MINUTE), "second@test.com")
+      )
+      .then(() => null)
+      .catch((e: unknown) => e);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    commitWebhook();
+    await webhook;
+
+    // The paid booking must survive intact, and the competing one must be rejected.
+    await expect(competing).resolves.toMatchObject({ code: ErrorCode.BookingConflict });
+    const survivor = await prisma.resourceBooking.findUnique({
+      where: { uid: stale.uid },
+      select: { status: true, stripePaymentId: true, slots: true },
+    });
+    expect(survivor?.status).toBe(ResourceBookingStatus.CONFIRMED);
+    expect(survivor?.stripePaymentId).toBe("pi_race_test");
+    expect(survivor?.slots).toHaveLength(4); // 1h = 4 x 15-min slots, none cascaded away
+    expect(await prisma.resourceBooking.count({ where: { resourceId } })).toBe(1);
+  });
 });
