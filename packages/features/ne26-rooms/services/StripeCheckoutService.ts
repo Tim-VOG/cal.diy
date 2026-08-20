@@ -102,7 +102,11 @@ export class StripeCheckoutService {
     // question "does the Stripe Customer carry an address?" is answerable from
     // the container logs instead of by guessing. Booleans and the country code
     // only — no addresses in logs.
-    log.info(
+    //
+    // warn, not info: the default NEXT_PUBLIC_LOGGER_LEVEL is 4 (warn), so an
+    // info line is dropped before it ever reaches `docker logs` — which is
+    // exactly how the first version of this diagnostic came back empty.
+    log.warn(
       `ensureCustomer ${input.customerId ? "update" : "create"}: name=${Boolean(params.name)} address=${Boolean(
         params.address
       )} country=${input.country ?? "-"}`
@@ -110,11 +114,11 @@ export class StripeCheckoutService {
 
     if (input.customerId) {
       const updated = await this.stripe.customers.update(input.customerId, params);
-      log.info(`ensureCustomer updated ${updated.id}: stripe now holds address=${Boolean(updated.address)}`);
+      log.warn(`ensureCustomer updated ${updated.id}: stripe now holds address=${Boolean(updated.address)}`);
       return updated.id;
     }
     const created = await this.stripe.customers.create(params);
-    log.info(`ensureCustomer created ${created.id}: stripe now holds address=${Boolean(created.address)}`);
+    log.warn(`ensureCustomer created ${created.id}: stripe now holds address=${Boolean(created.address)}`);
     return created.id;
   }
 

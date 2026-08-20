@@ -46,6 +46,15 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
                     Admin
                   </Link>
                 ) : null}
+                {/* The primary action had no button of its own: once signed in
+                    you could reach your bookings and your billing details, but
+                    getting back to the listing meant clicking the logo. */}
+                <Link
+                  href="/rooms"
+                  className="shrink-0 text-sm opacity-80 transition hover:opacity-100">
+                  <span className="sm:hidden">Book</span>
+                  <span className="hidden sm:inline">Book a meeting room</span>
+                </Link>
                 <Link
                   href="/rooms/bookings"
                   className="shrink-0 text-sm opacity-80 transition hover:opacity-100">
