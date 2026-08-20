@@ -15,6 +15,9 @@ import LogoutButton from "./LogoutButton";
 export default async function RoomsLayout({ children }: { children: ReactNode }) {
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
   const isLoggedIn = Boolean(session?.user?.id);
+  // Admins had no way in from the site — you had to type /rooms/admin by hand.
+  // The link only renders for them; the admin pages keep their own authorization.
+  const isAdmin = session?.user?.role === "ADMIN";
 
   return (
     <div className="flex min-h-screen flex-col bg-gray-50 text-black">
@@ -36,6 +39,13 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
             <span className="hidden text-sm opacity-70 md:inline">17–19 November 2026</span>
             {isLoggedIn ? (
               <>
+                {isAdmin ? (
+                  <Link
+                    href="/rooms/admin"
+                    className="shrink-0 rounded-md border border-white/40 px-2.5 py-1 font-medium text-sm transition hover:bg-white/10">
+                    Admin
+                  </Link>
+                ) : null}
                 <Link
                   href="/rooms/bookings"
                   className="shrink-0 text-sm opacity-80 transition hover:opacity-100">

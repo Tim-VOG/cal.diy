@@ -8,6 +8,7 @@ import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { servicesFor } from "./amenities";
+import { requireBillingProfile } from "./requireBillingProfile";
 
 export const metadata: Metadata = {
   title: "Meeting Rooms · NATO Edge 26",
@@ -86,6 +87,7 @@ export default async function RoomsListingPage(): Promise<JSX.Element> {
   // Rooms are exhibitor-only: require an account to browse the listing.
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
   if (!session?.user?.id) redirect("/rooms/login?callbackUrl=/rooms");
+  await requireBillingProfile(session, "/rooms");
 
   const [rooms, settings] = await Promise.all([
     getRoomAvailabilityService().getActiveRooms(),

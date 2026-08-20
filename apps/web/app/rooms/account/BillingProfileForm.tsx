@@ -4,6 +4,7 @@ import { COUNTRY_OPTIONS } from "@calcom/features/ne26-rooms/lib/countries";
 import type { BillingProfile } from "@calcom/features/ne26-rooms/repositories/Ne26BillingProfileRepository";
 import { trpc } from "@calcom/trpc/react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 type TextFieldKey = "legalName" | "vatNumber" | "addressLine1" | "addressLine2" | "postalCode" | "city";
@@ -30,12 +31,37 @@ const EMPTY: BillingProfile = {
 const inputClass =
   "mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#000643] focus:outline-none";
 
-export default function BillingProfileForm({ initial }: { initial: BillingProfile | null }): JSX.Element {
+export default function BillingProfileForm({
+  initial,
+  next,
+}: {
+  initial: BillingProfile | null;
+  /** Where the exhibitor was heading when we asked them to complete this. */
+  next?: string | null;
+}): JSX.Element {
+  const router = useRouter();
   const [form, setForm] = useState<BillingProfile>(initial ?? EMPTY);
-  const mutation = trpc.viewer.rooms.updateBillingProfile.useMutation();
+  const mutation = trpc.viewer.rooms.updateBillingProfile.useMutation({
+    onSuccess: () => {
+      // Return them to what they were doing rather than leaving them on a form
+      // they were pushed onto.
+      if (next) router.push(next);
+      else router.refresh();
+    },
+  });
 
   return (
     <div className="mx-auto max-w-2xl">
+      {/* Shown when they were redirected here rather than arriving on purpose. */}
+      {next ? (
+        <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4" role="status">
+          <p className="font-semibold text-[#000643] text-sm">Complete your billing details to continue</p>
+          <p className="mt-1 text-gray-700 text-sm">
+            They appear on your invoice and pre-fill the payment page, so you won&apos;t have to type them
+            again. We&apos;ll take you straight back once saved.
+          </p>
+        </div>
+      ) : null}
       <Link href="/rooms" className="text-gray-500 text-sm hover:text-[#000643]">
         ← Back to rooms
       </Link>

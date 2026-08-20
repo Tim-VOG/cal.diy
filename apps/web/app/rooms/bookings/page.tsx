@@ -5,6 +5,7 @@ import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { requireBillingProfile } from "../requireBillingProfile";
 import ResumePaymentButton from "./ResumePaymentButton";
 
 export const metadata: Metadata = {
@@ -37,6 +38,7 @@ function fmt(d: Date): string {
 export default async function MyBookingsPage(): Promise<JSX.Element> {
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
   if (!session?.user?.id) redirect("/rooms/login?callbackUrl=/rooms/bookings");
+  await requireBillingProfile(session, "/rooms/bookings");
 
   // Clear abandoned, unpaid bookings whose hold has expired so they don't linger.
   const bookingRepo = getResourceBookingRepository();

@@ -10,6 +10,7 @@ import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import { requireBillingProfile } from "../requireBillingProfile";
 import RoomBookingClient from "./RoomBookingClient";
 
 type Params = Promise<{ slug: string }>;
@@ -38,6 +39,7 @@ export default async function RoomDetailPage({ params }: { params: Params }): Pr
   // Rooms are exhibitor-only: require an account to view a room.
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
   if (!session?.user?.id) redirect(`/rooms/login?callbackUrl=/rooms/${slug}`);
+  await requireBillingProfile(session, `/rooms/${slug}`);
 
   const data = await loadRoom(slug);
   if (!data) notFound();
