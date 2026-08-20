@@ -12,7 +12,8 @@ import type { VatPreview } from "@calcom/features/ne26-rooms/services/RoomVatPre
 import { AddOnPriceType } from "@calcom/prisma/enums";
 import { trpc } from "@calcom/trpc/react";
 import { Building, Clock, Euro, Info, Scaling, Users } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { clearSelection, getSelection, saveSelection } from "../selectionStore";
 import { servicesFor } from "../amenities";
 import RoomGallery from "./RoomGallery";
 
@@ -375,6 +376,37 @@ export default function RoomBookingClient({
   const [selectedDuration, setSelectedDuration] = useState<DurationHours>(1);
   const [selectedAddOns, setSelectedAddOns] = useState<Record<string, number>>({});
 
+  // Restore what this exhibitor was considering before they left to compare
+  // another room. Availability is re-read from the server on every load, so a
+  // remembered slot is only put back if it is still bookable for that duration;
+  // otherwise the day, duration and add-ons survive and they just re-pick a
+  // time. Runs once — after that the state on screen is the truth.
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current) return;
+    restored.current = true;
+    const saved = getSelection(room.slug);
+    if (!saved) return;
+
+    const duration = ([1, 2, 3] as DurationHours[]).includes(saved.durationHours as DurationHours)
+      ? (saved.durationHours as DurationHours)
+      : 1;
+    setSelectedDuration(duration);
+
+    const savedDay = days.find((d) => d.date === saved.date);
+    if (savedDay) setSelectedDate(savedDay.date);
+
+    const start = savedDay?.starts.find((s) => s.startUtc === saved.startUtc);
+    if (start?.availableDurations.includes(duration)) setSelectedStartUtc(start.startUtc);
+
+    // Drop add-ons that have since left the catalogue rather than sending a
+    // slug the server will reject at checkout.
+    const stillOffered = Object.fromEntries(
+      Object.entries(saved.addOns).filter(([slug]) => addOnsBySlug.has(slug))
+    );
+    if (Object.keys(stillOffered).length) setSelectedAddOns(stillOffered);
+  }, [room.slug, days, addOnsBySlug]);
+
   const createBooking = trpc.viewer.rooms.createBooking.useMutation();
 
   const day = useMemo(() => days.find((d) => d.date === selectedDate), [days, selectedDate]);
@@ -404,6 +436,23 @@ export default function RoomBookingClient({
   const addOnTotal = addOnLines.reduce((sum, line) => sum + line.lineTotal, 0);
   const total = selectedDuration ? priceForDuration[selectedDuration] + addOnTotal : null;
   const canBook = Boolean(selectedStartUtc && selectedDuration) && !createBooking.isPending;
+
+  // Remember the selection as it changes, so leaving to compare another room
+  // does not throw the work away. Skipped until the restore has run, or the
+  // page's default state would overwrite what we are about to put back.
+  useEffect(() => {
+    if (!restored.current) return;
+    saveSelection({
+      slug: room.slug,
+      roomName: room.name,
+      date: selectedDate,
+      startUtc: selectedStartUtc,
+      durationHours: selectedDuration,
+      addOns: selectedAddOns,
+      total: total ?? 0,
+      currency: room.currency,
+    });
+  }, [room.slug, room.name, room.currency, selectedDate, selectedStartUtc, selectedDuration, selectedAddOns, total]);
 
   const addOnsPayload = useMemo(
     () => Object.entries(selectedAddOns).map(([slug, quantity]) => ({ slug, quantity })),
@@ -451,6 +500,9 @@ export default function RoomBookingClient({
       },
       {
         onSuccess: (data) => {
+          // The room is now held and heading to payment: it stops being
+          // something they are still considering.
+          clearSelection(room.slug);
           if (data.checkoutUrl) window.location.href = data.checkoutUrl;
         },
       }

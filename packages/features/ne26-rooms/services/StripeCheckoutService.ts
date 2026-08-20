@@ -160,7 +160,12 @@ export class StripeCheckoutService {
       // scratch — a Customer does not seed them (see ensureCustomer) — and the
       // webhook syncs whatever they enter back onto the booking. A blank value
       // never overwrites what the billing profile already told us.
-      billing_address_collection: "required",
+      // "auto", not "required": Checkout cannot pre-fill the address block (see
+      // ensureCustomer), so "required" meant every buyer retyping five fields
+      // they had already given us. The billing profile is mandatory and is what
+      // the invoice actually uses, so Checkout only needs whatever the card
+      // itself requires — typically country and postal code.
+      billing_address_collection: "auto",
       tax_id_collection: { enabled: true },
       // Stripe forbids customer + customer_email together; prefer the Customer.
       // With an existing Customer, tax_id/address collection requires

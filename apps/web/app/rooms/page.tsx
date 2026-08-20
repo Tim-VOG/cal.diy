@@ -7,6 +7,7 @@ import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import SavedSelections from "./SavedSelections";
 import { servicesFor } from "./amenities";
 import { requireBillingProfile } from "./requireBillingProfile";
 
@@ -118,6 +119,8 @@ export default async function RoomsListingPage(): Promise<JSX.Element> {
           ? settings.landingIntro
           : "Choose a room, a time slot (1h, 2h or 3h) and add-ons. Times shown in Europe/Brussels."}
       </p>
+
+      <SavedSelections />
 
       {orderedCategories.map((category) => (
         <section key={category} className="mt-8">
