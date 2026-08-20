@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 export const ZUpdateBillingProfileInputSchema = z.object({
+  firstName: z.string().max(100).optional(),
+  lastName: z.string().max(100).optional(),
   legalName: z.string().max(200).optional(),
   vatNumber: z.string().max(40).optional(),
   /** ISO-3166 alpha-2 country code. */

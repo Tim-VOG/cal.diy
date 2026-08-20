@@ -1,4 +1,6 @@
 interface BillingFields {
+  firstName?: string | null;
+  lastName?: string | null;
   legalName?: string | null;
   country?: string | null;
   addressLine1?: string | null;
@@ -7,13 +9,18 @@ interface BillingFields {
 }
 
 /**
- * Whether a billing profile has everything needed for the invoice "Bill to".
+ * Whether a billing profile has everything needed for the invoice "Bill to"
+ * and for the welcome desk to know who is turning up.
+ *
  * The VAT number is intentionally optional (not every exhibitor is VAT
- * registered); legal name, country and the postal address are required.
+ * registered); the contact name, legal name, country and postal address are
+ * required.
  */
 export function isBillingProfileComplete(profile: BillingFields | null | undefined): boolean {
   return Boolean(
-    profile?.legalName?.trim() &&
+    profile?.firstName?.trim() &&
+      profile?.lastName?.trim() &&
+      profile?.legalName?.trim() &&
       profile?.country?.trim() &&
       profile?.addressLine1?.trim() &&
       profile?.postalCode?.trim() &&

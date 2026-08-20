@@ -273,7 +273,9 @@ export const roomsRouter = router({
       customerId = await getStripeCheckoutService().ensureCustomer({
         customerId: existing,
         email: ctx.user.email,
-        name: ctx.user.name,
+        // The profile owns the contact name; the session copy can still be the
+        // pre-save value when the exhibitor books straight after completing it.
+        name: [profile.firstName, profile.lastName].filter(Boolean).join(" ") || ctx.user.name,
         legalName: profile.legalName,
         country: profile.country,
         addressLine1: profile.addressLine1,
@@ -288,7 +290,14 @@ export const roomsRouter = router({
       slug: input.slug,
       startUtc: new Date(input.startUtc),
       durationHours: input.durationHours,
-      booker: { userId: ctx.user.id, email: ctx.user.email, name: ctx.user.name ?? ctx.user.email },
+      booker: {
+        userId: ctx.user.id,
+        email: ctx.user.email,
+        name:
+          [profile?.firstName, profile?.lastName].filter(Boolean).join(" ") ||
+          ctx.user.name ||
+          ctx.user.email,
+      },
       addOns: input.addOns,
       billing: profile
         ? { country: profile.country || null, vatNumber: profile.vatNumber || null }
@@ -369,7 +378,9 @@ export const roomsRouter = router({
       customerId = await getStripeCheckoutService().ensureCustomer({
         customerId: existing,
         email: ctx.user.email,
-        name: ctx.user.name,
+        // The profile owns the contact name; the session copy can still be the
+        // pre-save value when the exhibitor books straight after completing it.
+        name: [profile.firstName, profile.lastName].filter(Boolean).join(" ") || ctx.user.name,
         legalName: profile.legalName,
         country: profile.country,
         addressLine1: profile.addressLine1,

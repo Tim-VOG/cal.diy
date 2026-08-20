@@ -7,18 +7,35 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-type TextFieldKey = "legalName" | "vatNumber" | "addressLine1" | "addressLine2" | "postalCode" | "city";
+type TextFieldKey =
+  | "firstName"
+  | "lastName"
+  | "legalName"
+  | "vatNumber"
+  | "addressLine1"
+  | "addressLine2"
+  | "postalCode"
+  | "city";
 
-const TEXT_FIELDS: { key: TextFieldKey; label: string; full?: boolean }[] = [
+// `optional` mirrors isBillingProfileComplete(): anything not marked optional is
+// required there, so the browser must refuse the submit rather than let the
+// exhibitor save, get bounced back by the guard, and have to guess what was
+// missing.
+const TEXT_FIELDS: { key: TextFieldKey; label: string; full?: boolean; optional?: boolean }[] = [
+  // The welcome desk asks for a person, not a company.
+  { key: "firstName", label: "First name" },
+  { key: "lastName", label: "Last name" },
   { key: "legalName", label: "Company / legal name", full: true },
-  { key: "vatNumber", label: "VAT number" },
+  { key: "vatNumber", label: "VAT number", optional: true },
   { key: "addressLine1", label: "Address line 1", full: true },
-  { key: "addressLine2", label: "Address line 2", full: true },
+  { key: "addressLine2", label: "Address line 2", full: true, optional: true },
   { key: "postalCode", label: "Postal code" },
   { key: "city", label: "City" },
 ];
 
 const EMPTY: BillingProfile = {
+  firstName: "",
+  lastName: "",
   legalName: "",
   vatNumber: "",
   country: "",
@@ -79,9 +96,13 @@ export default function BillingProfileForm({
         }}>
         {TEXT_FIELDS.map((field) => (
           <label key={field.key} className={field.full ? "sm:col-span-2" : ""}>
-            <span className="font-medium text-gray-700 text-sm">{field.label}</span>
+            <span className="font-medium text-gray-700 text-sm">
+              {field.label}
+              {field.optional ? <span className="ml-1 text-gray-400">(optional)</span> : null}
+            </span>
             <input
               type="text"
+              required={!field.optional}
               className={inputClass}
               value={form[field.key]}
               onChange={(e) => setForm((f) => ({ ...f, [field.key]: e.target.value }))}
@@ -92,6 +113,7 @@ export default function BillingProfileForm({
         <label>
           <span className="font-medium text-gray-700 text-sm">Country</span>
           <select
+            required
             className={inputClass}
             value={form.country}
             onChange={(e) => setForm((f) => ({ ...f, country: e.target.value }))}>

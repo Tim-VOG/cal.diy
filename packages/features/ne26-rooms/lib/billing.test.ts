@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { isBillingProfileComplete } from "./billing";
 
 const full = {
+  firstName: "Tim",
+  lastName: "Leskens",
   legalName: "VO GROUP SA",
   country: "BE",
   addressLine1: "Rue Haute 139",
@@ -17,7 +19,13 @@ describe("isBillingProfileComplete", () => {
     expect(isBillingProfileComplete({ ...full, legalName: undefined })).toBe(false);
   });
 
-  it("is true when legal name, country and address are present (VAT optional)", () => {
+  it("demands a contact name — the welcome desk asks for a person, not a company", () => {
+    expect(isBillingProfileComplete({ ...full, firstName: "" })).toBe(false);
+    expect(isBillingProfileComplete({ ...full, lastName: "  " })).toBe(false);
+    expect(isBillingProfileComplete({ ...full, lastName: undefined })).toBe(false);
+  });
+
+  it("is true when the contact name, legal name, country and address are present (VAT optional)", () => {
     expect(isBillingProfileComplete(full)).toBe(true);
   });
 });

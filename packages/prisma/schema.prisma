@@ -3090,6 +3090,10 @@ model Ne26BillingProfile {
   id               Int      @id @default(autoincrement())
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId           Int      @unique
+  // NE26: the human to ask for at the door — the welcome team and the hostess
+  // tablet identify a booking by this, not by the company.
+  firstName        String   @default("")
+  lastName         String   @default("")
   legalName        String   @default("")
   // Intra-EU VAT number; drives the invoice VAT treatment (reverse charge).
   vatNumber        String   @default("")
