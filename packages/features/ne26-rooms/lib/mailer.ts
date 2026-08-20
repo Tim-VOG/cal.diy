@@ -20,6 +20,53 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c);
 }
 
+/**
+ * Notify the NE26 team about something that happened, or that only a human can
+ * settle: a sale to announce, a Stripe capture with no booking to attach it to,
+ * a partial refund that needs manual paperwork.
+ *
+ * Recipients come from the admin settings (a comma-separated list), so sales can
+ * be added without a redeploy. Honours NE26_EMAIL_REDIRECT_TO like every other
+ * message, so test-phase notifications don't reach the team.
+ */
+export async function sendTeamEmail(input: {
+  to: string[];
+  subject: string;
+  body: string;
+}): Promise<void> {
+  const recipients = input.to.map((a) => a.trim()).filter(Boolean);
+  if (!recipients.length) return;
+
+  const host = process.env.EMAIL_SERVER_HOST;
+  const port = Number(process.env.EMAIL_SERVER_PORT);
+  const user = process.env.EMAIL_SERVER_USER;
+  const pass = process.env.EMAIL_SERVER_PASSWORD;
+  const from = process.env.EMAIL_FROM;
+  const fromName = process.env.EMAIL_FROM_NAME ?? "NATO Edge 26";
+  if (!host || !port || !from) {
+    throw new ErrorWithCode(
+      ErrorCode.InternalServerError,
+      "SMTP is not configured (EMAIL_SERVER_* / EMAIL_FROM)"
+    );
+  }
+
+  const transport = nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465,
+    requireTLS: port === 587,
+    auth: user && pass ? { user, pass } : undefined,
+  });
+
+  await transport.sendMail({
+    from: `${fromName} <${from}>`,
+    to: process.env.NE26_EMAIL_REDIRECT_TO || recipients.join(", "),
+    subject: `[NE26 Rooms] ${input.subject}`,
+    text: input.body,
+    html: `<pre style="font-family:ui-monospace,monospace;font-size:13px">${escapeHtml(input.body)}</pre>`,
+  });
+}
+
 /** Send the booking confirmation + invoice PDF over the configured SMTP server. */
 export async function sendInvoiceEmail(input: InvoiceEmailInput): Promise<void> {
   const host = process.env.EMAIL_SERVER_HOST;

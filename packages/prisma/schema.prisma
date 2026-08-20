@@ -3031,6 +3031,10 @@ model Ne26InvoiceSettings {
   iban                   String   @default("")
   bic                    String   @default("")
   contactEmail           String   @default("")
+  // Who the team notifications go to (a sale, an unmatched payment, a partial
+  // refund): comma-separated, admin-editable so sales can be added without a
+  // redeploy. Empty falls back to contactEmail.
+  notifyEmails           String   @default("")
   // Legacy single-line footer; kept as a fallback when the columns are empty.
   legalFooter            String   @default("")
   // Footer printed as three columns at the bottom of invoices/credit notes.

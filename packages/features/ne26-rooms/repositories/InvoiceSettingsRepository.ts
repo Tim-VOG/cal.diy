@@ -11,6 +11,7 @@ const settingsSelect = {
   iban: true,
   bic: true,
   contactEmail: true,
+  notifyEmails: true,
   legalFooter: true,
   footerColumn1: true,
   footerColumn2: true,
@@ -32,6 +33,8 @@ export interface InvoiceSettings {
   iban: string;
   bic: string;
   contactEmail: string;
+  /** Comma-separated team notification recipients. */
+  notifyEmails: string;
   legalFooter: string;
   footerColumn1: string;
   footerColumn2: string;

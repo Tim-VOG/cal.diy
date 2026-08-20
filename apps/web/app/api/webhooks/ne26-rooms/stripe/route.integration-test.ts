@@ -12,12 +12,13 @@ env.STRIPE_WEBHOOK_SECRET_NE26_ROOMS ??= "whsec_ne26_webhook_suite";
 // Don't hit real SMTP; the invoice path runs for real otherwise (PDF included).
 vi.mock("@calcom/features/ne26-rooms/lib/mailer", () => ({
   sendInvoiceEmail: vi.fn().mockResolvedValue(undefined),
+  sendTeamEmail: vi.fn().mockResolvedValue(undefined),
 }));
 
 import Stripe from "stripe";
 import { getResourceBookingRepository } from "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container";
 import { getAtomicSlotStarts } from "@calcom/features/ne26-rooms/lib/atomicSlots";
-import { sendInvoiceEmail } from "@calcom/features/ne26-rooms/lib/mailer";
+import { sendInvoiceEmail, sendTeamEmail } from "@calcom/features/ne26-rooms/lib/mailer";
 import { POST } from "./route";
 
 const repo = getResourceBookingRepository();
@@ -25,6 +26,7 @@ const stripe = new Stripe(env.STRIPE_PRIVATE_KEY as string, { apiVersion: "2020-
 const WEBHOOK_SECRET = env.STRIPE_WEBHOOK_SECRET_NE26_ROOMS as string;
 const MS_PER_MINUTE = 60 * 1000;
 const SLUG = `test-webhook-${Date.now()}`;
+const TEAM_EMAIL = "sales@vo-europe.test";
 
 let resourceId: number;
 let slotCursor = 0;
@@ -120,6 +122,13 @@ describe("NE26 Stripe webhook", () => {
       select: { id: true },
     });
     resourceId = room.id;
+
+    // Team notifications go to the admin-configured list.
+    await prisma.ne26InvoiceSettings.upsert({
+      where: { id: 1 },
+      update: { notifyEmails: TEAM_EMAIL },
+      create: { id: 1, notifyEmails: TEAM_EMAIL },
+    });
   });
 
   afterEach(async () => {
@@ -198,6 +207,12 @@ describe("NE26 Stripe webhook", () => {
       // suite asserting a failing email path without saying so.
       expect(sendInvoiceEmail).toHaveBeenCalledTimes(1);
       expect(vi.mocked(sendInvoiceEmail).mock.calls[0][0]).toMatchObject({ to: "webhook@test.com" });
+
+      // The team hears about the sale.
+      expect(sendTeamEmail).toHaveBeenCalledTimes(1);
+      const sale = vi.mocked(sendTeamEmail).mock.calls[0][0];
+      expect(sale.to).toEqual([TEAM_EMAIL]);
+      expect(sale.subject).toMatch(/room sold/i);
     });
 
     // The regression that matters most: SEPA and other delayed methods fire this
@@ -245,6 +260,14 @@ describe("NE26 Stripe webhook", () => {
 
       expect(response.status).toBe(200);
       expect(await repo.findByUid(uid)).toBeNull();
+
+      // Nobody reads container logs mid-event: this has to reach a human, with
+      // enough to find the money in Stripe.
+      expect(sendTeamEmail).toHaveBeenCalledTimes(1);
+      const alert = vi.mocked(sendTeamEmail).mock.calls[0][0];
+      expect(alert.subject).toMatch(/no matching booking/i);
+      expect(alert.body).toContain("pi_test_webhook");
+      expect(alert.body).toContain("cs_test_webhook");
     });
   });
 
@@ -313,6 +336,10 @@ describe("NE26 Stripe webhook", () => {
       expect(booking?.creditNoteNumber).toBeNull();
       // The room stays held by the exhibitor who still has it.
       expect(await prisma.resourceSlot.count({ where: { resourceId, slotStart: startTime } })).toBe(1);
+
+      // Silence would mean the difference never gets invoiced.
+      expect(sendTeamEmail).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(sendTeamEmail).mock.calls[0][0].body).toContain("5000 of 35000");
     });
 
     it("credits and frees the room on a full refund", async () => {

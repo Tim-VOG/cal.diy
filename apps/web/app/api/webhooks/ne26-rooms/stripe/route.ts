@@ -12,6 +12,33 @@ import type Stripe from "stripe";
 
 const log = logger.getSubLogger({ prefix: ["[ne26-rooms-stripe-webhook]"] });
 
+/**
+ * Email the NE26 team. Never throws: the webhook must still acknowledge the
+ * delivery, or Stripe retries it forever.
+ *
+ * Recipients are the admin-configured notifyEmails list, falling back to
+ * contactEmail, then to EMAIL_FROM — anything rather than a log line nobody
+ * reads during a three-day event.
+ */
+async function notifyTeam(subject: string, body: string): Promise<void> {
+  try {
+    const { getInvoiceSettingsRepository } = await import(
+      "@calcom/features/ne26-rooms/di/InvoiceSettingsRepository.container"
+    );
+    const settings = await getInvoiceSettingsRepository().get();
+    const configured = settings.notifyEmails || settings.contactEmail || process.env.EMAIL_FROM || "";
+    const recipients = configured.split(",");
+    if (!recipients.some((a) => a.trim())) {
+      log.error(`Team notification has nowhere to go: ${subject} — ${body}`);
+      return;
+    }
+    const { sendTeamEmail } = await import("@calcom/features/ne26-rooms/lib/mailer");
+    await sendTeamEmail({ to: recipients, subject, body });
+  } catch (e) {
+    log.error(`Could not send the team notification "${subject}"`, e);
+  }
+}
+
 // Stripe webhook for NE26 room payments. A settled payment flips the held
 // PENDING booking to CONFIRMED and invoices it; a failed or expired one releases
 // the hold. Its own signing secret keeps it independent from Cal's other Stripe
@@ -61,18 +88,22 @@ export async function POST(req: Request): Promise<Response> {
         } catch (e) {
           log.error(`Invoice issuance failed for booking ${bookingUid}`, e);
         }
+        // Tell the team a room just sold. Best-effort: a failed notification
+        // must never fail an already-confirmed payment.
+        await notifyTeam(
+          "Room sold",
+          `${session.customer_details?.name ?? "An exhibitor"} just paid ${
+            session.amount_total ?? "?"
+          } ${(session.currency ?? "").toUpperCase()} for booking ${bookingUid}.\n\nSee it in the admin: /rooms/admin`
+        );
       } else {
         // Money is captured but no PENDING booking matched: it was already
         // handled, or its hold lapsed and was cleared before the payment landed.
         // Nothing downstream retries, so this needs a human to reconcile or
         // refund — log at error level with everything needed to find it in Stripe.
-        log.error(
-          `UNRECONCILED PAYMENT: captured ${session.amount_total ?? "?"} ${
-            session.currency ?? "?"
-          } for booking ${bookingUid} (payment ${stripePaymentId}, session ${
-            session.id
-          }) but no pending booking matched — manual review/refund required.`
-        );
+        const detail = `Captured ${session.amount_total ?? "?"} ${session.currency ?? "?"} for booking ${bookingUid}\nPayment intent: ${stripePaymentId}\nCheckout session: ${session.id}\n\nNo pending booking matched — it was already handled, or its hold lapsed and was cleared before the payment landed. Reconcile or refund this payment in Stripe.`;
+        log.error(`UNRECONCILED PAYMENT: ${detail.replace(/\n+/g, " ")}`);
+        await notifyTeam("Payment captured with no matching booking", detail);
       }
     }
 
@@ -94,9 +125,9 @@ export async function POST(req: Request): Promise<Response> {
     if (paymentIntentId && !isFullRefund(charge)) {
       // Our credit note is all-or-nothing (full amount, booking cancelled, slots
       // freed), so a partial refund must not go through it.
-      log.warn(
-        `Partial refund on payment ${paymentIntentId} (${charge.amount_refunded}/${charge.amount} ${charge.currency}) — no credit note issued, handle manually.`
-      );
+      const detail = `Partial refund on payment ${paymentIntentId}: ${charge.amount_refunded} of ${charge.amount} ${charge.currency}.\n\nNo credit note was issued and the booking still holds its room, because our credit note is all-or-nothing (full amount, booking cancelled, slot freed). Issue the paperwork for the difference manually.`;
+      log.warn(detail.replace(/\n+/g, " "));
+      await notifyTeam("Partial refund needs manual paperwork", detail);
     } else if (paymentIntentId) {
       try {
         const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
