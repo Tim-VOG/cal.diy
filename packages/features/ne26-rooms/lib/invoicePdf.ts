@@ -16,6 +16,8 @@ export interface InvoiceMeta {
   endUtc: Date;
   /** "invoice" (default) or "credit_note" — flips the title and negates amounts. */
   kind?: "invoice" | "credit_note";
+  /** False for a payment settled outside Stripe (admin "paid offline"). */
+  paidViaStripe?: boolean;
   /** For a credit note: the invoice number it cancels. */
   relatedInvoiceNumber?: string;
   /** Customer billing details for the "Bill to" block (legal name + address). */
@@ -46,12 +48,45 @@ export interface InvoiceIssuer {
   footerColumn3: string;
 }
 
-// pdf-lib's standard fonts use WinAnsi; keep text to safe characters.
-function ascii(s: string): string {
+/**
+ * pdf-lib's standard fonts are WinAnsi, so text must be reduced to characters they
+ * can draw.
+ *
+ * The reduction TRANSLITERATES rather than deletes. It used to drop everything
+ * outside printable ASCII, which silently mangled the buyer's legal name on a
+ * Belgian VAT invoice sent to international NATO exhibitors: "Müller
+ * Verteidigungstechnik" became "Mller Verteidigungstechnik" and "Société
+ * Générale" became "Socit Gnrale".
+ *
+ * NFD splits an accented letter into a base plus a combining mark, so removing the
+ * marks recovers ü→u and é→e. Scripts with no Latin base (Greek, Cyrillic, CJK)
+ * still cannot be drawn by these fonts and become '?' — visible, rather than a
+ * silent deletion. Embedding a Unicode TTF via @pdf-lib/fontkit is the real fix
+ * the day such a name shows up.
+ */
+export function toPdfText(s: string): string {
   return s
-    .replace(/—|–/g, "-")
+    .replace(/[—–]/g, "-")
     .replace(/×/g, "x")
-    .replace(/[^\x20-\x7E]/g, "");
+    .replace(/[’‘]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/ß/g, "ss")
+    .replace(/Ø/g, "O")
+    .replace(/ø/g, "o")
+    .replace(/Æ/g, "AE")
+    .replace(/æ/g, "ae")
+    .replace(/Œ/g, "OE")
+    .replace(/œ/g, "oe")
+    .normalize("NFD")
+    // Combining Diacritical Marks block. Written as an explicit range rather than
+    // \p{Diacritic}: unicode property escapes need an ES6+ target, and some
+    // packages here still compile to ES5.
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, "?");
+}
+
+function ascii(s: string): string {
+  return toPdfText(s);
 }
 function money(cents: number, currency: string): string {
   return `${(cents / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
@@ -258,7 +293,9 @@ export async function renderInvoicePdf(
   const bankLine = issuer.iban ? `IBAN ${issuer.iban}${issuer.bic ? ` · BIC ${issuer.bic}` : ""}` : "";
   const autoNote = isCredit
     ? "Credit note for a refunded Stripe payment, generated automatically."
-    : "Paid via Stripe. This invoice was generated automatically.";
+    : meta.paidViaStripe === false
+      ? "This invoice was generated automatically."
+      : "Paid via Stripe. This invoice was generated automatically.";
 
   const columns = [issuer.footerColumn1, issuer.footerColumn2, issuer.footerColumn3];
   if (columns.some((c) => c.trim().length > 0)) {

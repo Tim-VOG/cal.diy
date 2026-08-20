@@ -78,13 +78,20 @@ export class InvoiceService {
       vat
     );
 
-    const invoiceNumber = await this.deps.resourceBookingRepository.allocateInvoiceNumber();
+    // Year comes from the issue date, not a literal: a document raised in January
+    // 2027 (a late invoice, a refund) was being stamped 2026.
+    const issueDate = new Date();
+    const invoiceNumber = await this.deps.resourceBookingRepository.allocateInvoiceNumber(
+      issueDate.getUTCFullYear()
+    );
     const billTo = await this.resolveBillTo(booking);
     const pdf = await renderInvoicePdf(
       model,
       {
         invoiceNumber,
-        issueDate: new Date(),
+        issueDate,
+        // A booking with no Stripe payment id was confirmed offline (bank transfer).
+        paidViaStripe: Boolean(booking.stripePaymentId),
         bookerName: booking.bookerName,
         bookerEmail: booking.bookerEmail,
         billTo,
@@ -180,7 +187,10 @@ export class InvoiceService {
       vat
     );
 
-    const creditNoteNumber = await this.deps.resourceBookingRepository.allocateCreditNoteNumber();
+    const issueDate = new Date();
+    const creditNoteNumber = await this.deps.resourceBookingRepository.allocateCreditNoteNumber(
+      issueDate.getUTCFullYear()
+    );
     // Anchor first (atomic, cancels + frees slots); only the winner proceeds.
     const count = await this.deps.resourceBookingRepository.creditNoteAndCancel(
       uid,
@@ -196,7 +206,7 @@ export class InvoiceService {
         invoiceNumber: creditNoteNumber,
         relatedInvoiceNumber: booking.invoiceNumber,
         kind: "credit_note",
-        issueDate: new Date(),
+        issueDate,
         bookerName: booking.bookerName,
         bookerEmail: booking.bookerEmail,
         billTo,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildInvoiceModel } from "./invoice";
-import { renderInvoicePdf } from "./invoicePdf";
+import { renderInvoicePdf, toPdfText } from "./invoicePdf";
 
 describe("renderInvoicePdf", () => {
   it("produces a valid, non-trivial PDF", async () => {
@@ -123,5 +123,34 @@ describe("renderInvoicePdf", () => {
 
     expect(new TextDecoder().decode(bytes.slice(0, 5))).toBe("%PDF-");
     expect(bytes.length).toBeGreaterThan(1500);
+  });
+});
+
+describe("toPdfText — legal names must survive the PDF fonts", () => {
+  it("transliterates accents instead of deleting them", () => {
+    // These went out on Belgian VAT invoices to international NATO exhibitors as
+    // "Mller Verteidigungstechnik" and "Socit Gnrale".
+    expect(toPdfText("Müller Verteidigungstechnik GmbH")).toBe("Muller Verteidigungstechnik GmbH");
+    expect(toPdfText("Société Générale")).toBe("Societe Generale");
+  });
+
+  it("handles Latin letters that have no combining form", () => {
+    expect(toPdfText("Straße")).toBe("Strasse");
+    expect(toPdfText("Ørsted A/S")).toBe("Orsted A/S");
+    expect(toPdfText("Cœur de Lion")).toBe("Coeur de Lion");
+  });
+
+  it("leaves plain ASCII untouched", () => {
+    expect(toPdfText("VO EUROPE SA")).toBe("VO EUROPE SA");
+  });
+
+  it("marks undrawable scripts rather than silently dropping them", () => {
+    // '?' is wrong but visible. A deletion looks like a correct invoice made out
+    // to a company with no name.
+    expect(toPdfText("東京商事")).toBe("????");
+  });
+
+  it("normalises the typographic punctuation the app itself emits", () => {
+    expect(toPdfText("Suite 1 — rental × 2")).toBe("Suite 1 - rental x 2");
   });
 });

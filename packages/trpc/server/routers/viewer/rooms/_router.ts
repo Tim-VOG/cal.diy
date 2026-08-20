@@ -97,6 +97,22 @@ export const roomsRouter = router({
     return { cancelled };
   }),
 
+  // Admin-only: issue the invoice for a CONFIRMED booking that never got one —
+  // the PDF render or the disk write failed at payment time and the webhook only
+  // logged it. Without this the booking is a dead end: it can't be invoiced,
+  // can't be credited (that needs an invoice number) and can't be cancelled
+  // (that path is PENDING-only), so its room stays held until someone edits the
+  // database by hand. issueInvoice is idempotent, so this is safe to retry.
+  issueInvoice: authedAdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
+    const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
+    const { getResourceBookingRepository } = await import(
+      "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container"
+    );
+    await getInvoiceService().issueInvoice(input.uid);
+    const booking = await getResourceBookingRepository().findByUid(input.uid);
+    return { issued: Boolean(booking?.invoiceNumber) };
+  }),
+
   // Admin-only: re-send an already-issued invoice email to the booker.
   resendInvoice: authedAdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
     const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
@@ -294,16 +310,35 @@ export const roomsRouter = router({
       .filter((v) => v.vat > 0)
       .map((v) => ({ name: `VAT ${v.vatRate / 100}%`, quantity: 1, unitAmount: v.vat }));
 
-    const checkout = await getStripeCheckoutService().createCheckoutSession({
-      bookingUid: booking.uid,
-      currency: booking.currency,
-      lines: [...booking.checkoutLines, ...vatLines],
-      customerEmail: ctx.user.email,
-      customerId,
-      holdExpiresAt: booking.holdExpiresAt,
-      successUrl: `${WEBAPP_URL}/rooms/booked/${booking.uid}`,
-      cancelUrl: `${WEBAPP_URL}/rooms/${input.slug}`,
-    });
+    // The hold is already committed at this point. If Stripe can't give us a
+    // Checkout URL, release it immediately: otherwise the buyer gets a raw SDK
+    // string ("Request timed out") AND their slot stays locked for the length of
+    // the hold, unbookable by them or anyone else.
+    let checkout: { url: string };
+    try {
+      checkout = await getStripeCheckoutService().createCheckoutSession({
+        bookingUid: booking.uid,
+        currency: booking.currency,
+        lines: [...booking.checkoutLines, ...vatLines],
+        customerEmail: ctx.user.email,
+        customerId,
+        holdExpiresAt: booking.holdExpiresAt,
+        successUrl: `${WEBAPP_URL}/rooms/booked/${booking.uid}`,
+        cancelUrl: `${WEBAPP_URL}/rooms/${input.slug}`,
+      });
+    } catch (e) {
+      await getResourceBookingService()
+        .cancelPending(booking.uid)
+        .catch(() => {
+          // Releasing is best-effort; the hold expires on its own either way.
+        });
+      const { ErrorCode: EC } = await import("@calcom/lib/errorCodes");
+      const { ErrorWithCode: EWC } = await import("@calcom/lib/errors");
+      throw new EWC(
+        EC.InternalServerError,
+        "We couldn't reach our payment provider. Nothing was charged and your slot is free again — please try once more."
+      );
+    }
 
     return { ...booking, checkoutUrl: checkout.url };
   }),
