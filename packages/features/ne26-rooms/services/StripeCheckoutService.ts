@@ -19,7 +19,10 @@ export interface CreateCheckoutSessionInput {
   successUrl: string;
   cancelUrl: string;
   customerEmail?: string;
-  /** Existing Stripe Customer (mirrors our billing profile) to pre-fill Checkout. */
+  /**
+   * Existing Stripe Customer mirroring our billing profile. Note this does NOT
+   * pre-fill the Checkout address block — see ensureCustomer.
+   */
   customerId?: string;
   /**
    * When the booking's hold lapses. The session is set to expire with it, so the
@@ -78,9 +81,20 @@ export class StripeCheckoutService {
   }
 
   /**
-   * Create or update the Stripe Customer that mirrors our billing profile, so
-   * Checkout opens pre-filled (WooCommerce-style: our DB owns the data, Stripe
-   * is just a mirror). Returns the Customer id to store back on the profile.
+   * Create or update the Stripe Customer that mirrors our billing profile. Our
+   * DB owns the data; Stripe is the mirror. Returns the Customer id to store
+   * back on the profile.
+   *
+   * This does NOT pre-fill the Checkout billing address, whatever the name
+   * suggests. Hosted Checkout only ever pre-fills the address block from a
+   * SAVED CARD's billing_details — never from customer.address, which Stripe
+   * reads solely as a tax location. First-time buyers therefore always see an
+   * empty address form, by design. The email is the one field that does
+   * pre-fill from the Customer, and that part works.
+   *
+   * The mirror is still worth keeping: it is what Stripe Tax would use as the
+   * tax location, and it makes the Stripe dashboard legible next to our
+   * invoices.
    */
   async ensureCustomer(input: EnsureCustomerInput): Promise<string> {
     const params: Stripe.CustomerCreateParams = { email: input.email };
@@ -142,9 +156,10 @@ export class StripeCheckoutService {
       // Die with the hold: a session outliving it lets the buyer pay for a slot
       // that has already been released to someone else.
       expires_at: checkoutExpiresAtSeconds(input.holdExpiresAt, new Date()),
-      // Collect/confirm billing details here — the source for the invoice + VAT.
-      // A pre-filled Customer (when present) seeds the address; the buyer can
-      // still adjust and the webhook syncs any change back to our DB.
+      // Collect/confirm billing details here. The buyer types these from
+      // scratch — a Customer does not seed them (see ensureCustomer) — and the
+      // webhook syncs whatever they enter back onto the booking. A blank value
+      // never overwrites what the billing profile already told us.
       billing_address_collection: "required",
       tax_id_collection: { enabled: true },
       // Stripe forbids customer + customer_email together; prefer the Customer.

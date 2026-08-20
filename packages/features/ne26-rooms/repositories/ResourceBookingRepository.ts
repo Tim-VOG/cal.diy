@@ -242,10 +242,14 @@ export class ResourceBookingRepository {
   ): Promise<void> {
     await this.prismaClient.resourceBooking.updateMany({
       where: { uid, status: ResourceBookingStatus.PENDING },
+      // Only ever upgrade what we know. The billing profile already supplied a
+      // country and VAT number at booking time, and those drive the invoice's
+      // VAT treatment — letting a blank field from Checkout overwrite them
+      // would silently change the tax on the invoice.
       data: {
-        bookerCountry: data.country ?? undefined,
-        bookerVatNumber: data.vatNumber ?? undefined,
-        ...(data.name ? { bookerName: data.name } : {}),
+        ...(data.country?.trim() ? { bookerCountry: data.country } : {}),
+        ...(data.vatNumber?.trim() ? { bookerVatNumber: data.vatNumber } : {}),
+        ...(data.name?.trim() ? { bookerName: data.name } : {}),
       },
     });
   }

@@ -102,3 +102,80 @@ describe("ResourceBookingRepository.createWithSlots — anti-double-booking", ()
     expect(bookingCount).toBe(2);
   });
 });
+
+describe("ResourceBookingRepository.updateBillingFromCheckout — never downgrade", () => {
+  let resourceId: number;
+
+  beforeAll(async () => {
+    const resource = await prisma.resource.create({
+      data: {
+        name: "TEST Checkout Billing Room",
+        slug: `test-checkout-billing-${Date.now()}`,
+        category: "ENTRY",
+        capacity: 6,
+        surface: 18,
+        price1h: 25000,
+        price2h: 50000,
+        price3h: 65000,
+      },
+      select: { id: true },
+    });
+    resourceId = resource.id;
+  });
+
+  afterEach(async () => {
+    await prisma.resourceBooking.deleteMany({ where: { resourceId } });
+  });
+
+  afterAll(async () => {
+    await prisma.resource.delete({ where: { id: resourceId } });
+  });
+
+  async function bookingWithBelgianProfile(startTime: Date) {
+    const created = await repo.createWithSlots({
+      ...bookingArgs(startTime, 60, "vat@test.com", resourceId),
+      bookerCountry: "BE",
+      bookerVatNumber: "BE0123456789",
+    });
+    return created.uid;
+  }
+
+  it("keeps the profile's country and VAT number when Checkout returns nothing", async () => {
+    // Stripe only collects the address "when necessary", so customer_details can
+    // come back without one. Overwriting BE with null would move the invoice off
+    // Belgian VAT — a tax change nobody asked for.
+    const uid = await bookingWithBelgianProfile(new Date("2026-11-17T10:00:00.000Z"));
+
+    await repo.updateBillingFromCheckout(uid, { country: null, vatNumber: null, name: null });
+
+    const booking = await repo.findByUidForInvoice(uid);
+    expect(booking?.bookerCountry).toBe("BE");
+    expect(booking?.bookerVatNumber).toBe("BE0123456789");
+  });
+
+  it("treats a blank string the same as missing", async () => {
+    const uid = await bookingWithBelgianProfile(new Date("2026-11-17T11:00:00.000Z"));
+
+    await repo.updateBillingFromCheckout(uid, { country: "", vatNumber: "   ", name: "" });
+
+    const booking = await repo.findByUidForInvoice(uid);
+    expect(booking?.bookerCountry).toBe("BE");
+    expect(booking?.bookerVatNumber).toBe("BE0123456789");
+    expect(booking?.bookerName).toBe("vat@test.com");
+  });
+
+  it("still applies what the buyer actually confirmed at Checkout", async () => {
+    const uid = await bookingWithBelgianProfile(new Date("2026-11-17T12:00:00.000Z"));
+
+    await repo.updateBillingFromCheckout(uid, {
+      country: "FR",
+      vatNumber: "FR12345678901",
+      name: "Societe Generale",
+    });
+
+    const booking = await repo.findByUidForInvoice(uid);
+    expect(booking?.bookerCountry).toBe("FR");
+    expect(booking?.bookerVatNumber).toBe("FR12345678901");
+    expect(booking?.bookerName).toBe("Societe Generale");
+  });
+});
