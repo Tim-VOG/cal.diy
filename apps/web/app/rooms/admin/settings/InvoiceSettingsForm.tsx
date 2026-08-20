@@ -15,9 +15,16 @@ type StringSettingKey =
   | "country"
   | "iban"
   | "bic"
-  | "contactEmail";
+  | "contactEmail"
+  | "notifyEmails";
 
-const FIELDS: { key: StringSettingKey; label: string; full?: boolean; textarea?: boolean }[] = [
+const FIELDS: {
+  key: StringSettingKey;
+  label: string;
+  full?: boolean;
+  textarea?: boolean;
+  hint?: string;
+}[] = [
   { key: "legalName", label: "Legal name" },
   { key: "vatNumber", label: "VAT number" },
   { key: "addressLine1", label: "Address line 1", full: true },
@@ -28,6 +35,12 @@ const FIELDS: { key: StringSettingKey; label: string; full?: boolean; textarea?:
   { key: "iban", label: "IBAN" },
   { key: "bic", label: "BIC" },
   { key: "contactEmail", label: "Contact email" },
+  {
+    key: "notifyEmails",
+    label: "Team notifications (comma-separated)",
+    full: true,
+    hint: "Who hears about a sale, a payment with no matching booking, or a partial refund needing manual paperwork. Falls back to the contact email above.",
+  },
 ];
 
 type FooterColumnKey = "footerColumn1" | "footerColumn2" | "footerColumn3";
@@ -50,7 +63,9 @@ export default function InvoiceSettingsForm({ initial }: { initial: InvoiceSetti
         ← Back to admin
       </Link>
       <h1 className="mt-2 font-bold text-2xl text-[#000643]">Invoice / company settings</h1>
-      <p className="mt-1 text-gray-600 text-sm">These details appear on every invoice and credit note.</p>
+      <p className="mt-1 text-gray-600 text-sm">
+        These details appear on every invoice and credit note, and set who the team notifications go to.
+      </p>
 
       <form
         className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2"
@@ -76,6 +91,7 @@ export default function InvoiceSettingsForm({ initial }: { initial: InvoiceSetti
                 onChange={(e) => setForm((f) => ({ ...f, [field.key]: e.target.value }))}
               />
             )}
+            {field.hint ? <span className="mt-1 block text-gray-400 text-xs">{field.hint}</span> : null}
           </label>
         ))}
 
