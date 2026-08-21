@@ -1,4 +1,5 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
+import { deskSessionFromCookieHeader } from "@calcom/features/ne26-rooms/lib/deskSession";
 import { canWorkTheDesk } from "@calcom/features/ne26-rooms/lib/staff";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
@@ -43,9 +44,13 @@ export default async function DeskLayout({ children }: { children: React.ReactNo
     notFound();
   }
 
+  // Present only when the tablet has been locked to the desk; it names whoever
+  // is on duty, which is what the audit trail records.
+  const desk = deskSessionFromCookieHeader((await headers()).get("cookie"));
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <DeskNav isAdmin={session.user.role === "ADMIN"} />
+      <DeskNav isAdmin={session.user.role === "ADMIN"} hostessName={desk?.hostessName ?? null} />
       <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6">{children}</main>
     </div>
   );

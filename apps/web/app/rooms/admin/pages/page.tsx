@@ -5,6 +5,7 @@ import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import LegalPagesManager from "./LegalPagesManager";
+import { requireNotDeskMode } from "../requireNotDeskMode";
 
 export const metadata: Metadata = {
   title: "Pages · NATO Edge 26 admin",
@@ -15,6 +16,7 @@ export default async function ManageLegalPagesPage(): Promise<JSX.Element> {
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
   if (!session?.user?.id) redirect("/rooms/login?callbackUrl=/rooms/admin/pages");
   if (session.user.role !== "ADMIN") notFound();
+  await requireNotDeskMode();
 
   const pages = await getNe26LegalPageRepository().findAllForAdmin();
   return (

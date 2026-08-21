@@ -7,6 +7,7 @@ import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import InvoiceSettingsForm from "./InvoiceSettingsForm";
 import LandingContentForm from "./LandingContentForm";
+import { requireNotDeskMode } from "../requireNotDeskMode";
 
 export const metadata: Metadata = {
   title: "Settings · NATO Edge 26",
@@ -17,6 +18,7 @@ export default async function SettingsPage(): Promise<JSX.Element> {
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
   if (!session?.user?.id) redirect("/rooms/login?callbackUrl=/rooms/admin/settings");
   if (session.user.role !== "ADMIN") notFound();
+  await requireNotDeskMode();
 
   const [invoiceSettings, roomSettings] = await Promise.all([
     getInvoiceSettingsRepository().get(),

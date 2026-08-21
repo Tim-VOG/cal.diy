@@ -3,6 +3,7 @@
 import { trpc } from "@calcom/trpc/react";
 import { ShieldCheck, Trash2, UserPlus } from "lucide-react";
 import { useState } from "react";
+import DeskModeCard from "./DeskModeCard";
 
 const inputClass =
   "w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#000643] focus:outline-none";
@@ -57,6 +58,8 @@ export default function AccessView(): JSX.Element {
 
   return (
     <div className="space-y-8">
+      <DeskModeCard />
+
       <section>
         <h2 className="font-semibold text-[#000643] text-lg">Who has access</h2>
         <p className="mt-1 text-gray-600 text-sm">

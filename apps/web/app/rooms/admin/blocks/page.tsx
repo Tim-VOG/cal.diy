@@ -7,6 +7,7 @@ import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import BlocksManager from "./BlocksManager";
+import { requireNotDeskMode } from "../requireNotDeskMode";
 
 export const metadata: Metadata = {
   title: "Blocked slots · NATO Edge 26 admin",
@@ -17,6 +18,7 @@ export default async function ManageBlocksPage(): Promise<JSX.Element> {
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
   if (!session?.user?.id) redirect("/rooms/login?callbackUrl=/rooms/admin/blocks");
   if (session.user.role !== "ADMIN") notFound();
+  await requireNotDeskMode();
 
   const [blocks, rooms, roomSettings] = await Promise.all([
     getResourceBookingService().listBlocks(),

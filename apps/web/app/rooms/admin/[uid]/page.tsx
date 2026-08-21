@@ -7,6 +7,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import BookingActions from "./BookingActions";
+import { requireNotDeskMode } from "../requireNotDeskMode";
 
 export const metadata: Metadata = {
   title: "Booking · NATO Edge 26 admin",
@@ -64,6 +65,7 @@ export default async function AdminBookingDetailPage({
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
   if (!session?.user?.id) redirect(`/rooms/login?callbackUrl=/rooms/admin/${uid}`);
   if (session.user.role !== "ADMIN") notFound();
+  await requireNotDeskMode();
 
   const booking = await getResourceBookingRepository().findByUidForAdmin(uid);
   if (!booking) notFound();

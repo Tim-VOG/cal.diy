@@ -8,6 +8,7 @@ import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import ConfigHealth from "./ConfigHealth";
 import RoomsAdminView from "./RoomsAdminView";
+import { requireNotDeskMode } from "./requireNotDeskMode";
 
 export const metadata: Metadata = {
   title: "Rooms admin · NATO Edge 26",
@@ -19,6 +20,7 @@ export default async function RoomsAdminPage(): Promise<JSX.Element> {
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
   if (!session?.user?.id) redirect("/rooms/login?callbackUrl=/rooms/admin");
   if (session.user.role !== "ADMIN") notFound();
+  await requireNotDeskMode();
 
   // Drop abandoned, unpaid bookings whose hold expired before listing.
   await getResourceBookingRepository().deleteExpiredHolds(new Date());

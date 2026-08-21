@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import AccessView from "./AccessView";
+import { requireNotDeskMode } from "../requireNotDeskMode";
 
 export const metadata: Metadata = {
   title: "Access · Rooms admin · NATO Edge 26",
@@ -16,6 +17,7 @@ export default async function AccessPage(): Promise<JSX.Element> {
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
   if (!session?.user?.id) redirect("/rooms/login?callbackUrl=/rooms/admin/access");
   if (session.user.role !== "ADMIN") notFound();
+  await requireNotDeskMode();
 
   return <AccessView />;
 }

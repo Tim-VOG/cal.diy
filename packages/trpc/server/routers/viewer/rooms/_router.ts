@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { z } from "zod";
 import authedProcedure, { authedAdminProcedure } from "../../../procedures/authedProcedure";
 import { router } from "../../../trpc";
 import { ZBookingUidInputSchema } from "./bookingUid.schema";
@@ -29,16 +30,46 @@ import { ZUpdateResourceInputSchema } from "./updateResource.schema";
 import { ZUpdateRoomSettingsInputSchema } from "./updateRoomSettings.schema";
 
 /**
+ * While desk mode is on, this session may not administer anything.
+ *
+ * The welcome-desk tablet is signed in as an administrator, so hiding the admin
+ * buttons would be theatre: typing the URL would still work. Refusing here is
+ * what makes the PIN meaningful — every administrative procedure is closed for
+ * as long as the desk cookie is present, and only the PIN clears it.
+ */
+/** Admin-only, and refused outright while the session is locked to the desk. */
+const ne26AdminProcedure = authedAdminProcedure.use(async ({ ctx, next }) => {
+  const { deskSessionFromCookieHeader } = await import(
+    "@calcom/features/ne26-rooms/lib/deskSession"
+  );
+  const header = (ctx as { req?: { headers?: Record<string, unknown> } }).req?.headers?.cookie;
+  const desk = deskSessionFromCookieHeader(typeof header === "string" ? header : null);
+  if (desk) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "This tablet is in desk mode. Enter the PIN to leave it before changing anything.",
+    });
+  }
+  return next();
+});
+
+/**
  * The welcome desk is open to hostesses and to admins (who work it during the
  * event and can already do strictly more). Checked per procedure rather than in
  * a shared middleware so the rule stays inside the NE26 feature instead of in
  * Cal's procedure layer.
  */
-async function requireDesk(ctx: { user: { id: number; email: string; role?: string | null } }) {
+async function requireDesk(ctx: {
+  user: { id: number; email: string; role?: string | null };
+  req?: { headers?: Record<string, unknown> };
+}) {
   const { getNe26StaffRepository } = await import(
     "@calcom/features/ne26-rooms/di/Ne26StaffRepository.container"
   );
   const { canWorkTheDesk, roleOf } = await import("@calcom/features/ne26-rooms/lib/staff");
+  const { deskSessionFromCookieHeader } = await import(
+    "@calcom/features/ne26-rooms/lib/deskSession"
+  );
   const repo = getNe26StaffRepository();
   const staffRole = ctx.user.role === "ADMIN" ? null : await repo.findStaffRole(ctx.user.id);
   const principal = {
@@ -50,7 +81,16 @@ async function requireDesk(ctx: { user: { id: number; email: string; role?: stri
   if (!canWorkTheDesk(principal)) {
     throw new TRPCError({ code: "FORBIDDEN", message: "The welcome desk is for event staff." });
   }
-  return { repo, principal, role: roleOf(principal) };
+
+  // In desk mode the account is the shared tablet, so the account's email says
+  // nothing useful. The name entered when desk mode was started is who actually
+  // did this, and it is what the trail should carry.
+  const header = ctx.req?.headers?.cookie;
+  const desk = deskSessionFromCookieHeader(typeof header === "string" ? header : null);
+  const actorEmail = desk ? desk.hostessName : principal.email;
+  const role = desk ? "HOSTESS" : roleOf(principal);
+
+  return { repo, principal, role, actorEmail };
 }
 
 export const roomsRouter = router({
@@ -125,7 +165,7 @@ export const roomsRouter = router({
   }),
 
   deskCheckIn: authedProcedure.input(ZDeskCheckInInputSchema).mutation(async ({ ctx, input }) => {
-    const { repo, principal, role } = await requireDesk(ctx);
+    const { repo, principal, role, actorEmail } = await requireDesk(ctx);
     const { getResourceBookingRepository } = await import(
       "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container"
     );
@@ -142,7 +182,7 @@ export const roomsRouter = router({
     }
     await repo.recordAction({
       actorUserId: principal.userId,
-      actorEmail: principal.email,
+      actorEmail,
       actorRole: role,
       action: input.arrived ? "booking.checkin" : "booking.checkin.undo",
       targetType: "booking",
@@ -163,7 +203,7 @@ export const roomsRouter = router({
   deskCreateBooking: authedProcedure
     .input(ZDeskCreateBookingInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const { repo, principal, role } = await requireDesk(ctx);
+      const { repo, principal, role, actorEmail } = await requireDesk(ctx);
       const target = await repo.findUserByEmail(input.exhibitorEmail);
       if (!target) {
         throw new TRPCError({
@@ -186,7 +226,7 @@ export const roomsRouter = router({
 
       await repo.recordAction({
         actorUserId: principal.userId,
-        actorEmail: principal.email,
+        actorEmail,
         actorRole: role,
         action: "booking.create",
         targetType: "booking",
@@ -196,8 +236,41 @@ export const roomsRouter = router({
       return booking;
     }),
 
+  /** Whether a desk PIN exists — never the PIN itself, nor its hash. */
+  deskPinStatus: ne26AdminProcedure.query(async () => {
+    const { getNe26RoomSettingsRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container"
+    );
+    const state = await getNe26RoomSettingsRepository().getDeskPinState();
+    return { isSet: Boolean(state.hash) };
+  }),
+
+  setDeskPin: ne26AdminProcedure
+    .input(z.object({ pin: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const { hashPin, isValidPin } = await import("@calcom/features/ne26-rooms/lib/deskSession");
+      if (!isValidPin(input.pin)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "The PIN must be exactly four digits." });
+      }
+      const { getNe26RoomSettingsRepository } = await import(
+        "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container"
+      );
+      const { getNe26StaffRepository } = await import(
+        "@calcom/features/ne26-rooms/di/Ne26StaffRepository.container"
+      );
+      await getNe26RoomSettingsRepository().setDeskPinHash(hashPin(input.pin));
+      await getNe26StaffRepository().recordAction({
+        actorUserId: ctx.user.id,
+        actorEmail: ctx.user.email,
+        actorRole: "ADMIN",
+        action: "desk.pin.set",
+        detail: "Desk PIN changed",
+      });
+      return { ok: true };
+    }),
+
   // Admin-only: who holds a role, and the trail of what staff have done.
-  staff: authedAdminProcedure.query(async () => {
+  staff: ne26AdminProcedure.query(async () => {
     const { getNe26StaffRepository } = await import(
       "@calcom/features/ne26-rooms/di/Ne26StaffRepository.container"
     );
@@ -206,7 +279,7 @@ export const roomsRouter = router({
     return { members, actions };
   }),
 
-  grantRole: authedAdminProcedure.input(ZGrantRoleInputSchema).mutation(async ({ ctx, input }) => {
+  grantRole: ne26AdminProcedure.input(ZGrantRoleInputSchema).mutation(async ({ ctx, input }) => {
     const { getNe26StaffRepository } = await import(
       "@calcom/features/ne26-rooms/di/Ne26StaffRepository.container"
     );
@@ -234,7 +307,7 @@ export const roomsRouter = router({
     return { userId: target.id, email: target.email };
   }),
 
-  revokeRole: authedAdminProcedure.input(ZRevokeRoleInputSchema).mutation(async ({ ctx, input }) => {
+  revokeRole: ne26AdminProcedure.input(ZRevokeRoleInputSchema).mutation(async ({ ctx, input }) => {
     const { getNe26StaffRepository } = await import(
       "@calcom/features/ne26-rooms/di/Ne26StaffRepository.container"
     );
@@ -267,7 +340,7 @@ export const roomsRouter = router({
   }),
 
   // Admin-only: update the issuer/company details printed on invoices.
-  updateInvoiceSettings: authedAdminProcedure
+  updateInvoiceSettings: ne26AdminProcedure
     .input(ZUpdateInvoiceSettingsInputSchema)
     .mutation(async ({ input }) => {
       const { getInvoiceSettingsRepository } = await import(
@@ -279,7 +352,7 @@ export const roomsRouter = router({
   // Admin-only: cancel a confirmed booking and issue a credit note (manual full
   // refund flow). The Stripe refund itself is done in the Stripe dashboard; this
   // records the credit note, frees the room, and emails the booker.
-  issueCreditNote: authedAdminProcedure.input(ZIssueCreditNoteInputSchema).mutation(async ({ input }) => {
+  issueCreditNote: ne26AdminProcedure.input(ZIssueCreditNoteInputSchema).mutation(async ({ input }) => {
     const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
     const issued = await getInvoiceService().issueCreditNote(input.uid);
     return { issued };
@@ -287,7 +360,7 @@ export const roomsRouter = router({
 
   // Admin-only: confirm a PENDING booking paid outside Stripe (e.g. bank
   // transfer), then issue its invoice (best-effort).
-  confirmBookingManually: authedAdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
+  confirmBookingManually: ne26AdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
     const { getResourceBookingService } = await import(
       "@calcom/features/ne26-rooms/di/ResourceBookingService.container"
     );
@@ -301,7 +374,7 @@ export const roomsRouter = router({
 
   // Admin-only: cancel a PENDING booking without a credit note (test/no-show)
   // and free its slots. Paid bookings must use the credit-note flow instead.
-  cancelPendingBooking: authedAdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
+  cancelPendingBooking: ne26AdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
     const { getResourceBookingService } = await import(
       "@calcom/features/ne26-rooms/di/ResourceBookingService.container"
     );
@@ -315,7 +388,7 @@ export const roomsRouter = router({
   // can't be credited (that needs an invoice number) and can't be cancelled
   // (that path is PENDING-only), so its room stays held until someone edits the
   // database by hand. issueInvoice is idempotent, so this is safe to retry.
-  issueInvoice: authedAdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
+  issueInvoice: ne26AdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
     const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
     const { getResourceBookingRepository } = await import(
       "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container"
@@ -326,14 +399,14 @@ export const roomsRouter = router({
   }),
 
   // Admin-only: re-send an already-issued invoice email to the booker.
-  resendInvoice: authedAdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
+  resendInvoice: ne26AdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
     const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
     const sent = await getInvoiceService().resendInvoice(input.uid);
     return { sent };
   }),
 
   // Admin-only: list every room (active + inactive) for management.
-  listResources: authedAdminProcedure.query(async () => {
+  listResources: ne26AdminProcedure.query(async () => {
     const { getResourceRepository } = await import(
       "@calcom/features/ne26-rooms/di/ResourceRepository.container"
     );
@@ -341,7 +414,7 @@ export const roomsRouter = router({
   }),
 
   // Admin-only: update booking settings (turnover buffer between bookings).
-  updateRoomSettings: authedAdminProcedure
+  updateRoomSettings: ne26AdminProcedure
     .input(ZUpdateRoomSettingsInputSchema)
     .mutation(async ({ input }) => {
       const { getNe26RoomSettingsRepository } = await import(
@@ -351,7 +424,7 @@ export const roomsRouter = router({
     }),
 
   // Admin-only: update a room's prices / capacity / surface / active state.
-  updateResource: authedAdminProcedure.input(ZUpdateResourceInputSchema).mutation(async ({ input }) => {
+  updateResource: ne26AdminProcedure.input(ZUpdateResourceInputSchema).mutation(async ({ input }) => {
     const { getResourceRepository } = await import(
       "@calcom/features/ne26-rooms/di/ResourceRepository.container"
     );
@@ -360,34 +433,34 @@ export const roomsRouter = router({
   }),
 
   // Admin-only: list every add-on (active + inactive) for management.
-  listAddOns: authedAdminProcedure.query(async () => {
+  listAddOns: ne26AdminProcedure.query(async () => {
     const { getAddOnRepository } = await import("@calcom/features/ne26-rooms/di/AddOnRepository.container");
     return getAddOnRepository().findAllForAdmin();
   }),
 
   // Admin-only: update an add-on's name / price / VAT rate / type / active state.
-  updateAddOn: authedAdminProcedure.input(ZUpdateAddOnInputSchema).mutation(async ({ input }) => {
+  updateAddOn: ne26AdminProcedure.input(ZUpdateAddOnInputSchema).mutation(async ({ input }) => {
     const { getAddOnRepository } = await import("@calcom/features/ne26-rooms/di/AddOnRepository.container");
     const { id, ...data } = input;
     return getAddOnRepository().update(id, data);
   }),
 
   // Admin-only: create a new add-on (slug derived from the name).
-  createAddOn: authedAdminProcedure.input(ZCreateAddOnInputSchema).mutation(async ({ input }) => {
+  createAddOn: ne26AdminProcedure.input(ZCreateAddOnInputSchema).mutation(async ({ input }) => {
     const { getAddOnRepository } = await import("@calcom/features/ne26-rooms/di/AddOnRepository.container");
     const slugify = (await import("@calcom/lib/slugify")).default;
     return getAddOnRepository().create({ ...input, slug: slugify(input.name) });
   }),
 
   // Admin-only: delete an add-on (refused if used by bookings — deactivate instead).
-  deleteAddOn: authedAdminProcedure.input(ZDeleteAddOnInputSchema).mutation(async ({ input }) => {
+  deleteAddOn: ne26AdminProcedure.input(ZDeleteAddOnInputSchema).mutation(async ({ input }) => {
     const { getAddOnRepository } = await import("@calcom/features/ne26-rooms/di/AddOnRepository.container");
     await getAddOnRepository().delete(input.id);
     return { deleted: true };
   }),
 
   // Admin-only: list all legal / informational pages (published + drafts).
-  listLegalPages: authedAdminProcedure.query(async () => {
+  listLegalPages: ne26AdminProcedure.query(async () => {
     const { getNe26LegalPageRepository } = await import(
       "@calcom/features/ne26-rooms/di/Ne26LegalPageRepository.container"
     );
@@ -395,7 +468,7 @@ export const roomsRouter = router({
   }),
 
   // Admin-only: create a legal page.
-  createLegalPage: authedAdminProcedure.input(ZCreateLegalPageInputSchema).mutation(async ({ input }) => {
+  createLegalPage: ne26AdminProcedure.input(ZCreateLegalPageInputSchema).mutation(async ({ input }) => {
     const { getNe26LegalPageRepository } = await import(
       "@calcom/features/ne26-rooms/di/Ne26LegalPageRepository.container"
     );
@@ -403,7 +476,7 @@ export const roomsRouter = router({
   }),
 
   // Admin-only: update a legal page's slug / title / content / published state.
-  updateLegalPage: authedAdminProcedure.input(ZUpdateLegalPageInputSchema).mutation(async ({ input }) => {
+  updateLegalPage: ne26AdminProcedure.input(ZUpdateLegalPageInputSchema).mutation(async ({ input }) => {
     const { getNe26LegalPageRepository } = await import(
       "@calcom/features/ne26-rooms/di/Ne26LegalPageRepository.container"
     );
@@ -412,7 +485,7 @@ export const roomsRouter = router({
   }),
 
   // Admin-only: delete a legal page.
-  deleteLegalPage: authedAdminProcedure.input(ZDeleteLegalPageInputSchema).mutation(async ({ input }) => {
+  deleteLegalPage: ne26AdminProcedure.input(ZDeleteLegalPageInputSchema).mutation(async ({ input }) => {
     const { getNe26LegalPageRepository } = await import(
       "@calcom/features/ne26-rooms/di/Ne26LegalPageRepository.container"
     );
@@ -421,7 +494,7 @@ export const roomsRouter = router({
   }),
 
   // Admin-only: current room blocks (maintenance / internal use).
-  listBlocks: authedAdminProcedure.query(async () => {
+  listBlocks: ne26AdminProcedure.query(async () => {
     const { getResourceBookingService } = await import(
       "@calcom/features/ne26-rooms/di/ResourceBookingService.container"
     );
@@ -429,7 +502,7 @@ export const roomsRouter = router({
   }),
 
   // Admin-only: block a room on a slot (rejected if it overlaps a booking).
-  createBlock: authedAdminProcedure.input(ZCreateBlockInputSchema).mutation(async ({ input }) => {
+  createBlock: ne26AdminProcedure.input(ZCreateBlockInputSchema).mutation(async ({ input }) => {
     const { getResourceBookingService } = await import(
       "@calcom/features/ne26-rooms/di/ResourceBookingService.container"
     );
@@ -442,7 +515,7 @@ export const roomsRouter = router({
   }),
 
   // Admin-only: remove a room block and free its slots.
-  removeBlock: authedAdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
+  removeBlock: ne26AdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
     const { getResourceBookingService } = await import(
       "@calcom/features/ne26-rooms/di/ResourceBookingService.container"
     );

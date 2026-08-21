@@ -3059,24 +3059,32 @@ model Ne26InvoiceSettings {
 
 // Singleton booking configuration for NE26 rooms (admin-editable).
 model Ne26RoomSettings {
-  id                     Int      @id @default(1)
+  id                     Int       @id @default(1)
   // Turnover buffer in minutes required after each booking; reserved as slots so
   // the next booking can't start within it. 0 = no buffer. Multiple of 15.
-  bufferMinutes          Int      @default(0)
+  bufferMinutes          Int       @default(0)
   // Start step offered to bookers, in minutes (60 = hourly, 30, or 15). The
   // internal atomic slot stays 15 min; this only controls which marks are
   // offered as start times and the admin calendar columns.
-  slotGranularityMinutes Int      @default(60)
+  slotGranularityMinutes Int       @default(60)
   // Opening hours per event day, Brussels time. JSON array of
   // { date: "YYYY-MM-DD", openHourBrussels, closeHourBrussels }. Drives
   // availability, the admin calendar and the block editor. Null = built-in
   // NE26 defaults (17/18/19 Nov 2026).
   eventDays              Json?
+  // NE26: PIN that releases desk mode, stored as salt:hash — the tablet runs on
+  // an admin session, so this is what stands between the welcome desk and the
+  // pricing, refunds and accounts. Null = desk mode cannot be entered.
+  deskPinHash            String?
+  // A four-digit PIN is 10 000 guesses; these make a script's life hard without
+  // making an honest mistyped PIN painful.
+  deskPinFailedAttempts  Int       @default(0)
+  deskPinLockedUntil     DateTime?
   // Public landing page (/rooms) content, editable from the admin. Title shows
   // above "Book a meeting room"; intro is a short paragraph below it.
   landingTitle           String?
-  landingIntro           String?  @db.Text
-  updatedAt              DateTime @updatedAt
+  landingIntro           String?   @db.Text
+  updatedAt              DateTime  @updatedAt
 }
 
 // Admin-managed legal / informational pages (Privacy Policy, Practical

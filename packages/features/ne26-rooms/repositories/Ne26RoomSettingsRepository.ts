@@ -74,6 +74,41 @@ export class Ne26RoomSettingsRepository {
     return toSettings(row);
   }
 
+  /**
+   * The desk PIN and its attempt state. Kept off `get()` on purpose: that runs on
+   * every public page, and a password hash has no business travelling with it.
+   */
+  async getDeskPinState(): Promise<{
+    hash: string | null;
+    failedAttempts: number;
+    lockedUntil: Date | null;
+  }> {
+    const row = await this.prismaClient.ne26RoomSettings.findUnique({
+      where: { id: 1 },
+      select: { deskPinHash: true, deskPinFailedAttempts: true, deskPinLockedUntil: true },
+    });
+    return {
+      hash: row?.deskPinHash ?? null,
+      failedAttempts: row?.deskPinFailedAttempts ?? 0,
+      lockedUntil: row?.deskPinLockedUntil ?? null,
+    };
+  }
+
+  async setDeskPinHash(hash: string | null): Promise<void> {
+    await this.prismaClient.ne26RoomSettings.upsert({
+      where: { id: 1 },
+      create: { id: 1, deskPinHash: hash },
+      update: { deskPinHash: hash, deskPinFailedAttempts: 0, deskPinLockedUntil: null },
+    });
+  }
+
+  async setDeskPinLockState(failedAttempts: number, lockedUntil: Date | null): Promise<void> {
+    await this.prismaClient.ne26RoomSettings.update({
+      where: { id: 1 },
+      data: { deskPinFailedAttempts: failedAttempts, deskPinLockedUntil: lockedUntil },
+    });
+  }
+
   async update(data: Partial<RoomSettings>): Promise<RoomSettings> {
     const patch: {
       bufferMinutes?: number;
