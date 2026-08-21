@@ -135,8 +135,10 @@ export default function EventDaysForm({
             <option value={15}>Every 15 minutes</option>
           </select>
           <span className="mt-1 block text-gray-500 text-xs">
-            Only the start step a buyer sees. Rooms are always held in 15-minute blocks underneath, so this
-            never affects double-booking.
+            Which start times a buyer is offered. &ldquo;On the hour&rdquo; shows 09:00, 10:00, 11:00;
+            &ldquo;every 30 minutes&rdquo; also shows 09:30, 10:30. Finer steps sell more of the day but
+            leave more awkward gaps. Rooms are always held in 15-minute blocks underneath, so this never
+            affects double-booking.
           </span>
         </label>
       </div>
