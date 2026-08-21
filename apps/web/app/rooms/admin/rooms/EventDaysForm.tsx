@@ -2,6 +2,7 @@
 
 import type { EventDayDefinition } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { trpc } from "@calcom/trpc/react";
+import { CalendarClock, Check, Sparkles, Timer } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -20,9 +21,27 @@ const HOURS = Array.from({ length: 25 }, (_, h) => h);
 const select =
   "mt-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#000643] focus:outline-none";
 
-export default function EventDaysForm({ initial }: { initial: EventDayDefinition[] }): JSX.Element {
+/**
+ * Everything that governs *when* a room can be booked, in one place.
+ *
+ * Opening hours, the start step and the cleaning gap used to be two separate
+ * cards with two Save buttons, which invited setting one and forgetting the
+ * other — and they only make sense read together: a 15-minute start step with a
+ * 30-minute cleaning gap behaves very differently from the same step with none.
+ */
+export default function EventDaysForm({
+  initial,
+  bufferMinutes,
+  slotGranularityMinutes,
+}: {
+  initial: EventDayDefinition[];
+  bufferMinutes: number;
+  slotGranularityMinutes: number;
+}): JSX.Element {
   const router = useRouter();
   const [days, setDays] = useState<EventDayDefinition[]>(initial);
+  const [buffer, setBuffer] = useState(bufferMinutes);
+  const [granularity, setGranularity] = useState(slotGranularityMinutes);
   const save = trpc.viewer.rooms.updateRoomSettings.useMutation({ onSuccess: () => router.refresh() });
 
   function setHour(date: string, field: "openHourBrussels" | "closeHourBrussels", value: number): void {
@@ -32,15 +51,16 @@ export default function EventDaysForm({ initial }: { initial: EventDayDefinition
   const invalid = days.find((d) => d.openHourBrussels >= d.closeHourBrussels);
 
   return (
-    <div className="mt-8 rounded-xl border border-gray-200 bg-white p-5">
-      <h2 className="font-semibold text-[#000643] text-lg">Event opening hours</h2>
+    <section className="rounded-xl border border-gray-200 bg-white p-5">
+      <h2 className="flex items-center gap-2 font-semibold text-[#000643] text-lg">
+        <CalendarClock className="h-5 w-5 shrink-0" aria-hidden />
+        When rooms can be booked
+      </h2>
       <p className="mt-1 text-gray-600 text-sm">
-        Set the opening and closing hour for each event day (Brussels time). This drives room availability,
-        the admin calendar and the block editor. Closing hour is exclusive — no booking may start at or after
-        it.
+        Drives room availability, the admin calendar and the block editor. All times are Brussels time.
       </p>
 
-      <div className="mt-4 space-y-3">
+      <div className="mt-4 space-y-2">
         {days.map((d) => (
           <div
             key={d.date}
@@ -75,21 +95,77 @@ export default function EventDaysForm({ initial }: { initial: EventDayDefinition
           </div>
         ))}
       </div>
+      <p className="mt-2 text-gray-500 text-xs">
+        The closing hour is exclusive: no booking may start at or after it.
+      </p>
 
-      <div className="mt-4 flex items-center gap-3">
+      <div className="mt-6 grid grid-cols-1 gap-4 border-gray-100 border-t pt-5 sm:grid-cols-2">
+        <label>
+          <span className="flex items-center gap-1.5 font-medium text-gray-700 text-sm">
+            <Sparkles className="h-4 w-4 shrink-0 text-[#000643]" aria-hidden />
+            Cleaning time between bookings
+          </span>
+          <select
+            className={`${select} w-full`}
+            value={buffer}
+            onChange={(e) => setBuffer(Number(e.target.value))}>
+            <option value={0}>None — back-to-back bookings</option>
+            <option value={15}>15 minutes</option>
+            <option value={30}>30 minutes</option>
+            <option value={45}>45 minutes</option>
+            <option value={60}>1 hour</option>
+          </select>
+          <span className="mt-1 block text-gray-500 text-xs">
+            Held after every booking so the next one cannot start inside it. This takes the time off sale,
+            so an hour of cleaning across nine rooms is real inventory.
+          </span>
+        </label>
+
+        <label>
+          <span className="flex items-center gap-1.5 font-medium text-gray-700 text-sm">
+            <Timer className="h-4 w-4 shrink-0 text-[#000643]" aria-hidden />
+            Start times offered
+          </span>
+          <select
+            className={`${select} w-full`}
+            value={granularity}
+            onChange={(e) => setGranularity(Number(e.target.value))}>
+            <option value={60}>On the hour</option>
+            <option value={30}>Every 30 minutes</option>
+            <option value={15}>Every 15 minutes</option>
+          </select>
+          <span className="mt-1 block text-gray-500 text-xs">
+            Only the start step a buyer sees. Rooms are always held in 15-minute blocks underneath, so this
+            never affects double-booking.
+          </span>
+        </label>
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-center gap-3">
         <button
           type="button"
           disabled={save.isPending || Boolean(invalid)}
-          onClick={() => save.mutate({ eventDays: days })}
+          onClick={() =>
+            save.mutate({
+              eventDays: days,
+              bufferMinutes: buffer,
+              slotGranularityMinutes: granularity as 15 | 30 | 60,
+            })
+          }
           className="rounded-lg bg-[#000643] px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90 disabled:opacity-40">
-          {save.isPending ? "Saving…" : "Save opening hours"}
+          {save.isPending ? "Saving…" : "Save"}
         </button>
-        {save.isSuccess ? <span className="text-green-600 text-sm">Saved ✓</span> : null}
+        {save.isSuccess ? (
+          <span className="flex items-center gap-1 text-green-600 text-sm">
+            <Check className="h-4 w-4" aria-hidden />
+            Saved
+          </span>
+        ) : null}
         {invalid ? (
           <span className="text-red-600 text-sm">Opening hour must be before closing hour.</span>
         ) : null}
       </div>
       {save.error ? <p className="mt-2 text-red-600 text-sm">{save.error.message}</p> : null}
-    </div>
+    </section>
   );
 }

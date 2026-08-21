@@ -3135,6 +3135,26 @@ model Ne26AuditLog {
   @@index([action])
 }
 
+// NE26: room photos uploaded from the admin.
+//
+// Stored in the database, like Cal's own Avatar model, rather than on disk. The
+// deployment writes container-local paths that a redeploy wipes — which already
+// cost us once with invoice PDFs — and putting them here means they are covered
+// by the same backup as everything else, with no volume to mount.
+model Ne26RoomImage {
+  // Opaque key used in the public URL; new on every upload so a replaced photo
+  // never serves from a stale cache.
+  key             String   @id
+  // base64, no data: prefix.
+  data            String
+  mimeType        String
+  bytes           Int
+  uploadedByEmail String?
+  createdAt       DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 // Exhibitor billing details, entered once on the account and reused at checkout.
 model Ne26BillingProfile {
   id               Int      @id @default(autoincrement())
