@@ -11,6 +11,12 @@ import {
   ZUpdateLegalPageInputSchema,
 } from "./legalPage.schema";
 import { ZPreviewVatInputSchema } from "./previewVat.schema";
+import {
+  ZDeskCheckInInputSchema,
+  ZDeskCreateBookingInputSchema,
+  ZDeskDayInputSchema,
+  ZDeskSearchInputSchema,
+} from "./desk.schema";
 import { ZGrantRoleInputSchema, ZRevokeRoleInputSchema } from "./staff.schema";
 import {
   ZCreateAddOnInputSchema,
@@ -21,6 +27,31 @@ import { ZUpdateBillingProfileInputSchema } from "./updateBillingProfile.schema"
 import { ZUpdateInvoiceSettingsInputSchema } from "./updateInvoiceSettings.schema";
 import { ZUpdateResourceInputSchema } from "./updateResource.schema";
 import { ZUpdateRoomSettingsInputSchema } from "./updateRoomSettings.schema";
+
+/**
+ * The welcome desk is open to hostesses and to admins (who work it during the
+ * event and can already do strictly more). Checked per procedure rather than in
+ * a shared middleware so the rule stays inside the NE26 feature instead of in
+ * Cal's procedure layer.
+ */
+async function requireDesk(ctx: { user: { id: number; email: string; role?: string | null } }) {
+  const { getNe26StaffRepository } = await import(
+    "@calcom/features/ne26-rooms/di/Ne26StaffRepository.container"
+  );
+  const { canWorkTheDesk, roleOf } = await import("@calcom/features/ne26-rooms/lib/staff");
+  const repo = getNe26StaffRepository();
+  const staffRole = ctx.user.role === "ADMIN" ? null : await repo.findStaffRole(ctx.user.id);
+  const principal = {
+    userId: ctx.user.id,
+    email: ctx.user.email,
+    calRole: ctx.user.role,
+    staffRole,
+  };
+  if (!canWorkTheDesk(principal)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "The welcome desk is for event staff." });
+  }
+  return { repo, principal, role: roleOf(principal) };
+}
 
 export const roomsRouter = router({
   // The signed-in exhibitor's saved billing details (null until they fill them in).
@@ -53,6 +84,116 @@ export const roomsRouter = router({
         "@calcom/features/ne26-rooms/di/Ne26BillingProfileRepository.container"
       );
       return getNe26BillingProfileRepository().upsertByUserId(ctx.user.id, input);
+    }),
+
+  // ---- Welcome desk (hostess + admin) ----
+
+  deskDay: authedProcedure.input(ZDeskDayInputSchema).query(async ({ ctx, input }) => {
+    await requireDesk(ctx);
+    const { getResourceBookingRepository } = await import(
+      "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container"
+    );
+    const { brusselsDayBounds } = await import("@calcom/features/ne26-rooms/lib/deskDay");
+    const { fromUtc, toUtc } = brusselsDayBounds(input.date);
+    return getResourceBookingRepository().findForDesk(fromUtc, toUtc);
+  }),
+
+  /** Rooms and their free start times, for selling at the counter. */
+  deskAvailability: authedProcedure.query(async ({ ctx }) => {
+    await requireDesk(ctx);
+    const { getRoomAvailabilityService } = await import(
+      "@calcom/features/ne26-rooms/di/RoomAvailabilityService.container"
+    );
+    const { getAddOnRepository } = await import(
+      "@calcom/features/ne26-rooms/di/AddOnRepository.container"
+    );
+    const service = getRoomAvailabilityService();
+    const rooms = await service.getActiveRooms();
+    const [availability, addOns] = await Promise.all([
+      Promise.all(rooms.map((room) => service.getAvailabilityBySlug(room.slug))),
+      getAddOnRepository().findManyActive(),
+    ]);
+    return { rooms: availability, addOns };
+  }),
+
+  deskSearch: authedProcedure.input(ZDeskSearchInputSchema).query(async ({ ctx, input }) => {
+    await requireDesk(ctx);
+    const { getResourceBookingRepository } = await import(
+      "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container"
+    );
+    return getResourceBookingRepository().searchForDesk(input.query);
+  }),
+
+  deskCheckIn: authedProcedure.input(ZDeskCheckInInputSchema).mutation(async ({ ctx, input }) => {
+    const { repo, principal, role } = await requireDesk(ctx);
+    const { getResourceBookingRepository } = await import(
+      "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container"
+    );
+    const changed = await getResourceBookingRepository().setCheckedIn(
+      input.uid,
+      input.arrived ? new Date() : null,
+      input.arrived ? principal.email : null
+    );
+    if (!changed) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "That booking is not confirmed, so it cannot be checked in.",
+      });
+    }
+    await repo.recordAction({
+      actorUserId: principal.userId,
+      actorEmail: principal.email,
+      actorRole: role,
+      action: input.arrived ? "booking.checkin" : "booking.checkin.undo",
+      targetType: "booking",
+      targetId: input.uid,
+      detail: input.arrived ? "Marked as arrived" : "Cleared a check-in",
+    });
+    return { ok: true };
+  }),
+
+  /**
+   * Sell a room to someone standing at the counter.
+   *
+   * Runs through the same startCheckout() path an exhibitor uses on their own
+   * phone, so the billing gate, the VAT lines and the hold-release-on-failure
+   * behave identically. The hostess never handles a card: this returns the
+   * Stripe Checkout URL for the exhibitor to complete.
+   */
+  deskCreateBooking: authedProcedure
+    .input(ZDeskCreateBookingInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { repo, principal, role } = await requireDesk(ctx);
+      const target = await repo.findUserByEmail(input.exhibitorEmail);
+      if (!target) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "No account with that email. Ask them to sign up first — it takes a minute.",
+        });
+      }
+
+      const { startCheckout } = await import("@calcom/features/ne26-rooms/services/startCheckout");
+      const { WEBAPP_URL } = await import("@calcom/lib/constants");
+      const booking = await startCheckout({
+        buyer: { userId: target.id, email: target.email, name: target.name },
+        slug: input.slug,
+        startUtc: new Date(input.startUtc),
+        durationHours: input.durationHours,
+        addOns: input.addOns,
+        webappUrl: WEBAPP_URL,
+        cancelPath: "/rooms/desk",
+      });
+
+      await repo.recordAction({
+        actorUserId: principal.userId,
+        actorEmail: principal.email,
+        actorRole: role,
+        action: "booking.create",
+        targetType: "booking",
+        targetId: booking.uid,
+        detail: `Started a booking for ${target.email} — awaiting payment`,
+      });
+      return booking;
     }),
 
   // Admin-only: who holds a role, and the trail of what staff have done.
@@ -313,114 +454,17 @@ export const roomsRouter = router({
   // Checkout session for it and return the URL to redirect the booker to.
   // Requires login; the booker identity comes from the session.
   createBooking: authedProcedure.input(ZCreateBookingInputSchema).mutation(async ({ ctx, input }) => {
-    const { getResourceBookingService } = await import(
-      "@calcom/features/ne26-rooms/di/ResourceBookingService.container"
-    );
-    const { getStripeCheckoutService } = await import(
-      "@calcom/features/ne26-rooms/di/StripeCheckoutService.container"
-    );
-    const { getNe26BillingProfileRepository } = await import(
-      "@calcom/features/ne26-rooms/di/Ne26BillingProfileRepository.container"
-    );
+    const { startCheckout } = await import("@calcom/features/ne26-rooms/services/startCheckout");
     const { WEBAPP_URL } = await import("@calcom/lib/constants");
-
-    // Our billing profile is the source of truth: it seeds the booking VAT and
-    // mirrors into a Stripe Customer so Checkout opens pre-filled.
-    const billingRepo = getNe26BillingProfileRepository();
-    const profile = await billingRepo.findByUserId(ctx.user.id);
-
-    // Billing details are printed on the invoice, so they're required to book.
-    const { isBillingProfileComplete } = await import("@calcom/features/ne26-rooms/lib/billing");
-    if (!isBillingProfileComplete(profile)) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: "Please complete your billing details before booking — they appear on your invoice.",
-      });
-    }
-
-    let customerId: string | undefined;
-    if (profile) {
-      const existing = await billingRepo.findStripeCustomerId(ctx.user.id);
-      customerId = await getStripeCheckoutService().ensureCustomer({
-        customerId: existing,
-        email: ctx.user.email,
-        // The profile owns the contact name; the session copy can still be the
-        // pre-save value when the exhibitor books straight after completing it.
-        name: [profile.firstName, profile.lastName].filter(Boolean).join(" ") || ctx.user.name,
-        legalName: profile.legalName,
-        country: profile.country,
-        addressLine1: profile.addressLine1,
-        addressLine2: profile.addressLine2,
-        postalCode: profile.postalCode,
-        city: profile.city,
-      });
-      if (customerId !== existing) await billingRepo.setStripeCustomerId(ctx.user.id, customerId);
-    }
-
-    const booking = await getResourceBookingService().createBooking({
+    return startCheckout({
+      buyer: { userId: ctx.user.id, email: ctx.user.email, name: ctx.user.name },
       slug: input.slug,
       startUtc: new Date(input.startUtc),
       durationHours: input.durationHours,
-      booker: {
-        userId: ctx.user.id,
-        email: ctx.user.email,
-        name:
-          [profile?.firstName, profile?.lastName].filter(Boolean).join(" ") ||
-          ctx.user.name ||
-          ctx.user.email,
-      },
       addOns: input.addOns,
-      billing: profile
-        ? { country: profile.country || null, vatNumber: profile.vatNumber || null }
-        : undefined,
+      webappUrl: WEBAPP_URL,
+      cancelPath: `/rooms/${input.slug}`,
     });
-
-    // Prices are HT (excl. VAT): add VAT lines so Stripe charges TTC. VAT is
-    // resolved from the buyer's profile + the admin matrix (reverse charge -> none).
-    const { getRoomVatPreviewService } = await import(
-      "@calcom/features/ne26-rooms/di/RoomVatPreviewService.container"
-    );
-    const vat = await getRoomVatPreviewService().preview({
-      userId: ctx.user.id,
-      slug: input.slug,
-      durationHours: input.durationHours,
-      addOns: input.addOns,
-    });
-    const vatLines = vat.vatBreakdown
-      .filter((v) => v.vat > 0)
-      .map((v) => ({ name: `VAT ${v.vatRate / 100}%`, quantity: 1, unitAmount: v.vat }));
-
-    // The hold is already committed at this point. If Stripe can't give us a
-    // Checkout URL, release it immediately: otherwise the buyer gets a raw SDK
-    // string ("Request timed out") AND their slot stays locked for the length of
-    // the hold, unbookable by them or anyone else.
-    let checkout: { url: string };
-    try {
-      checkout = await getStripeCheckoutService().createCheckoutSession({
-        bookingUid: booking.uid,
-        currency: booking.currency,
-        lines: [...booking.checkoutLines, ...vatLines],
-        customerEmail: ctx.user.email,
-        customerId,
-        holdExpiresAt: booking.holdExpiresAt,
-        successUrl: `${WEBAPP_URL}/rooms/booked/${booking.uid}`,
-        cancelUrl: `${WEBAPP_URL}/rooms/${input.slug}`,
-      });
-    } catch (e) {
-      await getResourceBookingService()
-        .cancelPending(booking.uid)
-        .catch(() => {
-          // Releasing is best-effort; the hold expires on its own either way.
-        });
-      const { ErrorCode: EC } = await import("@calcom/lib/errorCodes");
-      const { ErrorWithCode: EWC } = await import("@calcom/lib/errors");
-      throw new EWC(
-        EC.InternalServerError,
-        "We couldn't reach our payment provider. Nothing was charged and your slot is free again — please try once more."
-      );
-    }
-
-    return { ...booking, checkoutUrl: checkout.url };
   }),
 
   // Resume an abandoned PENDING booking: rebuild its checkout and return the URL.

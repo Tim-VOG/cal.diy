@@ -338,6 +338,85 @@ export class ResourceBookingRepository {
   }
 
   /** All real bookings (excluding admin blocks) with details, for the dashboard. */
+  /**
+   * What the welcome desk needs: confirmed bookings overlapping a window, with
+   * just enough to greet someone and point them at a room.
+   *
+   * Confirmed only. A held-but-unpaid booking is not an arrival, and showing one
+   * at the desk would have a hostess welcoming someone who has not bought
+   * anything. Admin blocks are excluded for the same reason.
+   */
+  findForDesk(fromUtc: Date, toUtc: Date) {
+    return this.prismaClient.resourceBooking.findMany({
+      where: {
+        isBlock: false,
+        status: ResourceBookingStatus.CONFIRMED,
+        startTime: { lt: toUtc },
+        endTime: { gt: fromUtc },
+      },
+      orderBy: [{ startTime: "asc" }, { id: "asc" }],
+      select: {
+        uid: true,
+        startTime: true,
+        endTime: true,
+        durationMinutes: true,
+        bookerName: true,
+        bookerEmail: true,
+        checkedInAt: true,
+        checkedInByEmail: true,
+        resource: { select: { name: true, slug: true, category: true } },
+        addOns: { select: { quantity: true, addOn: { select: { name: true } } } },
+      },
+    });
+  }
+
+  /**
+   * Desk search across the whole event, for "I booked something, I forget when".
+   * Matches the booker's name or email; the caller decides how many to show.
+   */
+  searchForDesk(query: string, limit = 25) {
+    const q = query.trim();
+    return this.prismaClient.resourceBooking.findMany({
+      where: {
+        isBlock: false,
+        status: ResourceBookingStatus.CONFIRMED,
+        OR: [
+          { bookerName: { contains: q, mode: "insensitive" } },
+          { bookerEmail: { contains: q, mode: "insensitive" } },
+        ],
+      },
+      orderBy: [{ startTime: "asc" }],
+      take: limit,
+      select: {
+        uid: true,
+        startTime: true,
+        endTime: true,
+        durationMinutes: true,
+        bookerName: true,
+        bookerEmail: true,
+        checkedInAt: true,
+        checkedInByEmail: true,
+        resource: { select: { name: true, slug: true, category: true } },
+        addOns: { select: { quantity: true, addOn: { select: { name: true } } } },
+      },
+    });
+  }
+
+  /**
+   * Mark an exhibitor as arrived, or clear a mistaken one.
+   *
+   * Scoped to CONFIRMED so the desk can never check in an unpaid hold, and
+   * returns whether a row actually changed so the caller can tell the difference
+   * between "done" and "that booking is not checkable".
+   */
+  async setCheckedIn(uid: string, at: Date | null, byEmail: string | null): Promise<boolean> {
+    const result = await this.prismaClient.resourceBooking.updateMany({
+      where: { uid, isBlock: false, status: ResourceBookingStatus.CONFIRMED },
+      data: { checkedInAt: at, checkedInByEmail: at ? byEmail : null },
+    });
+    return result.count > 0;
+  }
+
   findAllWithDetails() {
     return this.prismaClient.resourceBooking.findMany({
       where: { isBlock: false },

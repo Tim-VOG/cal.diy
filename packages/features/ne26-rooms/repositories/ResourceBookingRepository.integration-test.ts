@@ -179,3 +179,105 @@ describe("ResourceBookingRepository.updateBillingFromCheckout — never downgrad
     expect(booking?.bookerName).toBe("Societe Generale");
   });
 });
+
+describe("ResourceBookingRepository — the welcome desk", () => {
+  let resourceId: number;
+
+  beforeAll(async () => {
+    const resource = await prisma.resource.create({
+      data: {
+        name: "TEST Desk Room",
+        slug: `test-desk-${Date.now()}`,
+        category: "ENTRY",
+        capacity: 6,
+        surface: 18,
+        price1h: 25000,
+        price2h: 50000,
+        price3h: 65000,
+      },
+      select: { id: true },
+    });
+    resourceId = resource.id;
+  });
+
+  afterEach(async () => {
+    await prisma.resourceBooking.deleteMany({ where: { resourceId } });
+  });
+
+  afterAll(async () => {
+    await prisma.resource.delete({ where: { id: resourceId } });
+  });
+
+  async function booking(startTime: Date, over: Record<string, unknown> = {}) {
+    const created = await repo.createWithSlots(
+      bookingArgs(startTime, 60, "desk@test.com", resourceId)
+    );
+    if (Object.keys(over).length) {
+      await prisma.resourceBooking.update({ where: { uid: created.uid }, data: over });
+    }
+    return created.uid;
+  }
+
+  it("refuses to check in a booking that has not been paid for", async () => {
+    // A hostess must never greet someone into a room they have not bought. The
+    // desk only ever lists CONFIRMED bookings, but the mutation takes a uid, so
+    // the rule has to hold at this layer too.
+    const uid = await booking(new Date("2026-11-19T09:00:00.000Z"));
+
+    expect(await repo.setCheckedIn(uid, new Date(), "hostess@vo-group.be")).toBe(false);
+
+    const row = await prisma.resourceBooking.findUniqueOrThrow({
+      where: { uid },
+      select: { checkedInAt: true },
+    });
+    expect(row.checkedInAt).toBeNull();
+  });
+
+  it("checks in a confirmed booking and records who did it", async () => {
+    const uid = await booking(new Date("2026-11-19T10:00:00.000Z"), {
+      status: "CONFIRMED",
+      holdExpiresAt: null,
+    });
+
+    expect(await repo.setCheckedIn(uid, new Date(), "hostess@vo-group.be")).toBe(true);
+
+    const row = await prisma.resourceBooking.findUniqueOrThrow({
+      where: { uid },
+      select: { checkedInAt: true, checkedInByEmail: true },
+    });
+    expect(row.checkedInAt).not.toBeNull();
+    expect(row.checkedInByEmail).toBe("hostess@vo-group.be");
+  });
+
+  it("clears a mistaken check-in, and the operator with it", async () => {
+    const uid = await booking(new Date("2026-11-19T11:00:00.000Z"), {
+      status: "CONFIRMED",
+      holdExpiresAt: null,
+    });
+    await repo.setCheckedIn(uid, new Date(), "hostess@vo-group.be");
+
+    expect(await repo.setCheckedIn(uid, null, null)).toBe(true);
+
+    const row = await prisma.resourceBooking.findUniqueOrThrow({
+      where: { uid },
+      select: { checkedInAt: true, checkedInByEmail: true },
+    });
+    expect(row.checkedInAt).toBeNull();
+    expect(row.checkedInByEmail).toBeNull();
+  });
+
+  it("keeps unpaid holds out of the desk's day view", async () => {
+    await booking(new Date("2026-11-19T13:00:00.000Z"));
+    const confirmed = await booking(new Date("2026-11-19T14:00:00.000Z"), {
+      status: "CONFIRMED",
+      holdExpiresAt: null,
+    });
+
+    const rows = await repo.findForDesk(
+      new Date("2026-11-19T00:00:00.000Z"),
+      new Date("2026-11-20T00:00:00.000Z")
+    );
+    const mine = rows.filter((r) => r.resource.name === "TEST Desk Room");
+    expect(mine.map((r) => r.uid)).toEqual([confirmed]);
+  });
+});

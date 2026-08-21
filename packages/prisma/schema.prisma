@@ -2954,6 +2954,11 @@ model ResourceBooking {
   // Admin block (maintenance / internal use): occupies the slots like a CONFIRMED
   // booking but is not a real sale (excluded from the bookings list and revenue).
   isBlock          Boolean               @default(false)
+  // NE26: the welcome desk marking an exhibitor as arrived. Null = not yet.
+  // Stored as a timestamp rather than a flag so the log shows when, and so a
+  // mistaken check-in can be cleared without losing that it happened.
+  checkedInAt      DateTime?
+  checkedInByEmail String?
   slots            ResourceSlot[]
   addOns           BookingAddOn[]
   createdAt        DateTime              @default(now())
