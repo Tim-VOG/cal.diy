@@ -1,12 +1,9 @@
 import process from "node:process";
 import { ErrorCode } from "@calcom/lib/errorCodes";
 import { ErrorWithCode } from "@calcom/lib/errors";
-import logger from "@calcom/lib/logger";
 import Stripe from "stripe";
 
 const STRIPE_API_VERSION = "2020-08-27";
-
-const log = logger.getSubLogger({ prefix: ["[ne26-rooms-stripe]"] });
 
 /** Stripe rejects a Checkout session expiring sooner than this. */
 const STRIPE_MIN_SESSION_LIFETIME_SECONDS = 30 * 60;
@@ -111,28 +108,11 @@ export class StripeCheckoutService {
       };
     }
 
-    // Diagnostic: exhibitors report Checkout opening with empty billing fields
-    // even on a complete profile. This says what we actually sent, so the
-    // question "does the Stripe Customer carry an address?" is answerable from
-    // the container logs instead of by guessing. Booleans and the country code
-    // only — no addresses in logs.
-    //
-    // warn, not info: the default NEXT_PUBLIC_LOGGER_LEVEL is 4 (warn), so an
-    // info line is dropped before it ever reaches `docker logs` — which is
-    // exactly how the first version of this diagnostic came back empty.
-    log.warn(
-      `ensureCustomer ${input.customerId ? "update" : "create"}: name=${Boolean(params.name)} address=${Boolean(
-        params.address
-      )} country=${input.country ?? "-"}`
-    );
-
     if (input.customerId) {
       const updated = await this.stripe.customers.update(input.customerId, params);
-      log.warn(`ensureCustomer updated ${updated.id}: stripe now holds address=${Boolean(updated.address)}`);
       return updated.id;
     }
     const created = await this.stripe.customers.create(params);
-    log.warn(`ensureCustomer created ${created.id}: stripe now holds address=${Boolean(created.address)}`);
     return created.id;
   }
 

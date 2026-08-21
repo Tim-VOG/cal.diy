@@ -79,6 +79,8 @@ export const DI_TOKENS = {
   INVOICE_SETTINGS_REPOSITORY_MODULE: Symbol("InvoiceSettingsRepositoryModule"),
   NE26_BILLING_PROFILE_REPOSITORY: Symbol("Ne26BillingProfileRepository"),
   NE26_BILLING_PROFILE_REPOSITORY_MODULE: Symbol("Ne26BillingProfileRepositoryModule"),
+  NE26_STAFF_REPOSITORY: Symbol("Ne26StaffRepository"),
+  NE26_STAFF_REPOSITORY_MODULE: Symbol("Ne26StaffRepositoryModule"),
   ROOM_VAT_PREVIEW_SERVICE: Symbol("RoomVatPreviewService"),
   ROOM_VAT_PREVIEW_SERVICE_MODULE: Symbol("RoomVatPreviewServiceModule"),
   NE26_ROOM_SETTINGS_REPOSITORY: Symbol("Ne26RoomSettingsRepository"),

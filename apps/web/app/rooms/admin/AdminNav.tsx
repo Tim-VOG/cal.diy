@@ -12,6 +12,7 @@ const TABS = [
   { href: "/rooms/admin/blocks", label: "Blocked slots" },
   { href: "/rooms/admin/pages", label: "Pages" },
   { href: "/rooms/admin/settings", label: "Settings" },
+  { href: "/rooms/admin/access", label: "Access" },
 ];
 
 // Which tab owns the current path (booking detail pages fall under Bookings).

@@ -512,6 +512,7 @@ model User {
   resourcesOwned     Resource[]          @relation("ResourceOwner")
   resourceBookings   ResourceBooking[]   @relation("ResourceBooker")
   ne26BillingProfile Ne26BillingProfile?
+  ne26StaffRole      Ne26StaffRole?
 
   autoOptInFeatures Boolean @default(false)
 
@@ -3083,6 +3084,50 @@ model Ne26LegalPage {
   published Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// NE26: event staff who are not platform admins.
+//
+// Cal's own User.role already carries ADMIN, and that stays the source of truth
+// for administrators — duplicating it here would give two answers to one
+// question. This table only adds the roles Cal has no concept of.
+enum Ne26StaffRoleType {
+  // Welcome desk: sees the day's schedule, checks exhibitors in, and can start
+  // a booking for someone standing in front of them. Never sees settings,
+  // pricing or refunds.
+  HOSTESS
+}
+
+model Ne26StaffRole {
+  id              Int               @id @default(autoincrement())
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          Int               @unique
+  role            Ne26StaffRoleType
+  // Who granted it. Nullable so removing an admin never erases the trail.
+  grantedByUserId Int?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+}
+
+// NE26: who did what. Staff act on bookings that hold real money, and a shared
+// tablet on a welcome desk means "the hostess account" is several people — so
+// an action needs a record independent of the account that performed it.
+model Ne26AuditLog {
+  id          Int      @id @default(autoincrement())
+  // Denormalised on purpose: the trail must survive the account being deleted.
+  actorUserId Int?
+  actorEmail  String
+  actorRole   String
+  // Dotted verb, e.g. "role.grant", "booking.checkin", "booking.create".
+  action      String
+  targetType  String?
+  targetId    String?
+  // Human-readable context, already rendered — this is read, not queried.
+  detail      String?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([action])
 }
 
 // Exhibitor billing details, entered once on the account and reused at checkout.

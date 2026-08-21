@@ -11,6 +11,7 @@ import {
   ZUpdateLegalPageInputSchema,
 } from "./legalPage.schema";
 import { ZPreviewVatInputSchema } from "./previewVat.schema";
+import { ZGrantRoleInputSchema, ZRevokeRoleInputSchema } from "./staff.schema";
 import {
   ZCreateAddOnInputSchema,
   ZDeleteAddOnInputSchema,
@@ -53,6 +54,76 @@ export const roomsRouter = router({
       );
       return getNe26BillingProfileRepository().upsertByUserId(ctx.user.id, input);
     }),
+
+  // Admin-only: who holds a role, and the trail of what staff have done.
+  staff: authedAdminProcedure.query(async () => {
+    const { getNe26StaffRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26StaffRepository.container"
+    );
+    const repo = getNe26StaffRepository();
+    const [members, actions] = await Promise.all([repo.listStaff(), repo.listRecentActions()]);
+    return { members, actions };
+  }),
+
+  grantRole: authedAdminProcedure.input(ZGrantRoleInputSchema).mutation(async ({ ctx, input }) => {
+    const { getNe26StaffRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26StaffRepository.container"
+    );
+    const repo = getNe26StaffRepository();
+    const target = await repo.findUserByEmail(input.email);
+    if (!target) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "No account with that email. They have to sign up first.",
+      });
+    }
+
+    if (input.role === "ADMIN") await repo.setCalRole(target.id, "ADMIN");
+    else await repo.grantHostess(target.id, ctx.user.id);
+
+    await repo.recordAction({
+      actorUserId: ctx.user.id,
+      actorEmail: ctx.user.email,
+      actorRole: "ADMIN",
+      action: "role.grant",
+      targetType: "user",
+      targetId: String(target.id),
+      detail: `Granted ${input.role} to ${target.email}`,
+    });
+    return { userId: target.id, email: target.email };
+  }),
+
+  revokeRole: authedAdminProcedure.input(ZRevokeRoleInputSchema).mutation(async ({ ctx, input }) => {
+    const { getNe26StaffRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26StaffRepository.container"
+    );
+    const repo = getNe26StaffRepository();
+
+    if (input.role === "ADMIN") {
+      // Removing the last administrator locks everyone out of settings, pricing
+      // and refunds, with no way back in through the app.
+      if ((await repo.countAdmins()) <= 1) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This is the last administrator. Grant admin to someone else first.",
+        });
+      }
+      await repo.setCalRole(input.userId, "USER");
+    } else {
+      await repo.revokeStaffRole(input.userId);
+    }
+
+    await repo.recordAction({
+      actorUserId: ctx.user.id,
+      actorEmail: ctx.user.email,
+      actorRole: "ADMIN",
+      action: "role.revoke",
+      targetType: "user",
+      targetId: String(input.userId),
+      detail: `Revoked ${input.role}`,
+    });
+    return { ok: true };
+  }),
 
   // Admin-only: update the issuer/company details printed on invoices.
   updateInvoiceSettings: authedAdminProcedure
