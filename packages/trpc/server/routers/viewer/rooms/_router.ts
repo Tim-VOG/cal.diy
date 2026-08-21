@@ -204,22 +204,23 @@ export const roomsRouter = router({
     .input(ZDeskCreateBookingInputSchema)
     .mutation(async ({ ctx, input }) => {
       const { repo, principal, role, actorEmail } = await requireDesk(ctx);
-      const target = await repo.findUserByEmail(input.exhibitorEmail);
-      if (!target) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "No account with that email. Ask them to sign up first — it takes a minute.",
-        });
-      }
+
+      // If they happen to already have an account, bill it — their saved profile
+      // and past bookings then line up with this one. Otherwise sell to them
+      // anyway: an exhibitor at the counter should not be told to go and sign up.
+      const existing = await repo.findUserByEmail(input.exhibitorEmail);
 
       const { startCheckout } = await import("@calcom/features/ne26-rooms/services/startCheckout");
       const { WEBAPP_URL } = await import("@calcom/lib/constants");
       const booking = await startCheckout({
-        buyer: { userId: target.id, email: target.email, name: target.name },
+        buyer: existing
+          ? { userId: existing.id, email: existing.email, name: existing.name }
+          : { userId: null, email: input.exhibitorEmail, name: input.exhibitorName },
         slug: input.slug,
         startUtc: new Date(input.startUtc),
         durationHours: input.durationHours,
         addOns: input.addOns,
+        billing: { country: input.country, vatNumber: input.vatNumber ?? null },
         webappUrl: WEBAPP_URL,
         cancelPath: "/rooms/desk",
       });
@@ -231,7 +232,7 @@ export const roomsRouter = router({
         action: "booking.create",
         targetType: "booking",
         targetId: booking.uid,
-        detail: `Started a booking for ${target.email} — awaiting payment`,
+        detail: `Started a booking for ${input.exhibitorName} <${input.exhibitorEmail}> — awaiting payment`,
       });
       return booking;
     }),

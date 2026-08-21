@@ -17,7 +17,14 @@ export interface IRoomVatPreviewServiceDeps {
 }
 
 export interface VatPreviewInput {
-  userId: number;
+  /** Absent for a counter sale: no account, so no saved profile to read. */
+  userId?: number;
+  /**
+   * Billing supplied directly instead of read from a profile — the welcome desk
+   * asks the exhibitor for their country and VAT number, because those decide
+   * what Stripe is about to charge.
+   */
+  billing?: { country?: string | null; vatNumber?: string | null };
   slug: string;
   durationHours: DurationHours;
   addOns?: { slug: string; quantity: number }[];
@@ -67,10 +74,16 @@ export class RoomVatPreviewService {
 
     const amountTotal = roomPrice + addOnLines.reduce((sum, l) => sum + l.lineTotal, 0);
 
-    const profile = await this.deps.ne26BillingProfileRepository.findByUserId(input.userId);
-    const country = profile?.country?.trim() || null;
+    // Whatever decides the VAT has to be known BEFORE Stripe is charged, or the
+    // buyer pays one rate and receives an invoice showing another. Explicit
+    // billing wins; otherwise it comes from the account's profile.
+    const profile = input.userId
+      ? await this.deps.ne26BillingProfileRepository.findByUserId(input.userId)
+      : null;
+    const country = input.billing?.country?.trim() || profile?.country?.trim() || null;
+    const vatNumber = input.billing?.vatNumber?.trim() || profile?.vatNumber || null;
     const settings = await this.deps.invoiceSettingsRepository.get();
-    const vat = resolveVatTreatment({ country, vatNumber: profile?.vatNumber ?? null }, settings);
+    const vat = resolveVatTreatment({ country, vatNumber }, settings);
 
     const model = buildInvoiceModel(
       { amountTotal, currency: room.currency, roomName: room.name, durationMinutes, addOns: addOnLines },

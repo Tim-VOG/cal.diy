@@ -30,16 +30,26 @@ export class InvoiceService {
     bookerUserId: number | null;
     bookerCountry: string | null;
     bookerVatNumber: string | null;
+    bookerLegalName?: string | null;
+    bookerAddressLine1?: string | null;
+    bookerAddressLine2?: string | null;
+    bookerPostalCode?: string | null;
+    bookerCity?: string | null;
   }): Promise<NonNullable<InvoiceMeta["billTo"]>> {
     const profile = booking.bookerUserId
       ? await this.deps.ne26BillingProfileRepository.findByUserId(booking.bookerUserId)
       : null;
+
+    // What the buyer confirmed at Checkout wins over the saved profile. On a
+    // counter sale there is no profile at all — the exhibitor has no account, and
+    // the address on these columns is the only one that exists. On a web booking
+    // they are empty, so the profile still supplies it.
     return {
-      legalName: profile?.legalName || null,
-      addressLine1: profile?.addressLine1 || null,
-      addressLine2: profile?.addressLine2 || null,
-      postalCode: profile?.postalCode || null,
-      city: profile?.city || null,
+      legalName: booking.bookerLegalName || profile?.legalName || null,
+      addressLine1: booking.bookerAddressLine1 || profile?.addressLine1 || null,
+      addressLine2: booking.bookerAddressLine2 || profile?.addressLine2 || null,
+      postalCode: booking.bookerPostalCode || profile?.postalCode || null,
+      city: booking.bookerCity || profile?.city || null,
       country: booking.bookerCountry || profile?.country || null,
       vatNumber: booking.bookerVatNumber || profile?.vatNumber || null,
     };

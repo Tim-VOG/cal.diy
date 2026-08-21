@@ -7,12 +7,22 @@ import { getStripeCheckoutService } from "../di/StripeCheckoutService.container"
 import { isBillingProfileComplete } from "../lib/billing";
 
 export interface StartCheckoutInput {
-  /** The exhibitor being billed — not necessarily the person operating the app. */
-  buyer: { userId: number; email: string; name?: string | null };
+  /**
+   * The exhibitor being billed — not necessarily the person operating the app.
+   * userId is null for a counter sale: no account, no saved profile, and the
+   * billing address comes from Checkout instead.
+   */
+  buyer: { userId: number | null; email: string; name?: string | null };
   slug: string;
   startUtc: Date;
   durationHours: 1 | 2 | 3;
   addOns?: { slug: string; quantity: number }[];
+  /**
+   * Billing known up front. The welcome desk collects country and VAT number
+   * because they decide the rate Stripe is about to charge; leaving them to be
+   * discovered at Checkout would mean charging one rate and invoicing another.
+   */
+  billing?: { country?: string | null; vatNumber?: string | null };
   webappUrl: string;
   /** Where Stripe returns the buyer if they abandon. */
   cancelPath: string;
@@ -30,14 +40,15 @@ export interface StartCheckoutInput {
  */
 export async function startCheckout(input: StartCheckoutInput) {
   const billingRepo = getNe26BillingProfileRepository();
-  const profile = await billingRepo.findByUserId(input.buyer.userId);
+  const atTheCounter = input.buyer.userId === null;
+  const profile = atTheCounter ? null : await billingRepo.findByUserId(input.buyer.userId as number);
 
-  // Billing details are printed on the invoice, so they are required to book.
-  if (!isBillingProfileComplete(profile)) {
+  // An account holder must have completed their profile: it is what the invoice
+  // is made out to. A counter sale has no account to complete, so Checkout
+  // collects the address instead and the webhook writes it onto the booking.
+  if (!atTheCounter && !isBillingProfileComplete(profile)) {
     throw new ErrorWithCode(
       ErrorCode.BadRequest,
-      // Worded for both callers: the exhibitor sees it about themselves, the
-      // hostess sees it about the person at the counter.
       "Billing details must be completed before booking — they appear on the invoice."
     );
   }
@@ -47,7 +58,9 @@ export async function startCheckout(input: StartCheckoutInput) {
   // Mirror the profile onto a Stripe Customer. This does not pre-fill Checkout
   // (Stripe only does that from a saved card) but it is the tax location and it
   // keeps the Stripe dashboard legible next to our invoices.
-  const existingCustomerId = await billingRepo.findStripeCustomerId(input.buyer.userId);
+  const existingCustomerId = atTheCounter
+    ? null
+    : await billingRepo.findStripeCustomerId(input.buyer.userId as number);
   const customerId = await getStripeCheckoutService().ensureCustomer({
     customerId: existingCustomerId,
     email: input.buyer.email,
@@ -59,8 +72,8 @@ export async function startCheckout(input: StartCheckoutInput) {
     postalCode: profile?.postalCode,
     city: profile?.city,
   });
-  if (customerId !== existingCustomerId) {
-    await billingRepo.setStripeCustomerId(input.buyer.userId, customerId);
+  if (!atTheCounter && customerId !== existingCustomerId) {
+    await billingRepo.setStripeCustomerId(input.buyer.userId as number, customerId);
   }
 
   const booking = await getResourceBookingService().createBooking({
@@ -73,16 +86,16 @@ export async function startCheckout(input: StartCheckoutInput) {
       name: contactName || input.buyer.name || input.buyer.email,
     },
     addOns: input.addOns,
-    billing: profile
-      ? { country: profile.country || null, vatNumber: profile.vatNumber || null }
-      : undefined,
+    billing: input.billing ??
+      (profile ? { country: profile.country || null, vatNumber: profile.vatNumber || null } : undefined),
   });
 
   // Prices are excl. VAT: add VAT lines so Stripe charges the VAT-inclusive
   // total. The rate comes from the buyer's profile plus the admin matrix
   // (reverse charge resolves to none).
   const vat = await getRoomVatPreviewService().preview({
-    userId: input.buyer.userId,
+    userId: input.buyer.userId ?? undefined,
+    billing: input.billing,
     slug: input.slug,
     durationHours: input.durationHours,
     addOns: input.addOns,
@@ -102,6 +115,7 @@ export async function startCheckout(input: StartCheckoutInput) {
       customerEmail: input.buyer.email,
       customerId,
       holdExpiresAt: booking.holdExpiresAt,
+      requireFullAddress: atTheCounter,
       successUrl: `${input.webappUrl}/rooms/booked/${booking.uid}`,
       cancelUrl: `${input.webappUrl}${input.cancelPath}`,
     });

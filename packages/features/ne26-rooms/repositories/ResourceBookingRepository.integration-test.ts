@@ -164,6 +164,35 @@ describe("ResourceBookingRepository.updateBillingFromCheckout — never downgrad
     expect(booking?.bookerName).toBe("vat@test.com");
   });
 
+  it("stores the postal address Checkout collected, for a sale with no account", async () => {
+    // A counter sale has no billing profile, so this is the only address the
+    // invoice will ever have. Losing it means issuing a VAT invoice with no
+    // customer address on it.
+    const uid = await bookingWithBelgianProfile(new Date("2026-11-17T14:00:00.000Z"));
+
+    await repo.updateBillingFromCheckout(uid, {
+      country: "DE",
+      vatNumber: null,
+      name: "Anna Weber",
+      legalName: "Muller Verteidigungstechnik GmbH",
+      addressLine1: "Konigsallee 42",
+      addressLine2: null,
+      postalCode: "40212",
+      city: "Dusseldorf",
+    });
+
+    const booking = await repo.findByUidForInvoice(uid);
+    expect(booking).toMatchObject({
+      bookerCountry: "DE",
+      bookerLegalName: "Muller Verteidigungstechnik GmbH",
+      bookerAddressLine1: "Konigsallee 42",
+      bookerPostalCode: "40212",
+      bookerCity: "Dusseldorf",
+    });
+    // A blank optional line must not be written as an empty string.
+    expect(booking?.bookerAddressLine2).toBeNull();
+  });
+
   it("still applies what the buyer actually confirmed at Checkout", async () => {
     const uid = await bookingWithBelgianProfile(new Date("2026-11-17T12:00:00.000Z"));
 

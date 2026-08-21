@@ -128,6 +128,14 @@ export async function POST(req: Request): Promise<Response> {
         country: details?.address?.country ?? null,
         vatNumber: details?.tax_ids?.[0]?.value ?? null,
         name: details?.name ?? null,
+        // Counter sales have no billing profile behind them, so this is the only
+        // address the invoice will ever have. Kept for web bookings too: what
+        // the buyer confirmed at payment beats what they saved months earlier.
+        legalName: details?.name ?? null,
+        addressLine1: details?.address?.line1 ?? null,
+        addressLine2: details?.address?.line2 ?? null,
+        postalCode: details?.address?.postal_code ?? null,
+        city: details?.address?.city ?? null,
       });
 
       const stripePaymentId = paymentIdOf(session);

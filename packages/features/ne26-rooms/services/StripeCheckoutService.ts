@@ -26,6 +26,12 @@ export interface CreateCheckoutSessionInput {
    * buyer can never pay against a hold that has already been released.
    */
   holdExpiresAt: Date;
+  /**
+   * Counter sale: the buyer has no account and no saved profile, so Checkout is
+   * the only place their billing address can be captured — and the invoice needs
+   * one. Web bookings leave this false and keep the light collection.
+   */
+  requireFullAddress?: boolean;
 }
 
 /**
@@ -140,12 +146,14 @@ export class StripeCheckoutService {
       // scratch — a Customer does not seed them (see ensureCustomer) — and the
       // webhook syncs whatever they enter back onto the booking. A blank value
       // never overwrites what the billing profile already told us.
-      // "auto", not "required": Checkout cannot pre-fill the address block (see
-      // ensureCustomer), so "required" meant every buyer retyping five fields
-      // they had already given us. The billing profile is mandatory and is what
-      // the invoice actually uses, so Checkout only needs whatever the card
-      // itself requires — typically country and postal code.
-      billing_address_collection: "auto",
+      // "auto" for a web booking: Checkout cannot pre-fill the address block (see
+      // ensureCustomer), so "required" only meant every buyer retyping five
+      // fields they had already given us, and the invoice takes the address from
+      // their profile anyway.
+      //
+      // "required" for a counter sale, where there is no profile: this is the
+      // one and only chance to capture the address the invoice needs.
+      billing_address_collection: input.requireFullAddress ? "required" : "auto",
       tax_id_collection: { enabled: true },
       // Stripe forbids customer + customer_email together; prefer the Customer.
       // With an existing Customer, tax_id/address collection requires

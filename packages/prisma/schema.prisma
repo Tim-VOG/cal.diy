@@ -2914,55 +2914,64 @@ model Resource {
 }
 
 model ResourceBooking {
-  id               Int                   @id @default(autoincrement())
-  uid              String                @unique @default(uuid())
-  resource         Resource              @relation(fields: [resourceId], references: [id], onDelete: Cascade)
-  resourceId       Int
-  startTime        DateTime
-  endTime          DateTime
+  id                 Int                   @id @default(autoincrement())
+  uid                String                @unique @default(uuid())
+  resource           Resource              @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  resourceId         Int
+  startTime          DateTime
+  endTime            DateTime
   // 60 | 120 | 180. Number of atomic 1h slots = durationMinutes / 60.
-  durationMinutes  Int
+  durationMinutes    Int
   // Exhibitor account (nullable: SetNull keeps the paid booking if the account is removed).
-  booker           User?                 @relation("ResourceBooker", fields: [bookerUserId], references: [id], onDelete: SetNull)
-  bookerUserId     Int?
-  bookerEmail      String
-  bookerName       String
+  booker             User?                 @relation("ResourceBooker", fields: [bookerUserId], references: [id], onDelete: SetNull)
+  bookerUserId       Int?
+  bookerEmail        String
+  bookerName         String
   // Buyer billing country (ISO-3166 alpha-2) and intra-EU VAT number, captured at
   // booking to drive the invoice VAT treatment (reverse charge / exemption).
-  bookerCountry    String?
-  bookerVatNumber  String?
-  status           ResourceBookingStatus @default(PENDING)
+  bookerCountry      String?
+  bookerVatNumber    String?
+  // NE26: billing address as confirmed at Checkout. Populated for counter sales,
+  // where the exhibitor has no account and therefore no saved profile — the
+  // invoice needs an address either way, so Stripe collects it and it lands
+  // here. Empty on web bookings, which take it from the billing profile.
+  bookerLegalName    String?
+  bookerAddressLine1 String?
+  bookerAddressLine2 String?
+  bookerPostalCode   String?
+  bookerCity         String?
+  status             ResourceBookingStatus @default(PENDING)
   // PENDING hold expiry: a non-confirmed booking past this time can be released (§4.4).
-  holdExpiresAt    DateTime?
+  holdExpiresAt      DateTime?
   // VAT treatment FROZEN when the invoice is issued. A later change to the room VAT
   // rate or to the reverse-charge settings must never re-split an already-issued
   // document: the stored invoice PDF wouldn't change, so the credit note would
   // silently contradict it. Null means "not invoiced yet".
-  roomVatRate      Int?
-  vatZeroRated     Boolean               @default(false)
-  vatMention       String?
+  roomVatRate        Int?
+  vatZeroRated       Boolean               @default(false)
+  vatMention         String?
   // Total in cents = the room's price for the chosen duration + sum(add-on lineTotals).
-  amountTotal      Int
-  currency         String                @default("EUR")
+  amountTotal        Int
+  currency           String                @default("EUR")
   // Unique: one Stripe payment can only ever back one booking, and the refund
   // webhook resolves the booking through this column.
-  stripePaymentId  String?               @unique
-  invoiceNumber    String?               @unique
-  invoicePdfUrl    String?
-  creditNoteNumber String?               @unique
-  creditNotePdfUrl String?
+  stripePaymentId    String?               @unique
+  invoiceNumber      String?               @unique
+  invoicePdfUrl      String?
+  creditNoteNumber   String?               @unique
+  creditNotePdfUrl   String?
   // Admin block (maintenance / internal use): occupies the slots like a CONFIRMED
   // booking but is not a real sale (excluded from the bookings list and revenue).
-  isBlock          Boolean               @default(false)
+  isBlock            Boolean               @default(false)
   // NE26: the welcome desk marking an exhibitor as arrived. Null = not yet.
   // Stored as a timestamp rather than a flag so the log shows when, and so a
   // mistaken check-in can be cleared without losing that it happened.
-  checkedInAt      DateTime?
-  checkedInByEmail String?
-  slots            ResourceSlot[]
-  addOns           BookingAddOn[]
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
+  checkedInAt        DateTime?
+  checkedInByEmail   String?
+  slots              ResourceSlot[]
+  addOns             BookingAddOn[]
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
 
   @@index([resourceId])
   @@index([bookerUserId])

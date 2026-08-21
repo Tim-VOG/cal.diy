@@ -45,7 +45,12 @@ export interface CreateBookingInput {
   slug: string;
   startUtc: Date;
   durationHours: DurationHours;
-  booker: { userId: number; email: string; name: string };
+  /**
+   * userId is null for a counter sale: the exhibitor has no account, the desk
+   * has their name and email, and Stripe collects the billing address that goes
+   * on the invoice.
+   */
+  booker: { userId: number | null; email: string; name: string };
   addOns?: { slug: string; quantity: number }[];
   /** Billing from the exhibitor's saved profile; seeds the invoice VAT. Stripe
    * confirms it at checkout and the webhook syncs any change back. */
@@ -302,12 +307,14 @@ export class ResourceBookingService {
     country: string | null;
     vatNumber: string | null;
     name: string | null;
+    legalName?: string | null;
+    addressLine1?: string | null;
+    addressLine2?: string | null;
+    postalCode?: string | null;
+    city?: string | null;
   }): Promise<void> {
-    await this.deps.resourceBookingRepository.updateBillingFromCheckout(input.bookingUid, {
-      country: input.country,
-      vatNumber: input.vatNumber,
-      name: input.name,
-    });
+    const { bookingUid, ...billing } = input;
+    await this.deps.resourceBookingRepository.updateBillingFromCheckout(bookingUid, billing);
   }
 
   private async resolveAddOnLines(

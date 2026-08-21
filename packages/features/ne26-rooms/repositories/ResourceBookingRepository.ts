@@ -256,7 +256,16 @@ export class ResourceBookingRepository {
   /** Store the billing details Stripe Checkout collected, on the still-held booking. */
   async updateBillingFromCheckout(
     uid: string,
-    data: { country: string | null; vatNumber: string | null; name: string | null }
+    data: {
+      country: string | null;
+      vatNumber: string | null;
+      name: string | null;
+      legalName?: string | null;
+      addressLine1?: string | null;
+      addressLine2?: string | null;
+      postalCode?: string | null;
+      city?: string | null;
+    }
   ): Promise<void> {
     await this.prismaClient.resourceBooking.updateMany({
       where: { uid, status: ResourceBookingStatus.PENDING },
@@ -268,6 +277,13 @@ export class ResourceBookingRepository {
         ...(data.country?.trim() ? { bookerCountry: data.country } : {}),
         ...(data.vatNumber?.trim() ? { bookerVatNumber: data.vatNumber } : {}),
         ...(data.name?.trim() ? { bookerName: data.name } : {}),
+        // The postal address Stripe collected. Only ever written, never blanked,
+        // for the same reason as the fields above.
+        ...(data.legalName?.trim() ? { bookerLegalName: data.legalName } : {}),
+        ...(data.addressLine1?.trim() ? { bookerAddressLine1: data.addressLine1 } : {}),
+        ...(data.addressLine2?.trim() ? { bookerAddressLine2: data.addressLine2 } : {}),
+        ...(data.postalCode?.trim() ? { bookerPostalCode: data.postalCode } : {}),
+        ...(data.city?.trim() ? { bookerCity: data.city } : {}),
       },
     });
   }
@@ -319,6 +335,11 @@ export class ResourceBookingRepository {
         bookerUserId: true,
         bookerCountry: true,
         bookerVatNumber: true,
+        bookerLegalName: true,
+        bookerAddressLine1: true,
+        bookerAddressLine2: true,
+        bookerPostalCode: true,
+        bookerCity: true,
         amountTotal: true,
         currency: true,
         stripePaymentId: true,
@@ -477,6 +498,13 @@ export class ResourceBookingRepository {
         bookerEmail: true,
         bookerCountry: true,
         bookerVatNumber: true,
+        // Present on counter sales, where Stripe collected the address because
+        // there is no billing profile to take it from.
+        bookerLegalName: true,
+        bookerAddressLine1: true,
+        bookerAddressLine2: true,
+        bookerPostalCode: true,
+        bookerCity: true,
         amountTotal: true,
         currency: true,
         invoiceNumber: true,

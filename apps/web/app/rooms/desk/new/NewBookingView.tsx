@@ -1,13 +1,14 @@
 "use client";
 
+import { COUNTRY_OPTIONS } from "@calcom/features/ne26-rooms/lib/countries";
 import { trpc } from "@calcom/trpc/react";
-import { ExternalLink, Info } from "lucide-react";
+import { Check, ExternalLink, Info, Minus, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 
-const inputClass =
-  "mt-1 w-full rounded-lg border border-gray-200 px-4 py-3 text-base focus:border-[#000643] focus:outline-none";
-
 type Duration = 1 | 2 | 3;
+
+const field =
+  "mt-1 w-full rounded-lg border border-gray-200 px-4 py-3 text-base focus:border-[#000643] focus:outline-none";
 
 function time(iso: string): string {
   return new Intl.DateTimeFormat("en-GB", {
@@ -28,244 +29,413 @@ function dayLabel(date: string): string {
   }).format(new Date(Date.UTC(y, m - 1, d)));
 }
 
+/** A choice big enough to hit on a tablet without looking. */
+function Choice({
+  active,
+  onClick,
+  children,
+  sub,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  sub?: string;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl border px-4 py-3 text-left transition ${
+        active
+          ? "border-[#000643] bg-[#000643] text-white"
+          : "border-gray-200 bg-white text-[#000643] hover:border-[#000643]"
+      }`}>
+      <span className="block font-medium text-sm">{children}</span>
+      {sub ? (
+        <span className={`block text-xs ${active ? "text-white/70" : "text-gray-500"}`}>{sub}</span>
+      ) : null}
+    </button>
+  );
+}
+
+function Step({
+  n,
+  title,
+  children,
+}: {
+  n: number;
+  title: string;
+  children: React.ReactNode;
+}): JSX.Element {
+  return (
+    <section className="mt-6">
+      <h2 className="flex items-center gap-2 font-semibold text-[#000643] text-sm uppercase tracking-wide">
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#000643] text-white text-xs">
+          {n}
+        </span>
+        {title}
+      </h2>
+      <div className="mt-3">{children}</div>
+    </section>
+  );
+}
+
 export default function NewBookingView(): JSX.Element {
   const availability = trpc.viewer.rooms.deskAvailability.useQuery();
-  const [email, setEmail] = useState("");
-  const [slug, setSlug] = useState("");
-  const [date, setDate] = useState("");
-  const [startUtc, setStartUtc] = useState("");
-  const [duration, setDuration] = useState<Duration>(1);
-  const [addOns, setAddOns] = useState<Record<string, number>>({});
-
   const create = trpc.viewer.rooms.deskCreateBooking.useMutation();
+
+  const [date, setDate] = useState("");
+  const [slug, setSlug] = useState("");
+  const [duration, setDuration] = useState<Duration>(1);
+  const [startUtc, setStartUtc] = useState("");
+  const [addOns, setAddOns] = useState<Record<string, number>>({});
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [country, setCountry] = useState("");
+  const [vatNumber, setVatNumber] = useState("");
 
   const rooms = availability.data?.rooms ?? [];
   const catalogue = availability.data?.addOns ?? [];
-  const room = useMemo(() => rooms.find((r) => r.room.slug === slug), [rooms, slug]);
-  const days = room?.days ?? [];
-  const day = days.find((d) => d.date === date);
 
-  // Only starts that can actually fit the chosen duration — the same rule the
-  // public page applies, so the desk cannot create something a buyer could not.
+  // Every day the event runs, taken from the first room — they all share the
+  // event calendar.
+  const days = rooms[0]?.days ?? [];
+  const room = useMemo(() => rooms.find((r) => r.room.slug === slug), [rooms, slug]);
+  const day = room?.days.find((d) => d.date === date);
   const starts = (day?.starts ?? []).filter((s) => s.availableDurations.includes(duration));
 
+  /** Other rooms with something free that day, when this one has nothing. */
+  const alternatives = useMemo(() => {
+    if (!date || !rooms.length) return [];
+    return rooms
+      .filter((r) => r.room.slug !== slug)
+      .map((r) => ({
+        room: r.room,
+        starts: (r.days.find((d) => d.date === date)?.starts ?? []).filter((s) =>
+          s.availableDurations.includes(duration)
+        ),
+      }))
+      .filter((r) => r.starts.length > 0);
+  }, [rooms, slug, date, duration]);
+
+  /** Shorter stays in this same room, when the requested duration will not fit. */
+  const shorterHere = useMemo(() => {
+    if (!day) return [];
+    return ([1, 2] as Duration[])
+      .filter((d) => d < duration)
+      .map((d) => ({ duration: d, count: day.starts.filter((s) => s.availableDurations.includes(d)).length }))
+      .filter((o) => o.count > 0);
+  }, [day, duration]);
+
   function reset(): void {
-    setEmail("");
-    setSlug("");
     setDate("");
-    setStartUtc("");
+    setSlug("");
     setDuration(1);
+    setStartUtc("");
     setAddOns({});
+    setName("");
+    setEmail("");
+    setCountry("");
+    setVatNumber("");
     create.reset();
+  }
+
+  function bump(addOnSlug: string, by: number): void {
+    setAddOns((prev) => {
+      const next = { ...prev };
+      const value = (next[addOnSlug] ?? 0) + by;
+      if (value <= 0) delete next[addOnSlug];
+      else next[addOnSlug] = value;
+      return next;
+    });
   }
 
   if (create.data) {
     return (
       <div className="mx-auto max-w-lg text-center">
-        <h1 className="font-bold text-2xl text-[#000643]">Room held — awaiting payment</h1>
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-100 text-green-700">
+          <Check className="h-7 w-7" aria-hidden />
+        </div>
+        <h1 className="mt-4 font-bold text-2xl text-[#000643]">Room held — awaiting payment</h1>
         <p className="mt-2 text-gray-600 text-sm">
-          The room is reserved for {email} for the next 35 minutes. It is only theirs once the payment
-          goes through.
+          Held for {name} for the next 35 minutes. It is only theirs once the payment goes through.
         </p>
 
         <a
           href={create.data.checkoutUrl}
-          className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#000643] px-5 py-4 font-medium text-base text-white transition hover:bg-[#000643]/90">
+          className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#000643] px-5 py-4 font-medium text-base text-white transition hover:bg-[#000643]/90">
           <ExternalLink className="h-5 w-5 shrink-0" aria-hidden />
           Open the payment page
         </a>
 
-        <div className="mt-5 flex items-start gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-left">
+        <div className="mt-5 flex items-start gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-left">
           <Info className="mt-0.5 h-5 w-5 shrink-0 text-[#000643]" aria-hidden />
           <p className="text-gray-600 text-sm">
-            They can also pay from their own phone: it is waiting under{" "}
-            <span className="font-medium text-[#000643]">My bookings</span> in their account. If nobody
-            pays within 35 minutes the room goes back on sale on its own.
+            They pay on this tablet, or hand it to them to type their own card. If nobody pays within 35
+            minutes the room goes back on sale by itself.
           </p>
         </div>
 
         <button
           type="button"
           onClick={reset}
-          className="mt-6 rounded-lg border border-gray-200 px-5 py-3 font-medium text-[#000643] text-sm transition hover:border-[#000643]">
+          className="mt-6 rounded-xl border border-gray-200 px-5 py-3 font-medium text-[#000643] text-sm">
           Start another booking
         </button>
       </div>
     );
   }
 
+  const ready = Boolean(startUtc && name.trim() && email.trim() && country);
+
   return (
-    <div className="mx-auto max-w-lg">
+    <div className="mx-auto max-w-2xl pb-24">
       <h1 className="font-bold text-2xl text-[#000643]">New booking</h1>
-      <p className="mt-1 text-gray-600 text-sm">
-        For someone at the counter. They need an account with their billing details already filled in —
-        those go on the invoice, so they cannot be entered here.
-      </p>
 
-      <form
-        className="mt-5 space-y-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          create.mutate({
-            exhibitorEmail: email,
-            slug,
-            startUtc,
-            durationHours: duration,
-            addOns: Object.entries(addOns)
-              .filter(([, q]) => q > 0)
-              .map(([s, quantity]) => ({ slug: s, quantity })),
-          });
-        }}>
-        <label className="block">
-          <span className="font-medium text-gray-700 text-sm">Exhibitor email</span>
-          <input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="them@company.com"
-            className={inputClass}
-          />
-        </label>
+      <Step n={1} title="Which day">
+        <div className="grid grid-cols-3 gap-2">
+          {days.map((d) => (
+            <Choice
+              key={d.date}
+              active={date === d.date}
+              onClick={() => {
+                setDate(d.date);
+                setStartUtc("");
+              }}>
+              {dayLabel(d.date)}
+            </Choice>
+          ))}
+        </div>
+      </Step>
 
-        <label className="block">
-          <span className="font-medium text-gray-700 text-sm">Room</span>
-          <select
-            required
-            value={slug}
-            onChange={(e) => {
-              setSlug(e.target.value);
-              setDate("");
-              setStartUtc("");
-            }}
-            className={inputClass}>
-            <option value="">Choose a room…</option>
-            {rooms.map((r) => (
-              <option key={r.room.slug} value={r.room.slug}>
-                {r.room.name} — {r.room.capacity} people
-              </option>
-            ))}
-          </select>
-        </label>
+      {date ? (
+        <Step n={2} title="Which room">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {rooms.map((r) => {
+              const free = (r.days.find((d) => d.date === date)?.starts ?? []).filter((s) =>
+                s.availableDurations.includes(duration)
+              ).length;
+              return (
+                <Choice
+                  key={r.room.slug}
+                  active={slug === r.room.slug}
+                  onClick={() => {
+                    setSlug(r.room.slug);
+                    setStartUtc("");
+                  }}
+                  sub={`${r.room.capacity} people · ${free} slot${free === 1 ? "" : "s"} free`}>
+                  {r.room.name}
+                </Choice>
+              );
+            })}
+          </div>
+        </Step>
+      ) : null}
 
-        <div>
-          <span className="font-medium text-gray-700 text-sm">Duration</span>
-          <div className="mt-1 flex gap-2">
+      {slug ? (
+        <Step n={3} title="How long">
+          <div className="grid grid-cols-3 gap-2">
             {([1, 2, 3] as Duration[]).map((d) => (
-              <button
+              <Choice
                 key={d}
-                type="button"
+                active={duration === d}
                 onClick={() => {
                   setDuration(d);
                   setStartUtc("");
-                }}
-                className={`flex-1 rounded-lg border px-4 py-3 font-medium text-sm transition ${
-                  duration === d
-                    ? "border-[#000643] bg-[#000643] text-white"
-                    : "border-gray-200 bg-white text-[#000643] hover:border-[#000643]"
-                }`}>
+                }}>
                 {d}h
-              </button>
+              </Choice>
             ))}
           </div>
-        </div>
+        </Step>
+      ) : null}
 
-        <label className="block">
-          <span className="font-medium text-gray-700 text-sm">Day</span>
-          <select
-            required
-            disabled={!room}
-            value={date}
-            onChange={(e) => {
-              setDate(e.target.value);
-              setStartUtc("");
-            }}
-            className={inputClass}>
-            <option value="">Choose a day…</option>
-            {days.map((d) => (
-              <option key={d.date} value={d.date}>
-                {dayLabel(d.date)}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="block">
-          <span className="font-medium text-gray-700 text-sm">Start time</span>
-          <select
-            required
-            disabled={!day}
-            value={startUtc}
-            onChange={(e) => setStartUtc(e.target.value)}
-            className={inputClass}>
-            <option value="">Choose a time…</option>
-            {starts.map((s) => (
-              <option key={s.startUtc} value={s.startUtc}>
-                {time(s.startUtc)}
-              </option>
-            ))}
-          </select>
-          {day && !starts.length ? (
-            <span className="mt-1 block text-amber-700 text-xs">
-              Nothing free for {duration}h on this day. Try a shorter booking or another day.
-            </span>
-          ) : null}
-        </label>
-
-        {catalogue.length ? (
-          <fieldset>
-            <legend className="font-medium text-gray-700 text-sm">Add-ons</legend>
-            <div className="mt-2 space-y-2">
-              {catalogue.map((addOn) => (
-                <label
-                  key={addOn.slug}
-                  className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(addOns[addOn.slug])}
-                    onChange={(e) =>
-                      setAddOns((prev) => {
-                        const next = { ...prev };
-                        if (e.target.checked) next[addOn.slug] = 1;
-                        else delete next[addOn.slug];
-                        return next;
-                      })
-                    }
-                    className="h-5 w-5"
-                  />
-                  <span className="min-w-0 flex-1 text-sm">{addOn.name}</span>
-                  {addOns[addOn.slug] ? (
-                    <input
-                      type="number"
-                      min={1}
-                      value={addOns[addOn.slug]}
-                      onChange={(e) =>
-                        setAddOns((prev) => ({
-                          ...prev,
-                          [addOn.slug]: Math.max(1, Number(e.target.value) || 1),
-                        }))
-                      }
-                      aria-label={`Quantity for ${addOn.name}`}
-                      className="w-20 rounded-lg border border-gray-200 px-2 py-1.5 text-sm"
-                    />
-                  ) : null}
-                </label>
+      {slug && date ? (
+        <Step n={4} title="Which time">
+          {starts.length ? (
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+              {starts.map((s) => (
+                <Choice key={s.startUtc} active={startUtc === s.startUtc} onClick={() => setStartUtc(s.startUtc)}>
+                  {time(s.startUtc)}
+                </Choice>
               ))}
             </div>
-          </fieldset>
-        ) : null}
+          ) : (
+            // Nothing free is where a counter sale is lost, so offer the way out
+            // rather than a dead end: the same room for less time, or another
+            // room at the length they asked for.
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p className="font-medium text-amber-900 text-sm">
+                Nothing free for {duration}h in {room?.room.name} on {dayLabel(date)}.
+              </p>
 
-        {create.error ? (
-          <p className="rounded-lg bg-red-50 px-3 py-2 text-red-700 text-sm">{create.error.message}</p>
-        ) : null}
+              {shorterHere.length ? (
+                <div className="mt-3">
+                  <p className="text-amber-800 text-xs">Same room, shorter:</p>
+                  <div className="mt-1.5 flex flex-wrap gap-2">
+                    {shorterHere.map((o) => (
+                      <button
+                        key={o.duration}
+                        type="button"
+                        onClick={() => {
+                          setDuration(o.duration);
+                          setStartUtc("");
+                        }}
+                        className="rounded-lg border border-amber-300 bg-white px-3 py-2 font-medium text-[#000643] text-sm">
+                        {o.duration}h — {o.count} free
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
-        <button
-          type="submit"
-          disabled={create.isPending || !startUtc}
-          className="w-full rounded-lg bg-[#000643] px-5 py-4 font-medium text-base text-white transition hover:bg-[#000643]/90 disabled:opacity-50">
-          {create.isPending ? "Holding the room…" : "Hold the room and go to payment"}
-        </button>
-      </form>
+              {alternatives.length ? (
+                <div className="mt-3">
+                  <p className="text-amber-800 text-xs">Other rooms, same day, {duration}h:</p>
+                  <div className="mt-1.5 flex flex-wrap gap-2">
+                    {alternatives.map((alt) => (
+                      <button
+                        key={alt.room.slug}
+                        type="button"
+                        onClick={() => {
+                          setSlug(alt.room.slug);
+                          setStartUtc("");
+                        }}
+                        className="rounded-lg border border-amber-300 bg-white px-3 py-2 font-medium text-[#000643] text-sm">
+                        {alt.room.name} — {alt.starts.length} free
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {!shorterHere.length && !alternatives.length ? (
+                <p className="mt-2 text-amber-800 text-sm">Nothing free anywhere that day at {duration}h.</p>
+              ) : null}
+            </div>
+          )}
+        </Step>
+      ) : null}
+
+      {startUtc && catalogue.length ? (
+        <Step n={5} title="Add-ons">
+          <div className="space-y-2">
+            {catalogue.map((addOn) => {
+              const quantity = addOns[addOn.slug] ?? 0;
+              return (
+                <div
+                  key={addOn.slug}
+                  className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
+                  <span className="min-w-0 flex-1 text-sm">{addOn.name}</span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => bump(addOn.slug, -1)}
+                      disabled={quantity === 0}
+                      aria-label={`One fewer ${addOn.name}`}
+                      className="flex h-11 w-11 items-center justify-center rounded-lg border border-gray-200 text-[#000643] disabled:opacity-30">
+                      <Minus className="h-4 w-4" aria-hidden />
+                    </button>
+                    <span className="w-8 text-center font-semibold text-[#000643]">{quantity}</span>
+                    <button
+                      type="button"
+                      onClick={() => bump(addOn.slug, 1)}
+                      aria-label={`One more ${addOn.name}`}
+                      className="flex h-11 w-11 items-center justify-center rounded-lg border border-gray-200 text-[#000643]">
+                      <Plus className="h-4 w-4" aria-hidden />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Step>
+      ) : null}
+
+      {startUtc ? (
+        <Step n={6} title="Who is booking">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="sm:col-span-2">
+              <span className="font-medium text-gray-700 text-sm">Name</span>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoComplete="name"
+                className={field}
+              />
+            </label>
+            <label className="sm:col-span-2">
+              <span className="font-medium text-gray-700 text-sm">Email</span>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                className={field}
+              />
+              <span className="mt-1 block text-gray-500 text-xs">The invoice goes here.</span>
+            </label>
+            <label>
+              <span className="font-medium text-gray-700 text-sm">Billing country</span>
+              <select value={country} onChange={(e) => setCountry(e.target.value)} className={field}>
+                <option value="">Choose…</option>
+                {COUNTRY_OPTIONS.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="font-medium text-gray-700 text-sm">
+                VAT number <span className="text-gray-400">(optional)</span>
+              </span>
+              <input
+                type="text"
+                value={vatNumber}
+                onChange={(e) => setVatNumber(e.target.value)}
+                className={field}
+              />
+            </label>
+          </div>
+          <p className="mt-2 text-gray-500 text-xs">
+            Country and VAT number decide the VAT charged, so they are needed before payment. The postal
+            address is collected on the payment page and goes on the invoice.
+          </p>
+        </Step>
+      ) : null}
+
+      {create.error ? (
+        <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-red-700 text-sm">{create.error.message}</p>
+      ) : null}
+
+      {/* Pinned: on a tablet the form is longer than the screen, and the action
+          should not be something you have to scroll to find. */}
+      {startUtc ? (
+        <div className="fixed inset-x-0 bottom-0 border-gray-200 border-t bg-white/95 p-3 backdrop-blur">
+          <div className="mx-auto max-w-2xl">
+            <button
+              type="button"
+              disabled={!ready || create.isPending}
+              onClick={() =>
+                create.mutate({
+                  exhibitorEmail: email.trim(),
+                  exhibitorName: name.trim(),
+                  country,
+                  vatNumber: vatNumber.trim() || undefined,
+                  slug,
+                  startUtc,
+                  durationHours: duration,
+                  addOns: Object.entries(addOns).map(([s, quantity]) => ({ slug: s, quantity })),
+                })
+              }
+              className="w-full rounded-xl bg-[#000643] px-5 py-4 font-medium text-base text-white transition hover:bg-[#000643]/90 disabled:opacity-40">
+              {create.isPending ? "Holding the room…" : "Hold the room and go to payment"}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
