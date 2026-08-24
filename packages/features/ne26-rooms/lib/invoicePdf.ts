@@ -256,11 +256,13 @@ export async function renderInvoicePdf(
   }
 
   // Totals — kept whole: a total split across a page break is unreadable.
-  ensureSpace(56 + model.vatBreakdown.length * 20);
-  y -= 12;
+  ensureSpace(64 + model.vatBreakdown.length * 20);
+  y -= 20;
   page.drawLine({
-    start: { x: colHt - 60, y: y + 8 },
-    end: { x: right, y: y + 8 },
+    // Well clear of the first figure: at 8pt above the baseline the rule sat
+    // almost on top of "Total excl. VAT" and read as an underline.
+    start: { x: colHt - 60, y: y + 22 },
+    end: { x: right, y: y + 22 },
     thickness: 0.5,
     color: GREY,
   });
