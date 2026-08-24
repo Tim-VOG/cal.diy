@@ -156,6 +156,46 @@ export const roomsRouter = router({
     return { rooms: availability, addOns };
   }),
 
+  /**
+   * The planning board: every room across one day, with what occupies it.
+   *
+   * Returns the day's 15-minute marks so the client draws exactly the columns
+   * the schedule actually opens, rather than assuming a window and disagreeing
+   * with availability at the edges.
+   */
+  deskPlanning: authedProcedure.input(ZDeskDayInputSchema).query(async ({ ctx, input }) => {
+    await requireDesk(ctx);
+    const { getResourceBookingRepository } = await import(
+      "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container"
+    );
+    const { getResourceRepository } = await import(
+      "@calcom/features/ne26-rooms/di/ResourceRepository.container"
+    );
+    const { getNe26RoomSettingsRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container"
+    );
+    const { brusselsDayBounds } = await import("@calcom/features/ne26-rooms/lib/deskDay");
+    const { buildEventSchedule } = await import("@calcom/features/ne26-rooms/lib/eventSchedule");
+
+    const { fromUtc, toUtc } = brusselsDayBounds(input.date);
+    const now = new Date();
+    const [rooms, settings, bookings] = await Promise.all([
+      getResourceRepository().findManyActive(),
+      getNe26RoomSettingsRepository().get(),
+      getResourceBookingRepository().findForPlanning(fromUtc, toUtc, now),
+    ]);
+
+    const day = buildEventSchedule(settings.eventDays).find((d) => d.date === input.date);
+    return {
+      date: input.date,
+      bufferMinutes: settings.bufferMinutes,
+      nowUtc: now.toISOString(),
+      slotMarksUtc: (day?.openSlotStartsUtc ?? []).map((d) => d.toISOString()),
+      rooms: rooms.map((r) => ({ slug: r.slug, name: r.name, category: r.category })),
+      bookings,
+    };
+  }),
+
   deskSearch: authedProcedure.input(ZDeskSearchInputSchema).query(async ({ ctx, input }) => {
     await requireDesk(ctx);
     const { getResourceBookingRepository } = await import(

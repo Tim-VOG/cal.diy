@@ -3,6 +3,7 @@
 import { COUNTRY_OPTIONS } from "@calcom/features/ne26-rooms/lib/countries";
 import { trpc } from "@calcom/trpc/react";
 import { Check, ExternalLink, Info, Minus, Plus } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
 type Duration = 1 | 2 | 3;
@@ -84,10 +85,14 @@ export default function NewBookingView(): JSX.Element {
   const availability = trpc.viewer.rooms.deskAvailability.useQuery();
   const create = trpc.viewer.rooms.deskCreateBooking.useMutation();
 
-  const [date, setDate] = useState("");
-  const [slug, setSlug] = useState("");
+  // Arriving from a click on the planning board: the room, day and time are
+  // already decided, so the form opens at "who is booking" rather than making
+  // the hostess re-pick what she just pointed at.
+  const params = useSearchParams();
+  const [date, setDate] = useState(() => params?.get("date") ?? "");
+  const [slug, setSlug] = useState(() => params?.get("slug") ?? "");
   const [duration, setDuration] = useState<Duration>(1);
-  const [startUtc, setStartUtc] = useState("");
+  const [startUtc, setStartUtc] = useState(() => params?.get("start") ?? "");
   const [addOns, setAddOns] = useState<Record<string, number>>({});
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");

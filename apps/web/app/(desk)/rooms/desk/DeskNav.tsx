@@ -1,12 +1,15 @@
 "use client";
 
-import { CalendarDays, Lock, PlusCircle, Search, ShieldCheck } from "lucide-react";
+import { CalendarDays, LayoutGrid, Lock, PlusCircle, Search, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 
 const TABS = [
   { href: "/rooms/desk", label: "Today", icon: CalendarDays },
+  // The board answers "what is free this afternoon"; the day list answers "who
+  // is arriving now". Both are needed, so neither replaces the other.
+  { href: "/rooms/desk/planning", label: "Planning", icon: LayoutGrid },
   { href: "/rooms/desk/search", label: "Find", icon: Search },
   { href: "/rooms/desk/new", label: "New", icon: PlusCircle },
 ];

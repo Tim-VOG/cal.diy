@@ -392,6 +392,40 @@ export class ResourceBookingRepository {
   }
 
   /**
+   * Everything occupying a room in a window, for the planning board.
+   *
+   * Bookings rather than atomic slots: the board has to draw the cleaning gap
+   * differently from the booking itself, and a flat list of taken 15-minute
+   * marks cannot tell the two apart. Held-but-unpaid bookings are included —
+   * the room genuinely is not sellable — and so are admin blocks, which are what
+   * a closed room looks like from the counter.
+   */
+  findForPlanning(fromUtc: Date, toUtc: Date, now: Date) {
+    return this.prismaClient.resourceBooking.findMany({
+      where: {
+        startTime: { lt: toUtc },
+        endTime: { gt: fromUtc },
+        OR: [
+          { status: ResourceBookingStatus.CONFIRMED },
+          { status: ResourceBookingStatus.PENDING, holdExpiresAt: { gt: now } },
+        ],
+      },
+      orderBy: [{ startTime: "asc" }],
+      select: {
+        uid: true,
+        startTime: true,
+        endTime: true,
+        durationMinutes: true,
+        bookerName: true,
+        status: true,
+        isBlock: true,
+        checkedInAt: true,
+        resource: { select: { slug: true, name: true, category: true } },
+      },
+    });
+  }
+
+  /**
    * Desk search across the whole event, for "I booked something, I forget when".
    * Matches the booker's name or email; the caller decides how many to show.
    */
