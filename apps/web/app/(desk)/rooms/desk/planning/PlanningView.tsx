@@ -2,7 +2,7 @@
 
 import { brusselsToday, shiftDay } from "@calcom/features/ne26-rooms/lib/deskDay";
 import { trpc } from "@calcom/trpc/react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -52,7 +52,13 @@ export default function PlanningView(): JSX.Element {
       const from = current ?? eventDays.data?.defaultDate ?? brusselsToday();
       return typeof next === "function" ? next(from) : next;
     });
-  const planning = trpc.viewer.rooms.deskPlanning.useQuery({ date });
+  // The board is left open on a laptop for the whole day, so it has to keep
+  // itself current: a hostess reading a stale grid sells a room that went ten
+  // minutes ago. Polling also keeps the "past" shading honest as the day moves.
+  const planning = trpc.viewer.rooms.deskPlanning.useQuery(
+    { date },
+    { refetchInterval: 30_000, refetchOnWindowFocus: true, refetchOnMount: "always" }
+  );
 
   const marks = planning.data?.slotMarksUtc ?? [];
   const rooms = planning.data?.rooms ?? [];
@@ -139,10 +145,26 @@ export default function PlanningView(): JSX.Element {
         </div>
       </div>
 
-      <h1 className="mt-4 font-bold text-2xl text-[#000643]">{dayLabel(date)}</h1>
-      <p className="mt-1 text-gray-600 text-sm">
-        Click any free slot to start a booking for it. Times are Brussels time.
-      </p>
+      <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="font-bold text-2xl text-[#000643]">{dayLabel(date)}</h1>
+          <p className="mt-1 text-gray-600 text-sm">
+            Click any free slot to start a booking for it. Times are Brussels time.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void planning.refetch()}
+          disabled={planning.isFetching}
+          className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-gray-600 text-xs transition hover:border-[#000643] hover:text-[#000643] disabled:opacity-50">
+          <RefreshCw className={`h-3.5 w-3.5 ${planning.isFetching ? "animate-spin" : ""}`} aria-hidden />
+          {planning.isFetching
+            ? "Refreshing…"
+            : planning.data
+              ? `Updated ${hhmm(planning.data.nowUtc)}`
+              : "Refresh"}
+        </button>
+      </div>
 
       {planning.isPending ? (
         <p className="mt-6 text-gray-500 text-sm">Loading…</p>

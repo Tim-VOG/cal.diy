@@ -32,7 +32,13 @@ export default function DayView(): JSX.Element {
       const from = current ?? eventDays.data?.defaultDate ?? brusselsToday();
       return typeof next === "function" ? next(from) : next;
     });
-  const bookings = trpc.viewer.rooms.deskDay.useQuery({ date });
+  // Same reason as the planning board: the tablet sits open on the counter all
+  // day, and an arrival list that stopped updating an hour ago is worse than no
+  // list at all.
+  const bookings = trpc.viewer.rooms.deskDay.useQuery(
+    { date },
+    { refetchInterval: 30_000, refetchOnWindowFocus: true, refetchOnMount: "always" }
+  );
   const checkIn = trpc.viewer.rooms.deskCheckIn.useMutation({
     onSuccess: () => void bookings.refetch(),
   });
