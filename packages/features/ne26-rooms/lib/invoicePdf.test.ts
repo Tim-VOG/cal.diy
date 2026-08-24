@@ -132,6 +132,64 @@ describe("renderInvoicePdf", () => {
   });
 });
 
+describe("renderInvoicePdf — the buyer's own references", () => {
+  const ISSUER = {
+    legalName: "VO EUROPE SA",
+    vatNumber: "BE 0123.456.789",
+    addressLine1: "Rue Example 1",
+    addressLine2: "",
+    postalCode: "1000",
+    city: "Brussels",
+    country: "Belgium",
+    iban: "",
+    bic: "",
+    legalFooter: "",
+    footerColumn1: "",
+    footerColumn2: "",
+    footerColumn3: "",
+  };
+  const META = {
+    invoiceNumber: "NE26-2026-0200",
+    issueDate: new Date("2026-11-17T09:00:00.000Z"),
+    bookerName: "Jane Exhibitor",
+    bookerEmail: "jane@example.com",
+    roomName: "Suite 1",
+    startUtc: new Date("2026-11-17T13:00:00.000Z"),
+    endUtc: new Date("2026-11-17T15:00:00.000Z"),
+  };
+  const model = () =>
+    buildInvoiceModel({
+      amountTotal: 60000,
+      currency: "EUR",
+      roomName: "Suite 1",
+      durationMinutes: 120,
+      slotLabel: "Tue, 17 Nov 2026, 14:00-16:00 (Europe/Brussels)",
+      addOns: [],
+    });
+
+  it("renders with both references", async () => {
+    const bytes = await renderInvoicePdf(
+      model(),
+      { ...META, poNumber: "4471", internalReference: "COST-88" },
+      ISSUER
+    );
+    expect(new TextDecoder().decode(bytes.slice(0, 5))).toBe("%PDF-");
+  });
+
+  it("renders when they are absent, blank, or whitespace", async () => {
+    // An empty reference must print nothing at all — a dangling "PO" label on a
+    // VAT invoice reads as a document that failed to render.
+    for (const refs of [
+      {},
+      { poNumber: "", internalReference: "" },
+      { poNumber: "   ", internalReference: null },
+    ]) {
+      const bytes = await renderInvoicePdf(model(), { ...META, ...refs }, ISSUER);
+      expect(new TextDecoder().decode(bytes.slice(0, 5))).toBe("%PDF-");
+    }
+  });
+});
+
 describe("toPdfText — legal names must survive the PDF fonts", () => {
   it("transliterates accents instead of deleting them", () => {
     // These went out on Belgian VAT invoices to international NATO exhibitors as

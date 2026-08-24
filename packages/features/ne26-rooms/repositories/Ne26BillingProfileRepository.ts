@@ -5,6 +5,8 @@ const profileSelect = {
   lastName: true,
   legalName: true,
   vatNumber: true,
+  poNumber: true,
+  internalReference: true,
   country: true,
   addressLine1: true,
   addressLine2: true,
@@ -17,6 +19,8 @@ export interface BillingProfile {
   lastName: string;
   legalName: string;
   vatNumber: string;
+  poNumber: string;
+  internalReference: string;
   country: string;
   addressLine1: string;
   addressLine2: string;

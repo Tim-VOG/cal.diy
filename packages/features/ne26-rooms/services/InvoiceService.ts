@@ -5,6 +5,7 @@ import type { InvoiceMeta } from "../lib/invoicePdf";
 import { renderInvoicePdf } from "../lib/invoicePdf";
 import { readInvoicePdf, saveInvoicePdf } from "../lib/invoiceStorage";
 import { sendInvoiceEmail } from "../lib/mailer";
+import { formatSlotRange } from "../lib/teamNotification";
 import { resolveVatTreatment } from "../lib/vat";
 import type { InvoiceSettingsRepository } from "../repositories/InvoiceSettingsRepository";
 import type { Ne26BillingProfileRepository } from "../repositories/Ne26BillingProfileRepository";
@@ -77,6 +78,7 @@ export class InvoiceService {
         currency: booking.currency,
         roomName: booking.resource.name,
         durationMinutes: booking.durationMinutes,
+        slotLabel: formatSlotRange(booking.startTime, booking.endTime),
         addOns: booking.addOns.map((a) => ({
           name: a.addOn.name,
           quantity: a.quantity,
@@ -104,6 +106,8 @@ export class InvoiceService {
         paidViaStripe: Boolean(booking.stripePaymentId),
         bookerName: booking.bookerName,
         bookerEmail: booking.bookerEmail,
+        poNumber: booking.bookerPoNumber,
+        internalReference: booking.bookerInternalReference,
         billTo,
         roomName: booking.resource.name,
         startUtc: booking.startTime,
@@ -186,6 +190,7 @@ export class InvoiceService {
         currency: booking.currency,
         roomName: booking.resource.name,
         durationMinutes: booking.durationMinutes,
+        slotLabel: formatSlotRange(booking.startTime, booking.endTime),
         addOns: booking.addOns.map((a) => ({
           name: a.addOn.name,
           quantity: a.quantity,
@@ -219,6 +224,8 @@ export class InvoiceService {
         issueDate,
         bookerName: booking.bookerName,
         bookerEmail: booking.bookerEmail,
+        poNumber: booking.bookerPoNumber,
+        internalReference: booking.bookerInternalReference,
         billTo,
         roomName: booking.resource.name,
         startUtc: booking.startTime,

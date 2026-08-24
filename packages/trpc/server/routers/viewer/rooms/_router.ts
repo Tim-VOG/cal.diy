@@ -280,7 +280,12 @@ export const roomsRouter = router({
         startUtc: new Date(input.startUtc),
         durationHours: input.durationHours,
         addOns: input.addOns,
-        billing: { country: input.country, vatNumber: input.vatNumber ?? null },
+        billing: {
+          country: input.country,
+          vatNumber: input.vatNumber ?? null,
+          poNumber: input.poNumber ?? null,
+          internalReference: input.internalReference ?? null,
+        },
         webappUrl: WEBAPP_URL,
         cancelPath: "/rooms/desk/new",
         // Back to the counter, not the public confirmation page: the hostess is

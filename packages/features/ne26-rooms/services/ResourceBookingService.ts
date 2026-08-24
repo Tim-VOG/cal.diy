@@ -54,7 +54,12 @@ export interface CreateBookingInput {
   addOns?: { slug: string; quantity: number }[];
   /** Billing from the exhibitor's saved profile; seeds the invoice VAT. Stripe
    * confirms it at checkout and the webhook syncs any change back. */
-  billing?: { country?: string | null; vatNumber?: string | null };
+  billing?: {
+    country?: string | null;
+    vatNumber?: string | null;
+    poNumber?: string | null;
+    internalReference?: string | null;
+  };
 }
 
 export interface CheckoutLine {
@@ -151,6 +156,8 @@ export class ResourceBookingService {
       bookerName: input.booker.name,
       bookerCountry: input.billing?.country ?? null,
       bookerVatNumber: input.billing?.vatNumber ?? null,
+      bookerPoNumber: input.billing?.poNumber ?? null,
+      bookerInternalReference: input.billing?.internalReference ?? null,
       amountTotal,
       currency: room.currency,
       status: ResourceBookingStatus.PENDING,

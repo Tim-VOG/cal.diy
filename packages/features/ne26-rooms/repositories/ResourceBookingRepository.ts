@@ -15,6 +15,8 @@ export interface CreateResourceBookingWithSlotsInput {
   bookerName: string;
   bookerUserId?: number | null;
   bookerCountry?: string | null;
+  bookerPoNumber?: string | null;
+  bookerInternalReference?: string | null;
   bookerVatNumber?: string | null;
   amountTotal: number;
   currency?: string;
@@ -81,6 +83,8 @@ export class ResourceBookingRepository {
             bookerEmail: input.bookerEmail,
             bookerName: input.bookerName,
             bookerUserId: input.bookerUserId ?? null,
+            bookerPoNumber: input.bookerPoNumber ?? null,
+            bookerInternalReference: input.bookerInternalReference ?? null,
             bookerCountry: input.bookerCountry ?? null,
             bookerVatNumber: input.bookerVatNumber ?? null,
             amountTotal: input.amountTotal,
@@ -532,6 +536,8 @@ export class ResourceBookingRepository {
         bookerEmail: true,
         bookerCountry: true,
         bookerVatNumber: true,
+        bookerPoNumber: true,
+        bookerInternalReference: true,
         // Present on counter sales, where Stripe collected the address because
         // there is no billing profile to take it from.
         bookerLegalName: true,

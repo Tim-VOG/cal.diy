@@ -22,7 +22,12 @@ export interface StartCheckoutInput {
    * because they decide the rate Stripe is about to charge; leaving them to be
    * discovered at Checkout would mean charging one rate and invoicing another.
    */
-  billing?: { country?: string | null; vatNumber?: string | null };
+  billing?: {
+    country?: string | null;
+    vatNumber?: string | null;
+    poNumber?: string | null;
+    internalReference?: string | null;
+  };
   webappUrl: string;
   /** Where Stripe returns the buyer if they abandon. */
   cancelPath: string;
@@ -93,7 +98,14 @@ export async function startCheckout(input: StartCheckoutInput) {
     },
     addOns: input.addOns,
     billing: input.billing ??
-      (profile ? { country: profile.country || null, vatNumber: profile.vatNumber || null } : undefined),
+      (profile
+        ? {
+            country: profile.country || null,
+            vatNumber: profile.vatNumber || null,
+            poNumber: profile.poNumber || null,
+            internalReference: profile.internalReference || null,
+          }
+        : undefined),
   });
 
   // Prices are excl. VAT: add VAT lines so Stripe charges the VAT-inclusive

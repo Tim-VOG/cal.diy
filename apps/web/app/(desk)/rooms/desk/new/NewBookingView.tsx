@@ -98,6 +98,8 @@ export default function NewBookingView(): JSX.Element {
   const [email, setEmail] = useState("");
   const [country, setCountry] = useState("");
   const [vatNumber, setVatNumber] = useState("");
+  const [poNumber, setPoNumber] = useState("");
+  const [internalReference, setInternalReference] = useState("");
 
   const rooms = availability.data?.rooms ?? [];
   const catalogue = availability.data?.addOns ?? [];
@@ -142,6 +144,8 @@ export default function NewBookingView(): JSX.Element {
     setEmail("");
     setCountry("");
     setVatNumber("");
+    setPoNumber("");
+    setInternalReference("");
     create.reset();
   }
 
@@ -403,6 +407,28 @@ export default function NewBookingView(): JSX.Element {
                 className={field}
               />
             </label>
+            <label>
+              <span className="font-medium text-gray-700 text-sm">
+                PO number <span className="text-gray-400">(optional)</span>
+              </span>
+              <input
+                type="text"
+                value={poNumber}
+                onChange={(e) => setPoNumber(e.target.value)}
+                className={field}
+              />
+            </label>
+            <label>
+              <span className="font-medium text-gray-700 text-sm">
+                Internal reference <span className="text-gray-400">(optional)</span>
+              </span>
+              <input
+                type="text"
+                value={internalReference}
+                onChange={(e) => setInternalReference(e.target.value)}
+                className={field}
+              />
+            </label>
           </div>
           <p className="mt-2 text-gray-500 text-xs">
             Country and VAT number decide the VAT charged, so they are needed before payment. The postal
@@ -429,6 +455,8 @@ export default function NewBookingView(): JSX.Element {
                   exhibitorName: name.trim(),
                   country,
                   vatNumber: vatNumber.trim() || undefined,
+                  poNumber: poNumber.trim() || undefined,
+                  internalReference: internalReference.trim() || undefined,
                   slug,
                   startUtc,
                   durationHours: duration,

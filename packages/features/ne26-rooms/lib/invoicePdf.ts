@@ -20,6 +20,9 @@ export interface InvoiceMeta {
   paidViaStripe?: boolean;
   /** For a credit note: the invoice number it cancels. */
   relatedInvoiceNumber?: string;
+  /** The buyer's own references. Printed only when they gave one. */
+  poNumber?: string | null;
+  internalReference?: string | null;
   /** Customer billing details for the "Bill to" block (legal name + address). */
   billTo?: {
     legalName?: string | null;
@@ -145,30 +148,6 @@ export async function renderInvoicePdf(
   const textRight = (s: string, xRight: number, yy: number, size = 10, f = font, color = rgb(0, 0, 0)) =>
     page.drawText(ascii(s), { x: xRight - f.widthOfTextAtSize(ascii(s), size), y: yy, size, font: f, color });
 
-  // Tiny vector icons (navy) for the booking block — pdf-lib has no icon font.
-  const clockIcon = (x: number, cy: number) => {
-    const r = 4.5;
-    page.drawEllipse({ x: x + r, y: cy, xScale: r, yScale: r, borderColor: NAVY, borderWidth: 0.8 });
-    page.drawLine({
-      start: { x: x + r, y: cy },
-      end: { x: x + r, y: cy + r - 1 },
-      thickness: 0.8,
-      color: NAVY,
-    });
-    page.drawLine({
-      start: { x: x + r, y: cy },
-      end: { x: x + r + r - 1.5, y: cy },
-      thickness: 0.8,
-      color: NAVY,
-    });
-  };
-  const roomIcon = (x: number, yBottom: number) => {
-    const w = 9;
-    const h = 9;
-    page.drawRectangle({ x, y: yBottom, width: w, height: h, borderColor: NAVY, borderWidth: 0.8 });
-    page.drawRectangle({ x: x + w / 2 - 1.1, y: yBottom, width: 2.2, height: h * 0.55, color: NAVY });
-  };
-
   // Everything below this belongs to the footer; content must not run into it.
   const FOOTER_TOP = 150;
   const ensureSpace = (needed: number) => {
@@ -236,30 +215,17 @@ export async function renderInvoicePdf(
     y -= 12;
   }
 
-  // What was bought, stated before the money. Reading the totals first and
-  // hunting for the room afterwards is the wrong way round for the person
-  // checking the invoice against their diary.
-  y -= 30;
-  const bTop = y;
-  const bBottom = y - 54;
-  page.drawRectangle({
-    x: left,
-    y: bBottom,
-    width: right - left,
-    height: bTop - bBottom,
-    color: rgb(0.95, 0.96, 1),
-    borderColor: NAVY,
-    borderWidth: 0.6,
-  });
-  let by = bTop - 15;
-  text("BOOKING", left + 14, by, 8, bold, NAVY);
-  by -= 18;
-  roomIcon(left + 14, by - 1);
-  text(meta.roomName, left + 30, by, 11, bold, NAVY);
-  by -= 15;
-  clockIcon(left + 14, by + 3);
-  text(`${dt(meta.startUtc)} to ${dt(meta.endUtc)} (Europe/Brussels)`, left + 30, by, 9, font, GREY);
-  y = bBottom;
+  // The buyer's own references, when they gave any. An empty one prints nothing
+  // rather than a dangling label — most exhibitors have neither.
+  const references = [
+    meta.poNumber?.trim() ? `PO ${meta.poNumber.trim()}` : "",
+    meta.internalReference?.trim() ? `Ref. ${meta.internalReference.trim()}` : "",
+  ].filter(Boolean);
+  if (references.length) {
+    y -= 4;
+    text(references.join("    "), left, y, 9, bold);
+    y -= 12;
+  }
 
   // Table header
   y -= 26;
@@ -275,17 +241,23 @@ export async function renderInvoicePdf(
 
   // Lines
   for (const line of model.lines) {
-    ensureSpace(18);
+    ensureSpace(line.sublabel ? 30 : 18);
     text(line.label, left + 6, y, 9);
     textRight(pct(line.vatRate), colVat, y, 9);
     textRight(amt(line.ht), colHt, y, 9);
     textRight(amt(line.totalTtc), colTtc, y, 9);
-    y -= 18;
+    if (line.sublabel) {
+      y -= 11;
+      text(line.sublabel, left + 6, y, 8, font, GREY);
+      y -= 19;
+    } else {
+      y -= 18;
+    }
   }
 
   // Totals — kept whole: a total split across a page break is unreadable.
-  ensureSpace(40 + model.vatBreakdown.length * 16);
-  y -= 6;
+  ensureSpace(56 + model.vatBreakdown.length * 20);
+  y -= 12;
   page.drawLine({
     start: { x: colHt - 60, y: y + 8 },
     end: { x: right, y: y + 8 },
@@ -294,12 +266,13 @@ export async function renderInvoicePdf(
   });
   textRight("Total excl. VAT", colHt, y, 9, font, GREY);
   textRight(amt(model.totalHt), colTtc, y, 9);
-  y -= 16;
+  y -= 20;
   for (const v of model.vatBreakdown) {
     textRight(`VAT ${pct(v.vatRate)}`, colHt, y, 9, font, GREY);
     textRight(amt(v.vat), colTtc, y, 9);
-    y -= 16;
+    y -= 20;
   }
+  y -= 4;
   textRight(isCredit ? "Total credited" : "Total incl. VAT", colHt, y, 12, bold, NAVY);
   textRight(amt(model.totalTtc), colTtc, y, 12, bold, NAVY);
 
@@ -307,7 +280,7 @@ export async function renderInvoicePdf(
   // grey at the foot of the page, so an exhibitor forwarding this to their
   // finance team had nothing telling them it was already settled — and finance
   // chasing a paid invoice is a phone call nobody needs during the event.
-  y -= 24;
+  y -= 28;
   const statusLabel = isCredit
     ? "REFUNDED"
     : meta.paidViaStripe === false

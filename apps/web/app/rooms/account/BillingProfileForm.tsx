@@ -15,7 +15,9 @@ type TextFieldKey =
   | "addressLine1"
   | "addressLine2"
   | "postalCode"
-  | "city";
+  | "city"
+  | "poNumber"
+  | "internalReference";
 
 // `optional` mirrors isBillingProfileComplete(): anything not marked optional is
 // required there, so the browser must refuse the submit rather than let the
@@ -40,6 +42,10 @@ const TEXT_FIELDS: {
   { key: "addressLine2", label: "Address line 2", full: true, optional: true, autoComplete: "address-line2" },
   { key: "postalCode", label: "Postal code", autoComplete: "postal-code" },
   { key: "city", label: "City", autoComplete: "address-level2" },
+  // Printed on the invoice when filled in. Some finance departments will not pay
+  // one without their own PO on it.
+  { key: "poNumber", label: "PO number", optional: true, autoComplete: "off" },
+  { key: "internalReference", label: "Internal reference", optional: true, autoComplete: "off" },
 ];
 
 const EMPTY: BillingProfile = {
@@ -47,6 +53,8 @@ const EMPTY: BillingProfile = {
   lastName: "",
   legalName: "",
   vatNumber: "",
+  poNumber: "",
+  internalReference: "",
   country: "",
   addressLine1: "",
   addressLine2: "",

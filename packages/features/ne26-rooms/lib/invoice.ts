@@ -5,6 +5,8 @@ export const ROOM_VAT_RATE_BP = 2100;
 
 export interface InvoiceLine {
   label: string;
+  /** Second, quieter line under the label — the slot the room was booked for. */
+  sublabel?: string;
   totalTtc: number; // cents, VAT-inclusive (what the buyer paid)
   vatRate: number; // basis points
   ht: number; // cents, excl. VAT
@@ -39,6 +41,8 @@ export interface InvoiceInput {
   currency: string;
   roomName: string;
   durationMinutes: number;
+  /** "Tue, 17 Nov 2026, 09:00-10:00 (Europe/Brussels)" — printed under the line. */
+  slotLabel?: string;
   /** Add-on lineTotal is HT (excl. VAT). */
   addOns: { name: string; quantity: number; lineTotal: number; vatRate: number }[];
   /**
@@ -60,17 +64,21 @@ export function buildInvoiceModel(input: InvoiceInput, vat?: VatTreatmentInput):
   const roomHt = input.amountTotal - addOnsHt;
   const zeroRated = vat?.zeroRated ?? false;
 
-  const lineFor = (label: string, ht: number, baseRate: number): InvoiceLine => {
-    if (zeroRated) return { label, totalTtc: ht, vatRate: 0, ht, vat: 0 };
+  const lineFor = (label: string, ht: number, baseRate: number, sublabel?: string): InvoiceLine => {
+    if (zeroRated) return { label, sublabel, totalTtc: ht, vatRate: 0, ht, vat: 0 };
     const vatAmount = Math.round((ht * baseRate) / 10000);
-    return { label, totalTtc: ht + vatAmount, vatRate: baseRate, ht, vat: vatAmount };
+    return { label, sublabel, totalTtc: ht + vatAmount, vatRate: baseRate, ht, vat: vatAmount };
   };
 
   const lines: InvoiceLine[] = [
     lineFor(
       `${input.roomName} — meeting room rental (${input.durationMinutes / 60}h)`,
       roomHt,
-      input.roomVatRate ?? ROOM_VAT_RATE_BP
+      input.roomVatRate ?? ROOM_VAT_RATE_BP,
+      // When the room was actually booked for. It used to sit in a highlighted
+      // block below the totals, which repeated the line above it and pushed the
+      // money down the page — it belongs with the thing being charged for.
+      input.slotLabel
     ),
   ];
   for (const addOn of input.addOns) {
