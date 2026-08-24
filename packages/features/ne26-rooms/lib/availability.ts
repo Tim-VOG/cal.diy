@@ -50,49 +50,65 @@ export function computeAvailability(
   schedule: readonly EventDaySchedule[] = EVENT_SCHEDULE
 ): EventDayAvailability[] {
   const taken = new Set(takenSlotStartsUtc.map((d) => d.getTime()));
-  const bufferCount = Math.max(0, Math.ceil((bufferMinutes * 60 * 1000) / SLOT_GRANULARITY_MS));
+  const bufferMs = Math.max(0, bufferMinutes) * 60 * 1000;
+  const bufferCount = Math.max(0, Math.ceil(bufferMs / SLOT_GRANULARITY_MS));
   const nowMs = now.getTime();
 
   return schedule.map((day) => {
     const openSlots = new Set(day.openSlotStartsUtc.map((d) => d.getTime()));
-    const dayOpenMs = day.openSlotStartsUtc[0]?.getTime() ?? 0;
+    const marks = day.openSlotStartsUtc.map((d) => d.getTime());
+    const lastMark = marks[marks.length - 1];
 
-    // Starts are offered on the hour, PLUS the first free slot after anything
-    // already booked.
+    /** Whether a booking of `duration` starting here is genuinely sellable. */
+    const fits = (startMs: number, duration: DurationHours): boolean => {
+      if (startMs < nowMs) return false;
+      const slotCount = (duration * MS_PER_HOUR) / SLOT_GRANULARITY_MS;
+      for (let i = 0; i < slotCount; i++) {
+        const slotMs = startMs + i * SLOT_GRANULARITY_MS;
+        if (!openSlots.has(slotMs) || taken.has(slotMs)) return false;
+      }
+      // The cleaning gap this booking would reserve must be free too. Existing
+      // bookings reserve their own, so this is symmetric: a new booking can
+      // never end flush against one already there.
+      const endMs = startMs + duration * MS_PER_HOUR;
+      for (let i = 0; i < bufferCount; i++) {
+        if (taken.has(endMs + i * SLOT_GRANULARITY_MS)) return false;
+      }
+      return true;
+    };
+
+    // Offered starts CHAIN: each one is the previous plus its duration plus the
+    // cleaning gap, so the times on offer are a run of bookings that can all
+    // actually happen one after another.
     //
-    // On the hour alone loses real inventory: with a 15-minute cleaning gap, a
-    // 09:00-10:00 booking occupies through 10:15, so the next hourly start that
-    // fits is 11:00 and the 10:15-11:15 hour is unsellable — even though the
-    // room is empty. Offering the moment the room frees up recovers it, and the
-    // grid stays short because these only appear where something ended.
-    const offered = day.openSlotStartsUtc.filter((d) => {
-      const ms = d.getTime();
-      if ((ms - dayOpenMs) % MS_PER_HOUR === 0) return true;
-      // Resumes right after an occupied run — never mid-run, since a taken slot
-      // is filtered out by the duration check below anyway.
-      return taken.has(ms - SLOT_GRANULARITY_MS) && !taken.has(ms);
-    });
+    // Listing every hour instead would advertise slots that undo each other —
+    // with a 15-minute gap, taking the 10:15 hour makes 11:00 impossible, yet
+    // both were shown. Walking the day per duration means the buyer only sees
+    // times that still work whichever of them they pick first, and the room is
+    // packed rather than left with unsellable 45-minute holes.
+    const durationsByStart = new Map<number, DurationHours[]>();
+    for (const duration of SELECTABLE_DURATIONS) {
+      let cursor = marks[0];
+      while (cursor !== undefined && lastMark !== undefined && cursor <= lastMark) {
+        if (fits(cursor, duration)) {
+          const list = durationsByStart.get(cursor) ?? [];
+          list.push(duration);
+          durationsByStart.set(cursor, list);
+          cursor += duration * MS_PER_HOUR + bufferMs;
+        } else {
+          // Occupied, in the past, or too close to the end of the day: step to
+          // the next mark so the chain re-anchors after whatever blocked it.
+          cursor += SLOT_GRANULARITY_MS;
+        }
+      }
+    }
 
-    const starts: AvailableStart[] = offered.map((start) => {
-      const startMs = start.getTime();
-      // Past starts are closed outright, whatever the slot state.
-      if (startMs < nowMs) return { startUtc: start.toISOString(), availableDurations: [] };
-      const availableDurations = SELECTABLE_DURATIONS.filter((duration) => {
-        const slotCount = (duration * MS_PER_HOUR) / SLOT_GRANULARITY_MS;
-        // Every slot of the booking must be open (within the window) and free.
-        for (let i = 0; i < slotCount; i++) {
-          const slotMs = startMs + i * SLOT_GRANULARITY_MS;
-          if (!openSlots.has(slotMs) || taken.has(slotMs)) return false;
-        }
-        // The trailing buffer slots must be free (they may extend past close).
-        const endMs = startMs + duration * MS_PER_HOUR;
-        for (let i = 0; i < bufferCount; i++) {
-          if (taken.has(endMs + i * SLOT_GRANULARITY_MS)) return false;
-        }
-        return true;
-      });
-      return { startUtc: start.toISOString(), availableDurations: [...availableDurations] };
-    });
+    const starts: AvailableStart[] = Array.from(durationsByStart.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([startMs, availableDurations]) => ({
+        startUtc: new Date(startMs).toISOString(),
+        availableDurations: [...availableDurations].sort((a, b) => a - b),
+      }));
 
     return { date: day.date, starts };
   });

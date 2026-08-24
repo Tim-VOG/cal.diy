@@ -17,6 +17,21 @@ function dayStarts(days: Awaited<ReturnType<typeof service.getAvailabilityBySlug
   return day.starts;
 }
 
+/**
+ * Durations offered at one start, or [] when the start is not offered at all.
+ *
+ * Offered times chain from one booking to the next, so an unavailable start is
+ * simply absent rather than present with an empty list — asserting by index
+ * would silently follow whichever start happened to shuffle into that position.
+ */
+function durationsAt(
+  days: Awaited<ReturnType<typeof service.getAvailabilityBySlug>>["days"],
+  date: string,
+  startUtc: string
+): number[] {
+  return dayStarts(days, date).find((s) => s.startUtc === startUtc)?.availableDurations ?? [];
+}
+
 async function book(
   startUtc: string,
   durationMinutes: number,
@@ -57,6 +72,14 @@ describe("RoomAvailabilityService.getAvailabilityBySlug", () => {
       select: { id: true },
     });
     resourceId = room.id;
+
+    // Pin the cleaning gap: it is a shared admin setting, so leaving it to
+    // whatever another suite last wrote makes the offered times non-deterministic.
+    await prisma.ne26RoomSettings.upsert({
+      where: { id: 1 },
+      update: { bufferMinutes: 0 },
+      create: { id: 1, bufferMinutes: 0 },
+    });
   });
 
   afterEach(async () => {
@@ -72,24 +95,15 @@ describe("RoomAvailabilityService.getAvailabilityBySlug", () => {
     expect(room.slug).toBe(SLUG);
     expect(room.price3h).toBe(65000);
     expect(days.map((d) => d.date)).toEqual(["2026-11-17", "2026-11-18", "2026-11-19"]);
-    expect(dayStarts(days, "2026-11-17")[0]).toEqual({
-      startUtc: "2026-11-17T13:00:00.000Z",
-      availableDurations: [1, 2, 3],
-    });
+    expect(durationsAt(days, "2026-11-17", "2026-11-17T13:00:00.000Z")).toEqual([1, 2, 3]);
   });
 
   it("hides a confirmed hour and longer durations spanning it", async () => {
     await book("2026-11-17T13:00:00.000Z", 60, ResourceBookingStatus.CONFIRMED);
     const { days } = await service.getAvailabilityBySlug(SLUG);
-    // 13:00Z taken -> no durations; 14:00Z still offers 1h/2h.
-    expect(dayStarts(days, "2026-11-17")[0]).toEqual({
-      startUtc: "2026-11-17T13:00:00.000Z",
-      availableDurations: [],
-    });
-    expect(dayStarts(days, "2026-11-17")[1]).toEqual({
-      startUtc: "2026-11-17T14:00:00.000Z",
-      availableDurations: [1, 2],
-    });
+    // 13:00Z is taken, so it is not on offer at all; 14:00Z still sells 1h/2h.
+    expect(durationsAt(days, "2026-11-17", "2026-11-17T13:00:00.000Z")).toEqual([]);
+    expect(durationsAt(days, "2026-11-17", "2026-11-17T14:00:00.000Z")).toEqual([1, 2]);
   });
 
   it("blocks a pending hour while its hold is active", async () => {
@@ -100,7 +114,7 @@ describe("RoomAvailabilityService.getAvailabilityBySlug", () => {
       new Date(Date.now() + 15 * MS_PER_MINUTE)
     );
     const { days } = await service.getAvailabilityBySlug(SLUG);
-    expect(dayStarts(days, "2026-11-17")[1].availableDurations).toEqual([]);
+    expect(durationsAt(days, "2026-11-17", "2026-11-17T14:00:00.000Z")).toEqual([]);
   });
 
   it("ignores a pending hour whose hold has expired", async () => {
@@ -111,7 +125,11 @@ describe("RoomAvailabilityService.getAvailabilityBySlug", () => {
       new Date(Date.now() - MS_PER_MINUTE)
     );
     const { days } = await service.getAvailabilityBySlug(SLUG);
-    // Expired hold no longer blocks -> 14:00Z is open again.
-    expect(dayStarts(days, "2026-11-17")[1].availableDurations).toEqual([1, 2]);
+    // Expired hold no longer blocks -> 14:00Z is on offer again.
+    //
+    // 1h only, not 1h/2h: offered times chain, and the two-hour chain runs
+    // 13:00-15:00, so it steps straight over 14:00. The 14:00-16:00 pair is free
+    // but is not on the two-hour sequence.
+    expect(durationsAt(days, "2026-11-17", "2026-11-17T14:00:00.000Z")).toEqual([1]);
   });
 });
