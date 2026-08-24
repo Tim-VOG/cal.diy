@@ -26,6 +26,32 @@ export class RoomAvailabilityService {
     return this.deps.resourceRepository.findManyActive();
   }
 
+  /**
+   * Availability for every room on sale, in three queries rather than 3n.
+   *
+   * The desk's booking screen needs the whole grid. Asking room by room meant
+   * nine round-trips AND nine reads of the same settings row each time a
+   * hostess opened it — on the page she opens most.
+   */
+  async getAvailabilityForAllRooms(): Promise<RoomAvailability[]> {
+    const rooms = await this.deps.resourceRepository.findManyActive();
+    // One `now` for every room, so the grid cannot disagree with itself.
+    const now = new Date();
+    const [slotsByRoom, settings] = await Promise.all([
+      this.deps.resourceBookingRepository.findActiveSlotStartsForRooms(
+        rooms.map((r) => r.id),
+        now
+      ),
+      this.deps.ne26RoomSettingsRepository.get(),
+    ]);
+    const schedule = buildEventSchedule(settings.eventDays);
+
+    return rooms.map((room) => ({
+      room,
+      days: computeAvailability(slotsByRoom.get(room.id) ?? [], settings.bufferMinutes, now, schedule),
+    }));
+  }
+
   async getAvailabilityBySlug(slug: string): Promise<RoomAvailability> {
     const room = await this.deps.resourceRepository.findBySlug(slug);
     if (!room || !room.isActive) {

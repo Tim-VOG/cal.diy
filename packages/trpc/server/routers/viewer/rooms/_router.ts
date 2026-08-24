@@ -147,10 +147,8 @@ export const roomsRouter = router({
     const { getAddOnRepository } = await import(
       "@calcom/features/ne26-rooms/di/AddOnRepository.container"
     );
-    const service = getRoomAvailabilityService();
-    const rooms = await service.getActiveRooms();
     const [availability, addOns] = await Promise.all([
-      Promise.all(rooms.map((room) => service.getAvailabilityBySlug(room.slug))),
+      getRoomAvailabilityService().getAvailabilityForAllRooms(),
       getAddOnRepository().findManyActive(),
     ]);
     return { rooms: availability, addOns };

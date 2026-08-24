@@ -132,4 +132,51 @@ describe("RoomAvailabilityService.getAvailabilityBySlug", () => {
     // but is not on the two-hour sequence.
     expect(durationsAt(days, "2026-11-17", "2026-11-17T14:00:00.000Z")).toEqual([1]);
   });
+
+  describe("getAvailabilityForAllRooms — the desk grid", () => {
+    it("agrees with the per-room read, room for room", async () => {
+      // The grid is built in three queries instead of 3n. The two paths
+      // disagreeing would mean the hostess and the buyer seeing different rooms
+      // as free, which is how a room gets sold twice.
+      await book("2026-11-17T13:00:00.000Z", 60, ResourceBookingStatus.CONFIRMED);
+
+      const all = await service.getAvailabilityForAllRooms();
+      const mine = all.find((a) => a.room.slug === SLUG);
+      const single = await service.getAvailabilityBySlug(SLUG);
+
+      expect(mine?.days).toEqual(single.days);
+    });
+
+    it("keeps each room's bookings to itself", async () => {
+      // One query now covers every room, so a mis-grouped slot would show one
+      // room's booking as blocking another's.
+      const other = await prisma.resource.create({
+        data: {
+          name: "TEST Availability Neighbour",
+          slug: `${SLUG}-neighbour`,
+          category: "ENTRY",
+          capacity: 6,
+          surface: 18,
+          price1h: 25000,
+          price2h: 50000,
+          price3h: 65000,
+        },
+        select: { id: true, slug: true },
+      });
+      try {
+        await book("2026-11-17T13:00:00.000Z", 60, ResourceBookingStatus.CONFIRMED);
+
+        const all = await service.getAvailabilityForAllRooms();
+        const neighbour = all.find((a) => a.room.slug === other.slug);
+        const start = neighbour?.days
+          .find((d) => d.date === "2026-11-17")
+          ?.starts.find((s) => s.startUtc === "2026-11-17T13:00:00.000Z");
+
+        expect(start?.availableDurations).toContain(1);
+      } finally {
+        await prisma.resourceBooking.deleteMany({ where: { resourceId: other.id } });
+        await prisma.resource.delete({ where: { id: other.id } });
+      }
+    });
+  });
 });

@@ -31,6 +31,15 @@ const HOLD_MINUTES = 35;
  * it.
  */
 const MAX_ACTIVE_HOLDS_PER_USER = 3;
+
+/**
+ * The same idea for the welcome desk, which sells to people with no account.
+ *
+ * Higher than the per-account cap because it is shared by the whole counter
+ * rather than by one buyer, but bounded: a hostess handing the tablet to one
+ * exhibitor after another must not be able to park the entire event.
+ */
+const MAX_ACTIVE_HOLDS_AT_THE_DESK = 6;
 const MS_PER_MINUTE = 60 * 1000;
 
 
@@ -112,15 +121,27 @@ export class ResourceBookingService {
     if (input.startUtc.getTime() < Date.now()) {
       throw new ErrorWithCode(ErrorCode.BadRequest, "That time has already started. Please pick a later slot.");
     }
+    const now = new Date();
     if (input.booker.userId) {
       const held = await this.deps.resourceBookingRepository.countActiveHoldsForUser(
         input.booker.userId,
-        new Date()
+        now
       );
       if (held >= MAX_ACTIVE_HOLDS_PER_USER) {
         throw new ErrorWithCode(
           ErrorCode.BadRequest,
           `You already have ${held} rooms on hold awaiting payment. Please complete or cancel one before booking another.`
+        );
+      }
+    } else {
+      // Counter sales have no account, so the per-account cap cannot see them.
+      // Without this, a run of abandoned counter bookings takes rooms off sale
+      // for 35 minutes each on the busiest day of the event.
+      const held = await this.deps.resourceBookingRepository.countActiveHoldsWithoutAccount(now);
+      if (held >= MAX_ACTIVE_HOLDS_AT_THE_DESK) {
+        throw new ErrorWithCode(
+          ErrorCode.BadRequest,
+          `${held} counter bookings are already waiting for payment. Finish or cancel one before starting another.`
         );
       }
     }

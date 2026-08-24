@@ -176,6 +176,54 @@ export class ResourceBookingRepository {
     });
   }
 
+  /**
+   * Counter sales waiting for payment right now.
+   *
+   * They have no account, so countActiveHoldsForUser cannot see them and the
+   * per-account cap never applied — a run of abandoned counter bookings could
+   * take every room off sale for 35 minutes each, on the busiest day of the
+   * event.
+   */
+  async countActiveHoldsWithoutAccount(now: Date): Promise<number> {
+    return this.prismaClient.resourceBooking.count({
+      where: {
+        bookerUserId: null,
+        isBlock: false,
+        status: ResourceBookingStatus.PENDING,
+        holdExpiresAt: { gt: now },
+      },
+    });
+  }
+
+  /**
+   * Atomic hour starts occupied across several rooms at once.
+   *
+   * The desk's booking screen needs the whole grid, and asking room by room
+   * meant nine round-trips plus nine reads of the same settings row every time
+   * a hostess opened it.
+   */
+  async findActiveSlotStartsForRooms(resourceIds: number[], now: Date): Promise<Map<number, Date[]>> {
+    const byRoom = new Map<number, Date[]>(resourceIds.map((id) => [id, []]));
+    if (!resourceIds.length) return byRoom;
+
+    const slots = await this.prismaClient.resourceSlot.findMany({
+      where: {
+        resourceId: { in: resourceIds },
+        booking: {
+          OR: [
+            { status: ResourceBookingStatus.CONFIRMED },
+            { status: ResourceBookingStatus.PENDING, holdExpiresAt: { gt: now } },
+          ],
+        },
+      },
+      select: { resourceId: true, slotStart: true },
+    });
+    for (const slot of slots) {
+      byRoom.get(slot.resourceId)?.push(slot.slotStart);
+    }
+    return byRoom;
+  }
+
   findByUid(uid: string) {
     return this.prismaClient.resourceBooking.findUnique({
       where: { uid },

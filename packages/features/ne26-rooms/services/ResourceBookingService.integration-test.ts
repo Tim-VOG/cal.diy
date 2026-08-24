@@ -181,6 +181,57 @@ describe("ResourceBookingService.createBooking", () => {
     });
   });
 
+  describe("unpaid hold cap at the counter", () => {
+    // A counter sale has no account, so the per-account cap cannot see it.
+    async function counterHold(hourUtc: string) {
+      return service.createBooking({
+        slug: SLUG,
+        startUtc: new Date(hourUtc),
+        durationHours: 1,
+        booker: { userId: null, email: "walkin@test.com", name: "Walk-in" },
+      });
+    }
+
+    it("refuses a seventh counter booking waiting for payment", async () => {
+      const hours = [8, 9, 10, 11, 12, 13].map((h) => `2026-11-18T${String(h).padStart(2, "0")}:00:00.000Z`);
+      for (const hour of hours) await counterHold(hour);
+
+      await expect(counterHold("2026-11-18T14:00:00.000Z")).rejects.toMatchObject({
+        code: ErrorCode.BadRequest,
+      });
+    });
+
+    it("does not count a counter sale that has been paid", async () => {
+      const hours = [8, 9, 10, 11, 12, 13].map((h) => `2026-11-18T${String(h).padStart(2, "0")}:00:00.000Z`);
+      for (const hour of hours) {
+        const booking = await counterHold(hour);
+        await prisma.resourceBooking.update({
+          where: { uid: booking.uid },
+          data: { status: "CONFIRMED", holdExpiresAt: null },
+        });
+      }
+
+      await expect(counterHold("2026-11-18T14:00:00.000Z")).resolves.toMatchObject({
+        status: "PENDING",
+      });
+    });
+
+    it("keeps the counter and per-account caps separate", async () => {
+      // Six counter holds must not stop an exhibitor booking from their phone.
+      const hours = [8, 9, 10, 11, 12, 13].map((h) => `2026-11-18T${String(h).padStart(2, "0")}:00:00.000Z`);
+      for (const hour of hours) await counterHold(hour);
+
+      await expect(
+        service.createBooking({
+          slug: SLUG,
+          startUtc: new Date("2026-11-18T14:00:00.000Z"),
+          durationHours: 1,
+          booker,
+        })
+      ).resolves.toMatchObject({ status: "PENDING" });
+    });
+  });
+
   describe("unpaid hold cap", () => {
     // Each hold takes a room off sale for 35 minutes, so an account that keeps
     // starting checkouts it never finishes parks inventory nobody can buy.
