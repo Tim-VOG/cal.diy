@@ -46,7 +46,6 @@ export class RoomAvailabilityService {
       days: computeAvailability(
         takenSlotStarts,
         settings.bufferMinutes,
-        settings.slotGranularityMinutes,
         now,
         buildEventSchedule(settings.eventDays)
       ),

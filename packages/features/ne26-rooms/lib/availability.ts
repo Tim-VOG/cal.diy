@@ -46,21 +46,32 @@ export interface EventDayAvailability {
 export function computeAvailability(
   takenSlotStartsUtc: Date[],
   bufferMinutes: number,
-  startStepMinutes = 60,
   now: Date = new Date(),
   schedule: readonly EventDaySchedule[] = EVENT_SCHEDULE
 ): EventDayAvailability[] {
   const taken = new Set(takenSlotStartsUtc.map((d) => d.getTime()));
   const bufferCount = Math.max(0, Math.ceil((bufferMinutes * 60 * 1000) / SLOT_GRANULARITY_MS));
-  const stepMs = Math.max(SLOT_GRANULARITY_MS, startStepMinutes * 60 * 1000);
   const nowMs = now.getTime();
 
   return schedule.map((day) => {
     const openSlots = new Set(day.openSlotStartsUtc.map((d) => d.getTime()));
-    // Offer starts only on the admin's step (e.g. hourly), measured from the
-    // day's opening; the atomic occupancy/buffer checks stay at 15 min.
     const dayOpenMs = day.openSlotStartsUtc[0]?.getTime() ?? 0;
-    const offered = day.openSlotStartsUtc.filter((d) => (d.getTime() - dayOpenMs) % stepMs === 0);
+
+    // Starts are offered on the hour, PLUS the first free slot after anything
+    // already booked.
+    //
+    // On the hour alone loses real inventory: with a 15-minute cleaning gap, a
+    // 09:00-10:00 booking occupies through 10:15, so the next hourly start that
+    // fits is 11:00 and the 10:15-11:15 hour is unsellable — even though the
+    // room is empty. Offering the moment the room frees up recovers it, and the
+    // grid stays short because these only appear where something ended.
+    const offered = day.openSlotStartsUtc.filter((d) => {
+      const ms = d.getTime();
+      if ((ms - dayOpenMs) % MS_PER_HOUR === 0) return true;
+      // Resumes right after an occupied run — never mid-run, since a taken slot
+      // is filtered out by the duration check below anyway.
+      return taken.has(ms - SLOT_GRANULARITY_MS) && !taken.has(ms);
+    });
 
     const starts: AvailableStart[] = offered.map((start) => {
       const startMs = start.getTime();

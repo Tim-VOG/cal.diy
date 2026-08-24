@@ -64,12 +64,10 @@ type Tab = "schedule" | Category;
 export default function RoomsManager({
   rooms,
   bufferMinutes,
-  slotGranularityMinutes,
   eventDays,
 }: {
   rooms: RoomRow[];
   bufferMinutes: number;
-  slotGranularityMinutes: number;
   eventDays: EventDayDefinition[];
 }): JSX.Element {
   const router = useRouter();
@@ -148,16 +146,19 @@ export default function RoomsManager({
               value={r.imageUrl}
               onChange={(url) => setField(r.id, "imageUrl", url)}
             />
-            <div className="mt-3 grid grid-cols-4 gap-2">
-              {[0, 1, 2, 3].map((i) => (
-                <ImagePicker
-                  key={i}
-                  label={`${i + 1}`}
-                  aspect="aspect-square"
-                  value={r.galleryImages[i] ?? ""}
-                  onChange={(url) => setGalleryImage(r.id, i, url)}
-                />
-              ))}
+            <div className="mt-4">
+              <span className={label}>Gallery</span>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                {[0, 1, 2, 3].map((i) => (
+                  <ImagePicker
+                    key={i}
+                    label={`Photo ${i + 1}`}
+                    aspect="aspect-[3/2]"
+                    value={r.galleryImages[i] ?? ""}
+                    onChange={(url) => setGalleryImage(r.id, i, url)}
+                  />
+                ))}
+              </div>
             </div>
           </div>
 
@@ -188,7 +189,7 @@ export default function RoomsManager({
               </label>
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+            <div className="mt-4 grid max-w-xs grid-cols-2 gap-3">
               <label>
                 <span className={`${label} flex items-center gap-1`}>
                   <Users className="h-3 w-3 shrink-0" aria-hidden />
@@ -215,6 +216,9 @@ export default function RoomsManager({
                   onChange={(e) => setField(r.id, "surface", Math.max(0, Number(e.target.value)))}
                 />
               </label>
+            </div>
+
+            <div className="mt-4 grid max-w-lg grid-cols-3 gap-3">
               {(
                 [
                   ["price1h", "1h", null],
@@ -311,11 +315,7 @@ export default function RoomsManager({
 
       <div className="mt-5">
         {tab === "schedule" ? (
-          <EventDaysForm
-            initial={eventDays}
-            bufferMinutes={bufferMinutes}
-            slotGranularityMinutes={slotGranularityMinutes}
-          />
+          <EventDaysForm initial={eventDays} bufferMinutes={bufferMinutes} />
         ) : (
           <>
             <p className="text-gray-600 text-sm">{CATEGORY_META[tab as Category].blurb}</p>

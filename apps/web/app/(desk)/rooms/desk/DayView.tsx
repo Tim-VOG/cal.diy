@@ -2,7 +2,8 @@
 
 import { brusselsToday, shiftDay } from "@calcom/features/ne26-rooms/lib/deskDay";
 import { trpc } from "@calcom/trpc/react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import BookingRow, { type DeskBooking } from "./BookingRow";
 
@@ -17,6 +18,10 @@ function label(date: string): string {
 }
 
 export default function DayView(): JSX.Element {
+  // Stripe sends a counter sale back here rather than to the public confirmation
+  // page, so the hostess stays in the counter shell with the next exhibitor
+  // already waiting. The banner is the only thing telling her it went through.
+  const paid = useSearchParams()?.get("paid");
   const [date, setDate] = useState(() => brusselsToday());
   const bookings = trpc.viewer.rooms.deskDay.useQuery({ date });
   const checkIn = trpc.viewer.rooms.deskCheckIn.useMutation({
@@ -29,6 +34,15 @@ export default function DayView(): JSX.Element {
 
   return (
     <div>
+      {paid ? (
+        <div className="mb-4 flex items-start gap-3 rounded-xl border border-green-200 bg-green-50 px-4 py-3">
+          <Check className="mt-0.5 h-5 w-5 shrink-0 text-green-700" aria-hidden />
+          <p className="text-green-900 text-sm">
+            Payment received — the room is confirmed and the invoice is on its way to the exhibitor.
+          </p>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1">
           <button

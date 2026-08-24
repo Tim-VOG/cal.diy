@@ -15,6 +15,11 @@ export const metadata: Metadata = {
 /**
  * The welcome desk: a separate module from the admin dashboard, not a tab in it.
  *
+ * It lives in its own route group so it does NOT inherit the public /rooms
+ * header. Nested under app/rooms it rendered two stacked headers, and the
+ * counter tablet showed "Book a meeting room / My bookings / Billing details" —
+ * exhibitor navigation, on a staff screen.
+ *
  * A hostess needs today's schedule, a search box and a way to start a booking —
  * and must never be one mistaken click away from pricing, refunds or settings.
  * Keeping it behind its own route means the admin surface simply is not reachable

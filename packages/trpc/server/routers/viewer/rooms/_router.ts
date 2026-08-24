@@ -222,7 +222,10 @@ export const roomsRouter = router({
         addOns: input.addOns,
         billing: { country: input.country, vatNumber: input.vatNumber ?? null },
         webappUrl: WEBAPP_URL,
-        cancelPath: "/rooms/desk",
+        cancelPath: "/rooms/desk/new",
+        // Back to the counter, not the public confirmation page: the hostess is
+        // mid-shift and the next exhibitor is already waiting.
+        successPath: "/rooms/desk?paid=1",
       });
 
       await repo.recordAction({

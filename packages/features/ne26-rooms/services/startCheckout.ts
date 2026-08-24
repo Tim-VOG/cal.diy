@@ -26,6 +26,12 @@ export interface StartCheckoutInput {
   webappUrl: string;
   /** Where Stripe returns the buyer if they abandon. */
   cancelPath: string;
+  /**
+   * Where Stripe returns them after paying. The desk overrides it: its default
+   * lands on the public confirmation page, which drops the hostess out of the
+   * counter shell in the middle of a shift.
+   */
+  successPath?: string;
 }
 
 /**
@@ -116,7 +122,7 @@ export async function startCheckout(input: StartCheckoutInput) {
       customerId,
       holdExpiresAt: booking.holdExpiresAt,
       requireFullAddress: atTheCounter,
-      successUrl: `${input.webappUrl}/rooms/booked/${booking.uid}`,
+      successUrl: `${input.webappUrl}${input.successPath ?? `/rooms/booked/${booking.uid}`}`,
       cancelUrl: `${input.webappUrl}${input.cancelPath}`,
     });
     // Spread the booking rather than picking fields: the callers' clients read

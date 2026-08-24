@@ -2,7 +2,7 @@
 
 import type { EventDayDefinition } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { trpc } from "@calcom/trpc/react";
-import { CalendarClock, Check, Sparkles, Timer } from "lucide-react";
+import { CalendarClock, Check, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -24,24 +24,24 @@ const select =
 /**
  * Everything that governs *when* a room can be booked, in one place.
  *
- * Opening hours, the start step and the cleaning gap used to be two separate
- * cards with two Save buttons, which invited setting one and forgetting the
- * other — and they only make sense read together: a 15-minute start step with a
- * 30-minute cleaning gap behaves very differently from the same step with none.
+ * Opening hours and the cleaning gap used to be two separate cards with two
+ * Save buttons, which invited setting one and forgetting the other.
+ *
+ * There is deliberately no "start step" control any more. Bookings are always
+ * one, two or three hours from the hour, and that is not going to change — so
+ * the setting existed only to be left alone, while quietly costing inventory
+ * whenever it disagreed with the cleaning gap.
  */
 export default function EventDaysForm({
   initial,
   bufferMinutes,
-  slotGranularityMinutes,
 }: {
   initial: EventDayDefinition[];
   bufferMinutes: number;
-  slotGranularityMinutes: number;
 }): JSX.Element {
   const router = useRouter();
   const [days, setDays] = useState<EventDayDefinition[]>(initial);
   const [buffer, setBuffer] = useState(bufferMinutes);
-  const [granularity, setGranularity] = useState(slotGranularityMinutes);
   const save = trpc.viewer.rooms.updateRoomSettings.useMutation({ onSuccess: () => router.refresh() });
 
   function setHour(date: string, field: "openHourBrussels" | "closeHourBrussels", value: number): void {
@@ -99,7 +99,7 @@ export default function EventDaysForm({
         The closing hour is exclusive: no booking may start at or after it.
       </p>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 border-gray-100 border-t pt-5 sm:grid-cols-2">
+      <div className="mt-6 max-w-sm border-gray-100 border-t pt-5">
         <label>
           <span className="flex items-center gap-1.5 font-medium text-gray-700 text-sm">
             <Sparkles className="h-4 w-4 shrink-0 text-[#000643]" aria-hidden />
@@ -121,26 +121,6 @@ export default function EventDaysForm({
           </span>
         </label>
 
-        <label>
-          <span className="flex items-center gap-1.5 font-medium text-gray-700 text-sm">
-            <Timer className="h-4 w-4 shrink-0 text-[#000643]" aria-hidden />
-            Start times offered
-          </span>
-          <select
-            className={`${select} w-full`}
-            value={granularity}
-            onChange={(e) => setGranularity(Number(e.target.value))}>
-            <option value={60}>On the hour</option>
-            <option value={30}>Every 30 minutes</option>
-            <option value={15}>Every 15 minutes</option>
-          </select>
-          <span className="mt-1 block text-gray-500 text-xs">
-            Which start times a buyer is offered. &ldquo;On the hour&rdquo; shows 09:00, 10:00, 11:00;
-            &ldquo;every 30 minutes&rdquo; also shows 09:30, 10:30. Finer steps sell more of the day but
-            leave more awkward gaps. Rooms are always held in 15-minute blocks underneath, so this never
-            affects double-booking.
-          </span>
-        </label>
       </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -148,11 +128,7 @@ export default function EventDaysForm({
           type="button"
           disabled={save.isPending || Boolean(invalid)}
           onClick={() =>
-            save.mutate({
-              eventDays: days,
-              bufferMinutes: buffer,
-              slotGranularityMinutes: granularity as 15 | 30 | 60,
-            })
+            save.mutate({ eventDays: days, bufferMinutes: buffer })
           }
           className="rounded-lg bg-[#000643] px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90 disabled:opacity-40">
           {save.isPending ? "Saving…" : "Save"}
