@@ -22,7 +22,16 @@ export default function DayView(): JSX.Element {
   // page, so the hostess stays in the counter shell with the next exhibitor
   // already waiting. The banner is the only thing telling her it went through.
   const paid = useSearchParams()?.get("paid");
-  const [date, setDate] = useState(() => brusselsToday());
+  // Opens on the event's first day until the event is actually running, rather
+  // than on a today that is months away from any booking.
+  const eventDays = trpc.viewer.rooms.deskEventDays.useQuery();
+  const [chosen, setChosen] = useState<string | null>(null);
+  const date = chosen ?? eventDays.data?.defaultDate ?? brusselsToday();
+  const setDate = (next: string | ((d: string) => string)) =>
+    setChosen((current) => {
+      const from = current ?? eventDays.data?.defaultDate ?? brusselsToday();
+      return typeof next === "function" ? next(from) : next;
+    });
   const bookings = trpc.viewer.rooms.deskDay.useQuery({ date });
   const checkIn = trpc.viewer.rooms.deskCheckIn.useMutation({
     onSuccess: () => void bookings.refetch(),
@@ -30,7 +39,10 @@ export default function DayView(): JSX.Element {
 
   const rows = (bookings.data ?? []) as unknown as DeskBooking[];
   const arrived = rows.filter((r) => r.checkedInAt).length;
-  const isToday = date === brusselsToday();
+  // Before the event, "Today" would land on an empty August day. Send them back
+  // to the event instead — that is what they meant.
+  const home = eventDays.data?.defaultDate ?? brusselsToday();
+  const atHome = date === home;
 
   return (
     <div>
@@ -59,12 +71,12 @@ export default function DayView(): JSX.Element {
             className="rounded-lg border border-gray-200 bg-white p-2.5 text-[#000643] transition hover:border-[#000643]">
             <ChevronRight className="h-5 w-5" aria-hidden />
           </button>
-          {!isToday ? (
+          {!atHome ? (
             <button
               type="button"
-              onClick={() => setDate(brusselsToday())}
+              onClick={() => setDate(home)}
               className="ml-1 rounded-lg border border-gray-200 bg-white px-3 py-2 font-medium text-[#000643] text-sm transition hover:border-[#000643]">
-              Today
+              {home === brusselsToday() ? "Today" : "Back to the event"}
             </button>
           ) : null}
         </div>

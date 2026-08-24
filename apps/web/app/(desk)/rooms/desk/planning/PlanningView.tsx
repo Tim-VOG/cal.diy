@@ -42,7 +42,16 @@ type Cell =
  * wanting a room, and the one the day list cannot show.
  */
 export default function PlanningView(): JSX.Element {
-  const [date, setDate] = useState(() => brusselsToday());
+  // Opens on the event's first day until the event is actually running, rather
+  // than on a today that is months away from any booking.
+  const eventDays = trpc.viewer.rooms.deskEventDays.useQuery();
+  const [chosen, setChosen] = useState<string | null>(null);
+  const date = chosen ?? eventDays.data?.defaultDate ?? brusselsToday();
+  const setDate = (next: string | ((d: string) => string)) =>
+    setChosen((current) => {
+      const from = current ?? eventDays.data?.defaultDate ?? brusselsToday();
+      return typeof next === "function" ? next(from) : next;
+    });
   const planning = trpc.viewer.rooms.deskPlanning.useQuery({ date });
 
   const marks = planning.data?.slotMarksUtc ?? [];
@@ -74,7 +83,10 @@ export default function PlanningView(): JSX.Element {
     return { kind: "free" };
   }
 
-  const isToday = date === brusselsToday();
+  // Before the event, "Today" would land on an empty August day. Send them back
+  // to the event instead — that is what they meant.
+  const home = eventDays.data?.defaultDate ?? brusselsToday();
+  const atHome = date === home;
 
   return (
     <div>
@@ -94,12 +106,12 @@ export default function PlanningView(): JSX.Element {
             className="rounded-lg border border-gray-200 bg-white p-2.5 text-[#000643] transition hover:border-[#000643]">
             <ChevronRight className="h-5 w-5" aria-hidden />
           </button>
-          {!isToday ? (
+          {!atHome ? (
             <button
               type="button"
-              onClick={() => setDate(brusselsToday())}
+              onClick={() => setDate(home)}
               className="ml-1 rounded-lg border border-gray-200 bg-white px-3 py-2 font-medium text-[#000643] text-sm transition hover:border-[#000643]">
-              Today
+              {home === brusselsToday() ? "Today" : "Back to the event"}
             </button>
           ) : null}
         </div>

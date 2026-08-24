@@ -196,6 +196,26 @@ export const roomsRouter = router({
     };
   }),
 
+  /**
+   * The event's days, and which one a calendar should open on.
+   *
+   * Opening on "today" is right during the event and useless before it: in
+   * August it lands the desk on an empty day months away from anything, and the
+   * only way to see the state of the bookings is to click forward eighty times.
+   */
+  deskEventDays: authedProcedure.query(async ({ ctx }) => {
+    await requireDesk(ctx);
+    const { getNe26RoomSettingsRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container"
+    );
+    const { buildEventSchedule } = await import("@calcom/features/ne26-rooms/lib/eventSchedule");
+    const { brusselsToday } = await import("@calcom/features/ne26-rooms/lib/deskDay");
+    const settings = await getNe26RoomSettingsRepository().get();
+    const dates = buildEventSchedule(settings.eventDays).map((d) => d.date);
+    const today = brusselsToday();
+    return { dates, defaultDate: dates.includes(today) ? today : (dates[0] ?? today) };
+  }),
+
   deskSearch: authedProcedure.input(ZDeskSearchInputSchema).query(async ({ ctx, input }) => {
     await requireDesk(ctx);
     const { getResourceBookingRepository } = await import(
