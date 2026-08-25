@@ -1,6 +1,6 @@
 "use client";
 
-import { brusselsToday, shiftDay } from "@calcom/features/ne26-rooms/lib/deskDay";
+import { eventToday, shiftDay } from "@calcom/features/ne26-rooms/lib/deskDay";
 import { trpc } from "@calcom/trpc/react";
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { useSearchParams } from "next/navigation";
@@ -26,10 +26,10 @@ export default function DayView(): JSX.Element {
   // than on a today that is months away from any booking.
   const eventDays = trpc.viewer.rooms.deskEventDays.useQuery();
   const [chosen, setChosen] = useState<string | null>(null);
-  const date = chosen ?? eventDays.data?.defaultDate ?? brusselsToday();
+  const date = chosen ?? eventDays.data?.defaultDate ?? eventToday();
   const setDate = (next: string | ((d: string) => string)) =>
     setChosen((current) => {
-      const from = current ?? eventDays.data?.defaultDate ?? brusselsToday();
+      const from = current ?? eventDays.data?.defaultDate ?? eventToday();
       return typeof next === "function" ? next(from) : next;
     });
   // Same reason as the planning board: the tablet sits open on the counter all
@@ -47,7 +47,7 @@ export default function DayView(): JSX.Element {
   const arrived = rows.filter((r) => r.checkedInAt).length;
   // Before the event, "Today" would land on an empty August day. Send them back
   // to the event instead — that is what they meant.
-  const home = eventDays.data?.defaultDate ?? brusselsToday();
+  const home = eventDays.data?.defaultDate ?? eventToday();
   const atHome = date === home;
 
   return (
@@ -82,7 +82,7 @@ export default function DayView(): JSX.Element {
               type="button"
               onClick={() => setDate(home)}
               className="ml-1 rounded-lg border border-gray-200 bg-white px-3 py-2 font-medium text-[#000643] text-sm transition hover:border-[#000643]">
-              {home === brusselsToday() ? "Today" : "Back to the event"}
+              {home === eventToday() ? "Today" : "Back to the event"}
             </button>
           ) : null}
         </div>

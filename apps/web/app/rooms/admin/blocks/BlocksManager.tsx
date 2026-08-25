@@ -10,7 +10,7 @@ import { trpc } from "@calcom/trpc/react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
-const TZ = "Europe/Brussels";
+const TZ = "Europe/Istanbul";
 
 interface RoomOption {
   slug: string;

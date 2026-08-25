@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import BookingActions from "./[uid]/BookingActions";
 import type { AdminBookingRow } from "./RoomsAdminView";
 
-const TZ = "Europe/Brussels";
+const TZ = "Europe/Istanbul";
 
 function fmtDateTime(iso: string): string {
   return new Intl.DateTimeFormat("en-GB", {

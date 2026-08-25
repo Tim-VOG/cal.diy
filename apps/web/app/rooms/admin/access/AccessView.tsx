@@ -28,7 +28,7 @@ function RoleBadge({ role }: { role: "ADMIN" | "HOSTESS" }): JSX.Element {
 
 function when(value: string): string {
   return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Brussels",
+    timeZone: "Europe/Istanbul",
     day: "2-digit",
     month: "short",
     hour: "2-digit",

@@ -133,8 +133,8 @@ export const roomsRouter = router({
     const { getResourceBookingRepository } = await import(
       "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container"
     );
-    const { brusselsDayBounds } = await import("@calcom/features/ne26-rooms/lib/deskDay");
-    const { fromUtc, toUtc } = brusselsDayBounds(input.date);
+    const { eventDayBounds } = await import("@calcom/features/ne26-rooms/lib/deskDay");
+    const { fromUtc, toUtc } = eventDayBounds(input.date);
     return getResourceBookingRepository().findForDesk(fromUtc, toUtc);
   }),
 
@@ -172,10 +172,10 @@ export const roomsRouter = router({
     const { getNe26RoomSettingsRepository } = await import(
       "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container"
     );
-    const { brusselsDayBounds } = await import("@calcom/features/ne26-rooms/lib/deskDay");
+    const { eventDayBounds } = await import("@calcom/features/ne26-rooms/lib/deskDay");
     const { buildEventSchedule } = await import("@calcom/features/ne26-rooms/lib/eventSchedule");
 
-    const { fromUtc, toUtc } = brusselsDayBounds(input.date);
+    const { fromUtc, toUtc } = eventDayBounds(input.date);
     const now = new Date();
     const [rooms, settings, bookings] = await Promise.all([
       getResourceRepository().findManyActive(),
@@ -207,10 +207,10 @@ export const roomsRouter = router({
       "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container"
     );
     const { buildEventSchedule } = await import("@calcom/features/ne26-rooms/lib/eventSchedule");
-    const { brusselsToday } = await import("@calcom/features/ne26-rooms/lib/deskDay");
+    const { eventToday } = await import("@calcom/features/ne26-rooms/lib/deskDay");
     const settings = await getNe26RoomSettingsRepository().get();
     const dates = buildEventSchedule(settings.eventDays).map((d) => d.date);
-    const today = brusselsToday();
+    const today = eventToday();
     return { dates, defaultDate: dates.includes(today) ? today : (dates[0] ?? today) };
   }),
 

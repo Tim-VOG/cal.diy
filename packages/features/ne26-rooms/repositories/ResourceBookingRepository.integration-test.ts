@@ -53,7 +53,7 @@ describe("ResourceBookingRepository.createWithSlots — anti-double-booking", ()
   });
 
   it("lets only one of two concurrent bookings take the same room+hour", async () => {
-    const startTime = new Date("2026-11-17T09:00:00.000Z");
+    const startTime = new Date("2026-11-17T07:00:00.000Z");
 
     const results = await Promise.allSettled([
       repo.createWithSlots(bookingArgs(startTime, 60, "a@test.com", resourceId)),
@@ -75,13 +75,13 @@ describe("ResourceBookingRepository.createWithSlots — anti-double-booking", ()
   it("rejects a 1h booking that overlaps an existing 3h booking on a shared hour", async () => {
     // 14:00–17:00 occupies atomic hours 14, 15, 16.
     await repo.createWithSlots(
-      bookingArgs(new Date("2026-11-17T14:00:00.000Z"), 180, "long@test.com", resourceId)
+      bookingArgs(new Date("2026-11-17T12:00:00.000Z"), 180, "long@test.com", resourceId)
     );
 
     // 15:00–16:00 needs hour 15, which is taken — must be rejected despite a different startTime.
     await expect(
       repo.createWithSlots(
-        bookingArgs(new Date("2026-11-17T15:00:00.000Z"), 60, "short@test.com", resourceId)
+        bookingArgs(new Date("2026-11-17T13:00:00.000Z"), 60, "short@test.com", resourceId)
       )
     ).rejects.toMatchObject({ code: ErrorCode.BookingConflict });
 
@@ -91,10 +91,10 @@ describe("ResourceBookingRepository.createWithSlots — anti-double-booking", ()
 
   it("allows two non-overlapping bookings on the same room", async () => {
     const first = await repo.createWithSlots(
-      bookingArgs(new Date("2026-11-18T09:00:00.000Z"), 120, "first@test.com", resourceId)
+      bookingArgs(new Date("2026-11-18T07:00:00.000Z"), 120, "first@test.com", resourceId)
     );
     const second = await repo.createWithSlots(
-      bookingArgs(new Date("2026-11-18T11:00:00.000Z"), 60, "second@test.com", resourceId)
+      bookingArgs(new Date("2026-11-18T09:00:00.000Z"), 60, "second@test.com", resourceId)
     );
 
     expect(first.id).not.toBe(second.id);
@@ -144,7 +144,7 @@ describe("ResourceBookingRepository.updateBillingFromCheckout — never downgrad
     // Stripe only collects the address "when necessary", so customer_details can
     // come back without one. Overwriting BE with null would move the invoice off
     // Belgian VAT — a tax change nobody asked for.
-    const uid = await bookingWithBelgianProfile(new Date("2026-11-17T10:00:00.000Z"));
+    const uid = await bookingWithBelgianProfile(new Date("2026-11-17T08:00:00.000Z"));
 
     await repo.updateBillingFromCheckout(uid, { country: null, vatNumber: null, name: null });
 
@@ -154,7 +154,7 @@ describe("ResourceBookingRepository.updateBillingFromCheckout — never downgrad
   });
 
   it("treats a blank string the same as missing", async () => {
-    const uid = await bookingWithBelgianProfile(new Date("2026-11-17T11:00:00.000Z"));
+    const uid = await bookingWithBelgianProfile(new Date("2026-11-17T09:00:00.000Z"));
 
     await repo.updateBillingFromCheckout(uid, { country: "", vatNumber: "   ", name: "" });
 
@@ -168,7 +168,7 @@ describe("ResourceBookingRepository.updateBillingFromCheckout — never downgrad
     // A counter sale has no billing profile, so this is the only address the
     // invoice will ever have. Losing it means issuing a VAT invoice with no
     // customer address on it.
-    const uid = await bookingWithBelgianProfile(new Date("2026-11-17T14:00:00.000Z"));
+    const uid = await bookingWithBelgianProfile(new Date("2026-11-17T12:00:00.000Z"));
 
     await repo.updateBillingFromCheckout(uid, {
       country: "DE",
@@ -194,7 +194,7 @@ describe("ResourceBookingRepository.updateBillingFromCheckout — never downgrad
   });
 
   it("still applies what the buyer actually confirmed at Checkout", async () => {
-    const uid = await bookingWithBelgianProfile(new Date("2026-11-17T12:00:00.000Z"));
+    const uid = await bookingWithBelgianProfile(new Date("2026-11-17T10:00:00.000Z"));
 
     await repo.updateBillingFromCheckout(uid, {
       country: "FR",
@@ -251,7 +251,7 @@ describe("ResourceBookingRepository — the welcome desk", () => {
     // A hostess must never greet someone into a room they have not bought. The
     // desk only ever lists CONFIRMED bookings, but the mutation takes a uid, so
     // the rule has to hold at this layer too.
-    const uid = await booking(new Date("2026-11-19T09:00:00.000Z"));
+    const uid = await booking(new Date("2026-11-19T07:00:00.000Z"));
 
     expect(await repo.setCheckedIn(uid, new Date(), "hostess@vo-group.be")).toBe(false);
 
@@ -263,7 +263,7 @@ describe("ResourceBookingRepository — the welcome desk", () => {
   });
 
   it("checks in a confirmed booking and records who did it", async () => {
-    const uid = await booking(new Date("2026-11-19T10:00:00.000Z"), {
+    const uid = await booking(new Date("2026-11-19T08:00:00.000Z"), {
       status: "CONFIRMED",
       holdExpiresAt: null,
     });
@@ -279,7 +279,7 @@ describe("ResourceBookingRepository — the welcome desk", () => {
   });
 
   it("clears a mistaken check-in, and the operator with it", async () => {
-    const uid = await booking(new Date("2026-11-19T11:00:00.000Z"), {
+    const uid = await booking(new Date("2026-11-19T09:00:00.000Z"), {
       status: "CONFIRMED",
       holdExpiresAt: null,
     });
@@ -296,15 +296,15 @@ describe("ResourceBookingRepository — the welcome desk", () => {
   });
 
   it("keeps unpaid holds out of the desk's day view", async () => {
-    await booking(new Date("2026-11-19T13:00:00.000Z"));
-    const confirmed = await booking(new Date("2026-11-19T14:00:00.000Z"), {
+    await booking(new Date("2026-11-19T11:00:00.000Z"));
+    const confirmed = await booking(new Date("2026-11-19T12:00:00.000Z"), {
       status: "CONFIRMED",
       holdExpiresAt: null,
     });
 
     const rows = await repo.findForDesk(
-      new Date("2026-11-19T00:00:00.000Z"),
-      new Date("2026-11-20T00:00:00.000Z")
+      new Date("2026-11-18T22:00:00.000Z"),
+      new Date("2026-11-19T22:00:00.000Z")
     );
     const mine = rows.filter((r) => r.resource.name === "TEST Desk Room");
     expect(mine.map((r) => r.uid)).toEqual([confirmed]);

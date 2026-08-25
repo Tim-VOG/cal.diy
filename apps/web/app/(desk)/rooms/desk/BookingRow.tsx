@@ -17,7 +17,7 @@ export interface DeskBooking {
 
 function time(value: string | Date): string {
   return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Brussels",
+    timeZone: "Europe/Istanbul",
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -26,7 +26,7 @@ function time(value: string | Date): string {
 
 function day(value: string | Date): string {
   return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Brussels",
+    timeZone: "Europe/Istanbul",
     weekday: "short",
     day: "numeric",
     month: "short",

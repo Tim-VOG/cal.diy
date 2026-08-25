@@ -4,7 +4,7 @@ import { buildEventSchedule, type EventDayDefinition } from "@calcom/features/ne
 import { useMemo } from "react";
 import type { AdminBookingRow } from "./RoomsAdminView";
 
-const TZ = "Europe/Brussels";
+const TZ = "Europe/Istanbul";
 
 function hourLabel(iso: string): string {
   return new Intl.DateTimeFormat("en-GB", {

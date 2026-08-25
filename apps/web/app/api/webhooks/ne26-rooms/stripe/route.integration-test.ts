@@ -34,7 +34,7 @@ let slotCursor = 0;
 /** A held booking on its own slot, so tests never collide with each other. */
 async function heldBooking(overrides: { holdExpiresAt?: Date } = {}): Promise<string> {
   // Wednesday 09:00 Brussels onwards, one hour apart per booking.
-  const startTime = new Date(Date.parse("2026-11-18T08:00:00.000Z") + slotCursor++ * 60 * MS_PER_MINUTE);
+  const startTime = new Date(Date.parse("2026-11-18T06:00:00.000Z") + slotCursor++ * 60 * MS_PER_MINUTE);
   const booking = await repo.createWithSlots({
     resourceId,
     startTime,

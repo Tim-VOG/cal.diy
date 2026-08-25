@@ -50,9 +50,9 @@ describe("saleNotification", () => {
     expect(body).toContain("871.20 EUR");
   });
 
-  it("carries the slot in Brussels time, not UTC", () => {
-    // 13:00 UTC in November is 14:00 in Brussels.
-    expect(saleNotification(BASE).body).toContain("Tue, 17 Nov 2026, 14:00-16:00 (Europe/Brussels)");
+  it("carries the slot in the event's local time, not UTC", () => {
+    // Istanbul is UTC+3 all year, so 13:00 UTC is 16:00 locally.
+    expect(saleNotification(BASE).body).toContain("Tue, 17 Nov 2026, 16:00-18:00 (Europe/Istanbul)");
   });
 
   it("gives a clickable admin link, not a bare path", () => {

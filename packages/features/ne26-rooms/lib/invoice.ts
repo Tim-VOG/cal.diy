@@ -41,7 +41,7 @@ export interface InvoiceInput {
   currency: string;
   roomName: string;
   durationMinutes: number;
-  /** "Tue, 17 Nov 2026, 09:00-10:00 (Europe/Brussels)" — printed under the line. */
+  /** "Tue, 17 Nov 2026, 09:00-10:00 (Europe/Istanbul)" — printed under the line. */
   slotLabel?: string;
   /** Add-on lineTotal is HT (excl. VAT). */
   addOns: { name: string; quantity: number; lineTotal: number; vatRate: number }[];

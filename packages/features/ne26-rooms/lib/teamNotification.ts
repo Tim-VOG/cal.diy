@@ -10,10 +10,10 @@ export function formatMoney(minorUnits: number, currency: string): string {
   return `${(minorUnits / 100).toFixed(2)} ${currency.toUpperCase()}`;
 }
 
-/** Brussels-time slot label, e.g. "Tue 17 Nov 2026, 14:00-16:00 (Europe/Brussels)". */
+/** Event-local slot label, e.g. "Tue, 17 Nov 2026, 14:00-16:00 (Europe/Istanbul)". */
 export function formatSlotRange(start: Date, end: Date): string {
   const day = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Brussels",
+    timeZone: "Europe/Istanbul",
     weekday: "short",
     day: "numeric",
     month: "short",
@@ -21,12 +21,12 @@ export function formatSlotRange(start: Date, end: Date): string {
   }).format(start);
   const time = (d: Date) =>
     new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Europe/Brussels",
+      timeZone: "Europe/Istanbul",
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
     }).format(d);
-  return `${day}, ${time(start)}-${time(end)} (Europe/Brussels)`;
+  return `${day}, ${time(start)}-${time(end)} (Europe/Istanbul)`;
 }
 
 export interface SaleNotificationInput {

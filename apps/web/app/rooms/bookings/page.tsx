@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-const TZ = "Europe/Brussels";
+const TZ = "Europe/Istanbul";
 const STATUS_BADGE: Record<string, string> = {
   CONFIRMED: "bg-green-100 text-green-700",
   PENDING: "bg-amber-100 text-amber-700",

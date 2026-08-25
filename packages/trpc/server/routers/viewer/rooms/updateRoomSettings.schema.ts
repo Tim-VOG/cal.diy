@@ -2,14 +2,14 @@ import { z } from "zod";
 
 const ZEventDay = z
   .object({
-    /** Calendar date in Europe/Brussels, YYYY-MM-DD. */
+    /** Calendar date in Europe/Istanbul, YYYY-MM-DD. */
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    /** First bookable hour (inclusive), Brussels time. */
-    openHourBrussels: z.number().int().min(0).max(23),
+    /** First bookable hour (inclusive), Istanbul time. */
+    openHour: z.number().int().min(0).max(23),
     /** Closing hour (exclusive): no slot may start at/after it. */
-    closeHourBrussels: z.number().int().min(1).max(24),
+    closeHour: z.number().int().min(1).max(24),
   })
-  .refine((d) => d.openHourBrussels < d.closeHourBrussels, {
+  .refine((d) => d.openHour < d.closeHour, {
     message: "Opening hour must be before closing hour",
   });
 

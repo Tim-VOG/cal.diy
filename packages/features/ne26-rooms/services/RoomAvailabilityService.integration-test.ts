@@ -95,31 +95,31 @@ describe("RoomAvailabilityService.getAvailabilityBySlug", () => {
     expect(room.slug).toBe(SLUG);
     expect(room.price3h).toBe(65000);
     expect(days.map((d) => d.date)).toEqual(["2026-11-17", "2026-11-18", "2026-11-19"]);
-    expect(durationsAt(days, "2026-11-17", "2026-11-17T13:00:00.000Z")).toEqual([1, 2, 3]);
+    expect(durationsAt(days, "2026-11-17", "2026-11-17T11:00:00.000Z")).toEqual([1, 2, 3]);
   });
 
   it("hides a confirmed hour and longer durations spanning it", async () => {
-    await book("2026-11-17T13:00:00.000Z", 60, ResourceBookingStatus.CONFIRMED);
+    await book("2026-11-17T11:00:00.000Z", 60, ResourceBookingStatus.CONFIRMED);
     const { days } = await service.getAvailabilityBySlug(SLUG);
     // 13:00Z is taken, so it is not on offer at all; 14:00Z still sells 1h/2h.
-    expect(durationsAt(days, "2026-11-17", "2026-11-17T13:00:00.000Z")).toEqual([]);
-    expect(durationsAt(days, "2026-11-17", "2026-11-17T14:00:00.000Z")).toEqual([1, 2]);
+    expect(durationsAt(days, "2026-11-17", "2026-11-17T11:00:00.000Z")).toEqual([]);
+    expect(durationsAt(days, "2026-11-17", "2026-11-17T12:00:00.000Z")).toEqual([1, 2]);
   });
 
   it("blocks a pending hour while its hold is active", async () => {
     await book(
-      "2026-11-17T14:00:00.000Z",
+      "2026-11-17T12:00:00.000Z",
       60,
       ResourceBookingStatus.PENDING,
       new Date(Date.now() + 15 * MS_PER_MINUTE)
     );
     const { days } = await service.getAvailabilityBySlug(SLUG);
-    expect(durationsAt(days, "2026-11-17", "2026-11-17T14:00:00.000Z")).toEqual([]);
+    expect(durationsAt(days, "2026-11-17", "2026-11-17T12:00:00.000Z")).toEqual([]);
   });
 
   it("ignores a pending hour whose hold has expired", async () => {
     await book(
-      "2026-11-17T14:00:00.000Z",
+      "2026-11-17T12:00:00.000Z",
       60,
       ResourceBookingStatus.PENDING,
       new Date(Date.now() - MS_PER_MINUTE)
@@ -130,7 +130,7 @@ describe("RoomAvailabilityService.getAvailabilityBySlug", () => {
     // 1h only, not 1h/2h: offered times chain, and the two-hour chain runs
     // 13:00-15:00, so it steps straight over 14:00. The 14:00-16:00 pair is free
     // but is not on the two-hour sequence.
-    expect(durationsAt(days, "2026-11-17", "2026-11-17T14:00:00.000Z")).toEqual([1]);
+    expect(durationsAt(days, "2026-11-17", "2026-11-17T12:00:00.000Z")).toEqual([1]);
   });
 
   describe("getAvailabilityForAllRooms — the desk grid", () => {
@@ -138,7 +138,7 @@ describe("RoomAvailabilityService.getAvailabilityBySlug", () => {
       // The grid is built in three queries instead of 3n. The two paths
       // disagreeing would mean the hostess and the buyer seeing different rooms
       // as free, which is how a room gets sold twice.
-      await book("2026-11-17T13:00:00.000Z", 60, ResourceBookingStatus.CONFIRMED);
+      await book("2026-11-17T11:00:00.000Z", 60, ResourceBookingStatus.CONFIRMED);
 
       const all = await service.getAvailabilityForAllRooms();
       const mine = all.find((a) => a.room.slug === SLUG);
@@ -164,13 +164,13 @@ describe("RoomAvailabilityService.getAvailabilityBySlug", () => {
         select: { id: true, slug: true },
       });
       try {
-        await book("2026-11-17T13:00:00.000Z", 60, ResourceBookingStatus.CONFIRMED);
+        await book("2026-11-17T11:00:00.000Z", 60, ResourceBookingStatus.CONFIRMED);
 
         const all = await service.getAvailabilityForAllRooms();
         const neighbour = all.find((a) => a.room.slug === other.slug);
         const start = neighbour?.days
           .find((d) => d.date === "2026-11-17")
-          ?.starts.find((s) => s.startUtc === "2026-11-17T13:00:00.000Z");
+          ?.starts.find((s) => s.startUtc === "2026-11-17T11:00:00.000Z");
 
         expect(start?.availableDurations).toContain(1);
       } finally {

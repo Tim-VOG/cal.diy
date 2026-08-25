@@ -17,7 +17,7 @@ import { clearSelection, getSelection, saveSelection } from "../selectionStore";
 import { servicesFor } from "../amenities";
 import RoomGallery from "./RoomGallery";
 
-const TZ = "Europe/Brussels";
+const TZ = "Europe/Istanbul";
 const MS_PER_HOUR = 60 * 60 * 1000;
 const DURATIONS: DurationHours[] = [1, 2, 3];
 

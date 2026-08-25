@@ -15,7 +15,7 @@ export interface RoomSettings {
   bufferMinutes: number;
   /** Start step offered to bookers (60/30/15). Atomic slot stays 15 min. */
   slotGranularityMinutes: number;
-  /** Opening hours per event day (Brussels). Falls back to built-in defaults. */
+  /** Opening hours per event day, event-local. Falls back to built-in defaults. */
   eventDays: EventDayDefinition[];
   /** Public landing title, shown above "Book a meeting room". */
   landingTitle: string | null;

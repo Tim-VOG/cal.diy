@@ -117,7 +117,7 @@ export default async function RoomsListingPage(): Promise<JSX.Element> {
       <p className="mt-2 whitespace-pre-line text-gray-600 text-sm">
         {settings.landingIntro?.trim()
           ? settings.landingIntro
-          : "Choose a room, a time slot (1h, 2h or 3h) and add-ons. Times shown in Europe/Brussels."}
+          : "Choose a room, a time slot (1h, 2h or 3h) and add-ons. Times shown in Europe/Istanbul."}
       </p>
 
       <SavedSelections />

@@ -7,7 +7,7 @@ import { useMemo, useState } from "react";
 import BookingCalendar from "./BookingCalendar";
 import BookingSidePanel from "./BookingSidePanel";
 
-const TZ = "Europe/Brussels";
+const TZ = "Europe/Istanbul";
 
 export interface AdminBookingRow {
   uid: string;

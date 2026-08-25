@@ -77,7 +77,7 @@ describe("ResourceBookingService.createBooking", () => {
   it("creates a PENDING booking with a hold and the correct total (room + add-ons)", async () => {
     const result = await service.createBooking({
       slug: SLUG,
-      startUtc: new Date("2026-11-18T08:00:00.000Z"), // 09:00 Brussels, sellable
+      startUtc: new Date("2026-11-18T06:00:00.000Z"), // 09:00 local, sellable
       durationHours: 2,
       booker,
       addOns: [
@@ -105,7 +105,7 @@ describe("ResourceBookingService.createBooking", () => {
     await expect(
       service.createBooking({
         slug: SLUG,
-        startUtc: new Date("2026-11-18T06:00:00.000Z"), // 07:00 Brussels, before opening
+        startUtc: new Date("2026-11-18T04:00:00.000Z"), // 07:00 local, before opening
         durationHours: 1,
         booker,
       })
@@ -116,7 +116,7 @@ describe("ResourceBookingService.createBooking", () => {
     await expect(
       service.createBooking({
         slug: SLUG,
-        startUtc: new Date("2026-11-18T08:00:00.000Z"),
+        startUtc: new Date("2026-11-18T06:00:00.000Z"),
         durationHours: 1,
         booker,
         addOns: [{ slug: "does-not-exist", quantity: 1 }],
@@ -130,7 +130,7 @@ describe("ResourceBookingService.createBooking", () => {
     const before = Date.now();
     const result = await service.createBooking({
       slug: SLUG,
-      startUtc: new Date("2026-11-18T08:00:00.000Z"),
+      startUtc: new Date("2026-11-18T06:00:00.000Z"),
       durationHours: 1,
       booker,
     });
@@ -142,7 +142,7 @@ describe("ResourceBookingService.createBooking", () => {
     // broadcast link are in during the event. Only Date is faked, so Prisma's
     // internal timers keep working.
     beforeAll(() => {
-      vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-18T10:00:00.000Z") });
+      vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-18T08:00:00.000Z") });
     });
     afterAll(() => {
       vi.useRealTimers();
@@ -152,7 +152,7 @@ describe("ResourceBookingService.createBooking", () => {
       await expect(
         service.createBooking({
           slug: SLUG,
-          startUtc: new Date("2026-11-18T08:00:00.000Z"), // 09:00 Brussels, two hours ago
+          startUtc: new Date("2026-11-18T06:00:00.000Z"), // 09:00 Brussels, two hours ago
           durationHours: 1,
           booker,
         })
@@ -163,7 +163,7 @@ describe("ResourceBookingService.createBooking", () => {
       await expect(
         service.createBooking({
           slug: SLUG,
-          startUtc: new Date("2026-11-17T13:00:00.000Z"), // Tuesday, yesterday
+          startUtc: new Date("2026-11-17T11:00:00.000Z"), // Tuesday, yesterday
           durationHours: 1,
           booker,
         })
@@ -173,7 +173,7 @@ describe("ResourceBookingService.createBooking", () => {
     it("still sells a slot later the same day", async () => {
       const result = await service.createBooking({
         slug: SLUG,
-        startUtc: new Date("2026-11-18T12:00:00.000Z"), // 13:00 Brussels, two hours out
+        startUtc: new Date("2026-11-18T10:00:00.000Z"), // 13:00 Brussels, two hours out
         durationHours: 1,
         booker,
       });
@@ -193,16 +193,16 @@ describe("ResourceBookingService.createBooking", () => {
     }
 
     it("refuses a seventh counter booking waiting for payment", async () => {
-      const hours = [8, 9, 10, 11, 12, 13].map((h) => `2026-11-18T${String(h).padStart(2, "0")}:00:00.000Z`);
+      const hours = [6, 7, 8, 9, 10, 11].map((h) => `2026-11-18T${String(h).padStart(2, "0")}:00:00.000Z`);
       for (const hour of hours) await counterHold(hour);
 
-      await expect(counterHold("2026-11-18T14:00:00.000Z")).rejects.toMatchObject({
+      await expect(counterHold("2026-11-18T12:00:00.000Z")).rejects.toMatchObject({
         code: ErrorCode.BadRequest,
       });
     });
 
     it("does not count a counter sale that has been paid", async () => {
-      const hours = [8, 9, 10, 11, 12, 13].map((h) => `2026-11-18T${String(h).padStart(2, "0")}:00:00.000Z`);
+      const hours = [6, 7, 8, 9, 10, 11].map((h) => `2026-11-18T${String(h).padStart(2, "0")}:00:00.000Z`);
       for (const hour of hours) {
         const booking = await counterHold(hour);
         await prisma.resourceBooking.update({
@@ -211,20 +211,20 @@ describe("ResourceBookingService.createBooking", () => {
         });
       }
 
-      await expect(counterHold("2026-11-18T14:00:00.000Z")).resolves.toMatchObject({
+      await expect(counterHold("2026-11-18T12:00:00.000Z")).resolves.toMatchObject({
         status: "PENDING",
       });
     });
 
     it("keeps the counter and per-account caps separate", async () => {
       // Six counter holds must not stop an exhibitor booking from their phone.
-      const hours = [8, 9, 10, 11, 12, 13].map((h) => `2026-11-18T${String(h).padStart(2, "0")}:00:00.000Z`);
+      const hours = [6, 7, 8, 9, 10, 11].map((h) => `2026-11-18T${String(h).padStart(2, "0")}:00:00.000Z`);
       for (const hour of hours) await counterHold(hour);
 
       await expect(
         service.createBooking({
           slug: SLUG,
-          startUtc: new Date("2026-11-18T14:00:00.000Z"),
+          startUtc: new Date("2026-11-18T12:00:00.000Z"),
           durationHours: 1,
           booker,
         })
@@ -245,19 +245,19 @@ describe("ResourceBookingService.createBooking", () => {
     }
 
     it("refuses a fourth room held unpaid at the same time", async () => {
+      await hold("2026-11-18T06:00:00.000Z");
+      await hold("2026-11-18T07:00:00.000Z");
       await hold("2026-11-18T08:00:00.000Z");
-      await hold("2026-11-18T09:00:00.000Z");
-      await hold("2026-11-18T10:00:00.000Z");
 
-      await expect(hold("2026-11-18T11:00:00.000Z")).rejects.toMatchObject({
+      await expect(hold("2026-11-18T09:00:00.000Z")).rejects.toMatchObject({
         code: ErrorCode.BadRequest,
       });
     });
 
     it("counts only live holds — a lapsed one blocks nothing", async () => {
-      const first = await hold("2026-11-18T08:00:00.000Z");
-      await hold("2026-11-18T09:00:00.000Z");
-      await hold("2026-11-18T10:00:00.000Z");
+      const first = await hold("2026-11-18T06:00:00.000Z");
+      await hold("2026-11-18T07:00:00.000Z");
+      await hold("2026-11-18T08:00:00.000Z");
 
       // Age one hold out. It no longer takes its room off sale, so it must not
       // count against the cap either.
@@ -266,12 +266,12 @@ describe("ResourceBookingService.createBooking", () => {
         data: { holdExpiresAt: new Date(Date.now() - 60 * 1000) },
       });
 
-      await expect(hold("2026-11-18T11:00:00.000Z")).resolves.toMatchObject({ status: "PENDING" });
+      await expect(hold("2026-11-18T09:00:00.000Z")).resolves.toMatchObject({ status: "PENDING" });
     });
 
     it("does not count rooms the exhibitor has already paid for", async () => {
       // Buying three rooms and coming back for a fourth is normal behaviour.
-      for (const hour of ["2026-11-18T08:00:00.000Z", "2026-11-18T09:00:00.000Z", "2026-11-18T10:00:00.000Z"]) {
+      for (const hour of ["2026-11-18T06:00:00.000Z", "2026-11-18T07:00:00.000Z", "2026-11-18T08:00:00.000Z"]) {
         const booking = await hold(hour);
         await prisma.resourceBooking.update({
           where: { uid: booking.uid },
@@ -279,7 +279,7 @@ describe("ResourceBookingService.createBooking", () => {
         });
       }
 
-      await expect(hold("2026-11-18T11:00:00.000Z")).resolves.toMatchObject({ status: "PENDING" });
+      await expect(hold("2026-11-18T09:00:00.000Z")).resolves.toMatchObject({ status: "PENDING" });
     });
   });
 

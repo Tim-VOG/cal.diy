@@ -11,7 +11,7 @@ type Params = Promise<{ uid: string }>;
 
 export const metadata: Metadata = { title: "Booking confirmation · NATO Edge 26" };
 
-const TZ = "Europe/Brussels";
+const TZ = "Europe/Istanbul";
 
 function formatRange(start: Date, end: Date): string {
   const day = new Intl.DateTimeFormat("en-GB", {

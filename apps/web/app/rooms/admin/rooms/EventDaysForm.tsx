@@ -6,7 +6,7 @@ import { CalendarClock, Check, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-const TZ = "Europe/Brussels";
+const TZ = "Europe/Istanbul";
 
 function dayLabel(date: string): string {
   return new Intl.DateTimeFormat("en-GB", {
@@ -44,11 +44,11 @@ export default function EventDaysForm({
   const [buffer, setBuffer] = useState(bufferMinutes);
   const save = trpc.viewer.rooms.updateRoomSettings.useMutation({ onSuccess: () => router.refresh() });
 
-  function setHour(date: string, field: "openHourBrussels" | "closeHourBrussels", value: number): void {
+  function setHour(date: string, field: "openHour" | "closeHour", value: number): void {
     setDays((rows) => rows.map((d) => (d.date === date ? { ...d, [field]: value } : d)));
   }
 
-  const invalid = days.find((d) => d.openHourBrussels >= d.closeHourBrussels);
+  const invalid = days.find((d) => d.openHour >= d.closeHour);
 
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-5">
@@ -57,7 +57,7 @@ export default function EventDaysForm({
         When rooms can be booked
       </h2>
       <p className="mt-1 text-gray-600 text-sm">
-        Drives room availability, the admin calendar and the block editor. All times are Brussels time.
+        Drives room availability, the admin calendar and the block editor. All times are Istanbul time.
       </p>
 
       <div className="mt-4 space-y-2">
@@ -70,8 +70,8 @@ export default function EventDaysForm({
               <span className="block font-medium text-gray-500 text-xs">Opens</span>
               <select
                 className={select}
-                value={d.openHourBrussels}
-                onChange={(e) => setHour(d.date, "openHourBrussels", Number(e.target.value))}>
+                value={d.openHour}
+                onChange={(e) => setHour(d.date, "openHour", Number(e.target.value))}>
                 {HOURS.slice(0, 24).map((h) => (
                   <option key={h} value={h}>
                     {String(h).padStart(2, "0")}:00
@@ -83,8 +83,8 @@ export default function EventDaysForm({
               <span className="block font-medium text-gray-500 text-xs">Closes</span>
               <select
                 className={select}
-                value={d.closeHourBrussels}
-                onChange={(e) => setHour(d.date, "closeHourBrussels", Number(e.target.value))}>
+                value={d.closeHour}
+                onChange={(e) => setHour(d.date, "closeHour", Number(e.target.value))}>
                 {HOURS.slice(1).map((h) => (
                   <option key={h} value={h}>
                     {String(h).padStart(2, "0")}:00

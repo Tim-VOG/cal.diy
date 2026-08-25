@@ -1,6 +1,6 @@
 "use client";
 
-import { brusselsToday, shiftDay } from "@calcom/features/ne26-rooms/lib/deskDay";
+import { eventToday, shiftDay } from "@calcom/features/ne26-rooms/lib/deskDay";
 import { trpc } from "@calcom/trpc/react";
 import { ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import Link from "next/link";
@@ -10,7 +10,7 @@ const SLOT_MS = 15 * 60 * 1000;
 
 function hhmm(iso: string): string {
   return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Brussels",
+    timeZone: "Europe/Istanbul",
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -46,10 +46,10 @@ export default function PlanningView(): JSX.Element {
   // than on a today that is months away from any booking.
   const eventDays = trpc.viewer.rooms.deskEventDays.useQuery();
   const [chosen, setChosen] = useState<string | null>(null);
-  const date = chosen ?? eventDays.data?.defaultDate ?? brusselsToday();
+  const date = chosen ?? eventDays.data?.defaultDate ?? eventToday();
   const setDate = (next: string | ((d: string) => string)) =>
     setChosen((current) => {
-      const from = current ?? eventDays.data?.defaultDate ?? brusselsToday();
+      const from = current ?? eventDays.data?.defaultDate ?? eventToday();
       return typeof next === "function" ? next(from) : next;
     });
   // The board is left open on a laptop for the whole day, so it has to keep
@@ -91,7 +91,7 @@ export default function PlanningView(): JSX.Element {
 
   // Before the event, "Today" would land on an empty August day. Send them back
   // to the event instead — that is what they meant.
-  const home = eventDays.data?.defaultDate ?? brusselsToday();
+  const home = eventDays.data?.defaultDate ?? eventToday();
   const atHome = date === home;
 
   return (
@@ -117,7 +117,7 @@ export default function PlanningView(): JSX.Element {
               type="button"
               onClick={() => setDate(home)}
               className="ml-1 rounded-lg border border-gray-200 bg-white px-3 py-2 font-medium text-[#000643] text-sm transition hover:border-[#000643]">
-              {home === brusselsToday() ? "Today" : "Back to the event"}
+              {home === eventToday() ? "Today" : "Back to the event"}
             </button>
           ) : null}
         </div>
@@ -149,7 +149,7 @@ export default function PlanningView(): JSX.Element {
         <div>
           <h1 className="font-bold text-2xl text-[#000643]">{dayLabel(date)}</h1>
           <p className="mt-1 text-gray-600 text-sm">
-            Click any free slot to start a booking for it. Times are Brussels time.
+            Click any free slot to start a booking for it. Times are Istanbul time.
           </p>
         </div>
         <button

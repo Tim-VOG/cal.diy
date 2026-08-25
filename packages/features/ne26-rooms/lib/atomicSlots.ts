@@ -24,7 +24,7 @@ export function getAtomicSlotStarts(startTime: Date, durationMinutes: number): D
       `Unsupported duration: ${durationMinutes} minutes (allowed: ${ALLOWED_DURATIONS_MINUTES.join(", ")})`
     );
   }
-  // Bookings must start on a slot boundary. Europe/Brussels is a whole-hour
+  // Bookings must start on a slot boundary. Europe/Istanbul is a whole-hour
   // offset, so a local boundary is also a UTC boundary.
   if (startTime.getTime() % SLOT_GRANULARITY_MS !== 0) {
     throw new ErrorWithCode(

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-const TZ = "Europe/Brussels";
+const TZ = "Europe/Istanbul";
 
 export interface BookerBooking {
   uid: string;

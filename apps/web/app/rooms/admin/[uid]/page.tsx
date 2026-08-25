@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-const TZ = "Europe/Brussels";
+const TZ = "Europe/Istanbul";
 
 function fmtDateTime(d: Date): string {
   return new Intl.DateTimeFormat("en-GB", {
@@ -87,7 +87,7 @@ export default async function AdminBookingDetailPage({
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Card title="When (Europe/Brussels)">
+        <Card title="When (Europe/Istanbul)">
           <Row label="Start">{fmtDateTime(booking.startTime)}</Row>
           <Row label="End">{fmtDateTime(booking.endTime)}</Row>
           <Row label="Duration">{booking.durationMinutes / 60}h</Row>

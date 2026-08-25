@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const ZDeskDayInputSchema = z.object({
-  /** Calendar day in Europe/Brussels, "YYYY-MM-DD". */
+  /** Calendar day in Europe/Istanbul, "YYYY-MM-DD". */
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 export type TDeskDayInputSchema = z.infer<typeof ZDeskDayInputSchema>;

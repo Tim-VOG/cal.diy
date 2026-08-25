@@ -14,14 +14,14 @@ function formatSlot(selection: RoomSelection): string {
   const start = new Date(selection.startUtc);
   const end = new Date(start.getTime() + selection.durationHours * 60 * 60 * 1000);
   const day = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Brussels",
+    timeZone: "Europe/Istanbul",
     weekday: "short",
     day: "numeric",
     month: "short",
   }).format(start);
   const time = (d: Date) =>
     new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Europe/Brussels",
+      timeZone: "Europe/Istanbul",
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
