@@ -21,11 +21,15 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
 
   return (
     <div className="flex min-h-screen flex-col bg-gray-50 text-black">
+      {/* Two rows rather than one. Seven controls crammed onto a single line
+          left the links touching each other, and the event dates competing with
+          navigation for the same space. Identity and context on top, the things
+          you click underneath. */}
       <header className="bg-[#000643] text-white">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-4 sm:px-6">
           <Link
             href="/rooms"
-            className="flex items-center gap-2 sm:gap-4"
+            className="flex items-center gap-3 sm:gap-4"
             aria-label="VO Europe — NATO Edge 26 Rooms — home">
             {/* Both logos are white-on-transparent, so they sit on the navy bar.
                 Slightly smaller on mobile so both fit beside the controls. */}
@@ -35,51 +39,53 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
             {/* biome-ignore lint/performance/noImgElement: static brand asset, next/image adds no value here */}
             <img src="/NE26.png" alt="NATO Edge 26" className="h-7 w-auto sm:h-8" />
           </Link>
-          <div className="flex items-center gap-3 sm:gap-5">
-            <span className="hidden text-sm opacity-70 md:inline">17–19 November 2026</span>
+
+          <div className="flex items-center gap-4 sm:gap-6">
+            <span className="hidden text-right text-sm leading-tight opacity-70 lg:block">
+              17–19 November 2026
+              <span className="block text-xs">Fuar İzmir, Türkiye</span>
+            </span>
             {isLoggedIn ? (
               <>
                 {isAdmin ? (
                   <Link
                     href="/rooms/admin"
-                    className="shrink-0 rounded-md border border-white/40 px-2.5 py-1 font-medium text-sm transition hover:bg-white/10">
+                    className="shrink-0 rounded-md border border-white/40 px-3 py-1.5 font-medium text-sm transition hover:bg-white/10">
                     Admin
                   </Link>
                 ) : null}
-                {/* The primary action had no button of its own: once signed in
-                    you could reach your bookings and your billing details, but
-                    getting back to the listing meant clicking the logo. */}
-                <Link
-                  href="/rooms"
-                  className="shrink-0 text-sm opacity-80 transition hover:opacity-100">
-                  <span className="sm:hidden">Book</span>
-                  <span className="hidden sm:inline">Book a meeting room</span>
-                </Link>
-                <Link
-                  href="/rooms/bookings"
-                  className="shrink-0 text-sm opacity-80 transition hover:opacity-100">
-                  <span className="sm:hidden">Bookings</span>
-                  <span className="hidden sm:inline">My bookings</span>
-                </Link>
-                <Link
-                  href="/rooms/account"
-                  className="shrink-0 text-sm opacity-80 transition hover:opacity-100">
-                  <span className="sm:hidden">Billing</span>
-                  <span className="hidden sm:inline">Billing details</span>
-                </Link>
                 <LogoutButton />
               </>
             ) : (
               <Link
                 href="/rooms/login"
-                className="shrink-0 rounded-md border border-white/30 px-3 py-1 text-sm transition hover:bg-white/10">
+                className="shrink-0 rounded-md border border-white/30 px-3 py-1.5 text-sm transition hover:bg-white/10">
                 Log in
               </Link>
             )}
           </div>
         </div>
+
+        {isLoggedIn ? (
+          <nav className="border-white/10 border-t">
+            <div className="mx-auto flex max-w-6xl gap-1 px-2 sm:px-4">
+              {[
+                { href: "/rooms", label: "Book a meeting room" },
+                { href: "/rooms/bookings", label: "My bookings" },
+                { href: "/rooms/account", label: "Billing details" },
+              ].map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="whitespace-nowrap px-4 py-3 font-medium text-sm text-white/75 transition hover:text-white">
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          </nav>
+        ) : null}
       </header>
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6">{children}</main>
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">{children}</main>
       <Footer />
     </div>
   );

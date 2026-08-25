@@ -40,10 +40,9 @@ export function buildBookingIcs(input: BookingIcsInput): string {
     `DTSTART:${toIcsUtc(input.startUtc)}`,
     `DTEND:${toIcsUtc(input.endUtc)}`,
     `SUMMARY:${escapeIcs(`${input.roomName} - NATO Edge 26`)}`,
-    // Venue only, no city: the event moved to Turkey and a wrong city in an
-    // attendee's calendar is worse than none — it is what they navigate to.
-    // Put the real address here once it is confirmed.
-    `LOCATION:${escapeIcs(`${input.roomName} - NATO Edge 26`)}`,
+    // The room, then the venue: this is what an attendee navigates to, so it
+    // names the place rather than just the event.
+    `LOCATION:${escapeIcs(`${input.roomName}, Fuar Izmir, Izmir, Turkiye`)}`,
     `DESCRIPTION:${escapeIcs(`Meeting room booking: ${input.roomName} at NATO Edge 26.`)}`,
     "END:VEVENT",
     "END:VCALENDAR",
