@@ -63,6 +63,14 @@ export default function LoginForm(): JSX.Element {
 
           {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-red-700 text-sm">{error}</p> : null}
 
+          {/* Cal's own reset flow, which existed all along with no way in from
+              here — so a forgotten password meant editing the database. */}
+          <p className="text-right">
+            <Link href="/auth/forgot-password" className="text-gray-500 text-xs hover:text-[#000643]">
+              Forgot your password?
+            </Link>
+          </p>
+
           <button
             type="submit"
             disabled={loading}
