@@ -191,7 +191,7 @@ function vatPct(bp: number): string {
 function VatRecap({ vat }: { vat: VatPreview }): JSX.Element {
   if (!vat.hasBuyerCountry) {
     return (
-      <p className="mt-2 text-gray-400 text-xs">
+      <p className="mt-3 text-gray-400 text-xs">
         VAT is added at payment.{" "}
         <a href="/rooms/account" className="underline hover:text-[#000643]">
           Add your billing details
@@ -201,15 +201,15 @@ function VatRecap({ vat }: { vat: VatPreview }): JSX.Element {
     );
   }
   return (
-    <div className="mt-2 space-y-0.5 text-gray-500 text-xs">
+    <div className="mt-2 space-y-2 text-gray-500 text-sm">
       {vat.zeroRated ? (
-        <>
-          <div className="flex justify-between">
-            <span>VAT (0%)</span>
-            <span>{formatPrice(0, vat.currency)}</span>
-          </div>
-          {vat.mention ? <p className="text-gray-400">{vat.mention}</p> : null}
-        </>
+        // Just the figure. The legal wording that justifies it is printed on the
+        // invoice, where it is needed; in a basket it buried the total under
+        // three lines of directive references.
+        <div className="flex justify-between">
+          <span>VAT (0%)</span>
+          <span>{formatPrice(0, vat.currency)}</span>
+        </div>
       ) : (
         vat.vatBreakdown.map((v) => (
           <div key={v.vatRate} className="flex justify-between">
@@ -218,8 +218,8 @@ function VatRecap({ vat }: { vat: VatPreview }): JSX.Element {
           </div>
         ))
       )}
-      <div className="flex justify-between border-gray-100 border-t pt-1 font-bold text-[#000643]">
-        <span>Total incl. VAT</span>
+      <div className="flex items-baseline justify-between border-gray-100 border-t pt-3 font-bold text-[#000643] text-base">
+        <span>Total</span>
         <span>{formatPrice(vat.totalTtc, vat.currency)}</span>
       </div>
     </div>
@@ -262,8 +262,8 @@ function SelectionSummary({
   onSubmit: () => void;
 }): JSX.Element {
   return (
-    <aside className="h-fit rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-      <h2 className="font-semibold text-gray-500 text-sm uppercase tracking-wide">Your selection</h2>
+    <aside className="h-fit rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+      <h2 className="font-semibold text-gray-500 text-xs uppercase tracking-wide">Your selection</h2>
 
       {booking ? (
         <div className="mt-3 space-y-2 text-sm">
@@ -276,19 +276,19 @@ function SelectionSummary({
       ) : (
         <>
           {selectedStartUtc && selectedDuration && endIso && roomPrice !== null ? (
-            <div className="mt-3 space-y-1 text-sm">
-              <p className="flex items-center gap-1.5 font-medium">
-                <Building className="h-4 w-4 shrink-0 text-[#000643]" aria-hidden />
+            <div className="mt-4 text-sm">
+              <p className="flex items-center gap-2 font-semibold text-[#000643] text-base">
+                <Building className="h-4 w-4 shrink-0" aria-hidden />
                 {room.name}
               </p>
-              <p>{formatDayLabel(selectedDate)}</p>
-              <p className="flex items-center gap-1.5">
+              <p className="mt-1.5 text-gray-600">{formatDayLabel(selectedDate)}</p>
+              <p className="mt-1 flex items-center gap-2 text-gray-600">
                 <Clock className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
                 {formatTime(selectedStartUtc)} – {formatTime(endIso)} ({selectedDuration}h)
               </p>
 
               {/* Cost breakdown: room + each add-on, then total. */}
-              <div className="mt-3 space-y-1 border-gray-100 border-t pt-3">
+              <div className="mt-5 space-y-2 border-gray-100 border-t pt-4">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Room · {selectedDuration}h</span>
                   <span>{formatPrice(roomPrice, room.currency)}</span>
@@ -299,22 +299,21 @@ function SelectionSummary({
                     <span>{formatPrice(line.lineTotal, room.currency)}</span>
                   </div>
                 ))}
-                <div className="mt-1 flex items-center justify-between border-gray-100 border-t pt-2 font-medium text-gray-700">
-                  <span className="flex items-center gap-1">
+                <div className="flex items-center justify-between border-gray-100 border-t pt-3 text-gray-600">
+                  <span className="flex items-center gap-1.5">
                     <Euro className="h-4 w-4 shrink-0" aria-hidden />
-                    Total excl. VAT
+                    Excl. VAT
                   </span>
                   <span>{total !== null ? formatPrice(total, room.currency) : ""}</span>
                 </div>
                 {isAuthed && vat ? <VatRecap vat={vat} /> : null}
-                {/* Prices are quoted excl. VAT and the rate depends on the
-                    buyer's country and VAT number, so the figure above is not
-                    always what gets charged. Say so where the total is, not
-                    buried in the terms. */}
-                <p className="mt-2 text-gray-500 text-xs">
-                  Prices exclude VAT. The applicable VAT is determined at checkout from your billing
-                  country and VAT number, in line with EU VAT rules.
-                </p>
+                {/* Only while the real figure is unknown. Once the card shows the
+                    actual VAT, repeating how it is worked out is noise. */}
+                {!isAuthed || !vat?.hasBuyerCountry ? (
+                  <p className="pt-1 text-gray-400 text-xs">
+                    Prices exclude VAT, which depends on your billing country.
+                  </p>
+                ) : null}
               </div>
             </div>
           ) : (
@@ -347,11 +346,11 @@ function SelectionSummary({
               type="button"
               disabled={!canBook}
               onClick={onSubmit}
-              className="mt-5 w-full rounded-lg bg-[#000643] px-4 py-2.5 font-semibold text-sm text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
+              className="mt-6 w-full rounded-lg bg-[#000643] px-4 py-3 font-semibold text-sm text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
               {isPending ? "Holding…" : "Continue to payment"}
             </button>
           )}
-          <p className="mt-2 text-center text-gray-400 text-xs">Secure payment via Stripe.</p>
+          <p className="mt-3 text-center text-gray-400 text-xs">Secure payment via Stripe.</p>
         </>
       )}
     </aside>
