@@ -18,6 +18,7 @@ export const ZUpdateInvoiceSettingsInputSchema = z.object({
   footerColumn1: z.string().max(500),
   footerColumn2: z.string().max(500),
   footerColumn3: z.string().max(500),
+  vatOnlyForBelgium: z.boolean().optional(),
   euReverseChargeEnabled: z.boolean(),
   euReverseChargeMention: z.string().max(300),
   nonEuExemptEnabled: z.boolean(),

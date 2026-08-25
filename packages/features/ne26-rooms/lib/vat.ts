@@ -1,6 +1,11 @@
 import { EU_COUNTRY_CODES } from "./countries";
 
 export interface VatMatrixConfig {
+  /**
+   * Charge VAT to Belgian buyers only; zero-rate everyone else on their country
+   * alone. No VAT number is consulted, so nothing hinges on VIES.
+   */
+  vatOnlyForBelgium?: boolean;
   euReverseChargeEnabled: boolean;
   euReverseChargeMention: string;
   nonEuExemptEnabled: boolean;
@@ -37,6 +42,17 @@ export function resolveVatTreatment(
   // on can no longer silently zero-rate — wire verification first, then thread it
   // through here.
   const isVerified = buyer.vatNumberVerified === true;
+
+  // The blunt rule the business settled on. It wins over the matrix below,
+  // because it is a decision about who is charged rather than about which
+  // exemption applies — the mentions are still chosen per destination, since an
+  // EU buyer and a Turkish one are zero-rated for different legal reasons.
+  if (config.vatOnlyForBelgium) {
+    return {
+      zeroRated: true,
+      mention: isEu ? config.euReverseChargeMention : config.nonEuExemptMention,
+    };
+  }
 
   if (isEu && hasVatNumber && isVerified && config.euReverseChargeEnabled) {
     return { zeroRated: true, mention: config.euReverseChargeMention };

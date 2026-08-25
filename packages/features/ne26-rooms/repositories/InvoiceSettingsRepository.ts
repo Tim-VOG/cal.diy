@@ -16,6 +16,7 @@ const settingsSelect = {
   footerColumn1: true,
   footerColumn2: true,
   footerColumn3: true,
+  vatOnlyForBelgium: true,
   euReverseChargeEnabled: true,
   euReverseChargeMention: true,
   nonEuExemptEnabled: true,
@@ -39,6 +40,7 @@ export interface InvoiceSettings {
   footerColumn1: string;
   footerColumn2: string;
   footerColumn3: string;
+  vatOnlyForBelgium: boolean;
   euReverseChargeEnabled: boolean;
   euReverseChargeMention: string;
   nonEuExemptEnabled: boolean;

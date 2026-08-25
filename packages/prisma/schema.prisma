@@ -3063,6 +3063,11 @@ model Ne26InvoiceSettings {
   footerColumn3          String   @default("")
   // VAT-by-country matrix (admin-configurable). When enabled, lines are zero-rated
   // for that buyer type and the mention is printed. Belgian VAT applies otherwise.
+  // NE26: "VAT for Belgian buyers only". When on, every non-Belgian buyer is
+  // zero-rated whatever their VAT number says — which is the rule the business
+  // asked for, and which sidesteps VIES entirely because no number is consulted.
+  // The two flags below then only choose which legal mention gets printed.
+  vatOnlyForBelgium      Boolean  @default(false)
   euReverseChargeEnabled Boolean  @default(false)
   euReverseChargeMention String   @default("VAT reverse charge - Article 196 of Council Directive 2006/112/EC")
   nonEuExemptEnabled     Boolean  @default(false)

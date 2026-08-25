@@ -70,3 +70,58 @@ describe("resolveVatTreatment", () => {
     });
   });
 });
+
+describe("resolveVatTreatment — VAT for Belgian buyers only", () => {
+  const config = {
+    vatOnlyForBelgium: true,
+    euReverseChargeEnabled: false,
+    euReverseChargeMention: "VAT reverse charge - Article 196",
+    nonEuExemptEnabled: false,
+    nonEuExemptMention: "VAT not applicable - outside the scope of EU VAT",
+  };
+
+  it("still charges Belgian buyers", () => {
+    expect(resolveVatTreatment({ country: "BE", vatNumber: "BE0123456789" }, config)).toEqual({
+      zeroRated: false,
+      mention: null,
+    });
+  });
+
+  it("charges a buyer whose country is unknown", () => {
+    // Never zero-rate on missing information: the 21% would be VO's to owe.
+    expect(resolveVatTreatment({ country: null, vatNumber: null }, config)).toEqual({
+      zeroRated: false,
+      mention: null,
+    });
+  });
+
+  it("zero-rates an EU buyer with no VAT number at all", () => {
+    // The whole point: the rule is about the country, so nothing depends on a
+    // number we cannot verify.
+    expect(resolveVatTreatment({ country: "DE", vatNumber: null }, config)).toEqual({
+      zeroRated: true,
+      mention: "VAT reverse charge - Article 196",
+    });
+  });
+
+  it("zero-rates a non-EU buyer with the other mention", () => {
+    // An EU buyer and a Turkish one are both zero-rated, for different legal
+    // reasons — so they must not be given the same wording.
+    expect(resolveVatTreatment({ country: "TR", vatNumber: "1234567890" }, config)).toEqual({
+      zeroRated: true,
+      mention: "VAT not applicable - outside the scope of EU VAT",
+    });
+  });
+
+  it("does not need the older flags switched on", () => {
+    expect(resolveVatTreatment({ country: "FR", vatNumber: null }, config).zeroRated).toBe(true);
+  });
+
+  it("changes nothing while it is off", () => {
+    const off = { ...config, vatOnlyForBelgium: false };
+    expect(resolveVatTreatment({ country: "DE", vatNumber: "DE123" }, off)).toEqual({
+      zeroRated: false,
+      mention: null,
+    });
+  });
+});

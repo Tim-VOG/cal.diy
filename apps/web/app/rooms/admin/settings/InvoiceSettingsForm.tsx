@@ -100,8 +100,25 @@ export default function InvoiceSettingsForm({ initial }: { initial: InvoiceSetti
           <h2 className="font-semibold text-[#000643] text-sm uppercase tracking-wide">VAT by country</h2>
           <p className="mt-1 text-gray-500 text-xs">
             Belgian buyers always get standard Belgian VAT. Enable the rules below only if your accountant
-            confirms they apply (mind the place-of-supply rules for room rental at a Belgian event).
+            confirms they apply — mind the place-of-supply rules for rooms rented at an event abroad.
           </p>
+
+          <label className="mt-3 flex items-start gap-2 rounded-lg border border-[#000643]/15 bg-[#000643]/[0.03] p-3">
+            <input
+              type="checkbox"
+              checked={Boolean(form.vatOnlyForBelgium)}
+              onChange={(e) => setForm((f) => ({ ...f, vatOnlyForBelgium: e.target.checked }))}
+              className="mt-0.5 h-4 w-4 accent-[#000643]"
+            />
+            <span>
+              <span className="block font-medium text-sm">Charge VAT to Belgian buyers only</span>
+              <span className="mt-0.5 block text-gray-500 text-xs">
+                Everyone else is zero-rated on their country alone — no VAT number is looked at, so a
+                buyer who mistypes one still pays the right amount. This overrides the two rules below,
+                which then only decide which legal mention is printed.
+              </span>
+            </span>
+          </label>
 
           <label className="mt-3 flex items-center gap-2">
             <input
