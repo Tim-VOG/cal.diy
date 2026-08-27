@@ -6,6 +6,15 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { clearSelection, listSelections, type RoomSelection } from "./selectionStore";
 
+/** The event day a selection falls on, in the event's own time zone. */
+function eventDay(selection: RoomSelection): string {
+  if (!selection.startUtc) return selection.date;
+  // en-CA gives ISO order (YYYY-MM-DD), which is what the server compares on.
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Istanbul" }).format(
+    new Date(selection.startUtc)
+  );
+}
+
 function formatPrice(cents: number, currency: string): string {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(cents / 100);
 }
@@ -42,6 +51,10 @@ export default function SavedSelections(): JSX.Element | null {
   // Read after mount: sessionStorage does not exist while this renders on the
   // server, and reading it during render would desync hydration.
   const [selections, setSelections] = useState<RoomSelection[] | null>(null);
+  // One room per exhibitor per day. The rule is enforced server-side, but a
+  // buyer should never meet it for the first time as a refusal at the payment
+  // page, so the shortlist names the clash while it can still be fixed.
+  const bookedDays = trpc.viewer.rooms.myBookedDays.useQuery();
   const pay = trpc.viewer.rooms.createOrder.useMutation({
     onSuccess: (data) => {
       if (data.checkoutUrl) window.location.href = data.checkoutUrl;
@@ -65,14 +78,25 @@ export default function SavedSelections(): JSX.Element | null {
   // Everything payable in one go. A shortlist entry with no time picked is not
   // a booking yet, so it stays on the list rather than blocking the others.
   const payable = (selections ?? []).filter((s) => s.startUtc);
-  const canPay = payable.length > 0 && sameCurrency;
+
+  // A day already booked elsewhere, or picked twice here, breaks the rule.
+  const alreadyBooked = new Set(bookedDays.data?.days ?? []);
+  const seenDays = new Set<string>();
+  const clashing = new Set<string>();
+  for (const selection of payable) {
+    const day = eventDay(selection);
+    if (alreadyBooked.has(day) || seenDays.has(day)) clashing.add(selection.slug);
+    seenDays.add(day);
+  }
+
+  const canPay = payable.length > 0 && sameCurrency && clashing.size === 0;
 
   return (
     <section className="mt-6 rounded-xl border border-[#000643]/15 bg-[#000643]/[0.03] p-4">
       <h2 className="font-semibold text-[#000643] text-sm uppercase tracking-wide">Your shortlist</h2>
       <p className="mt-1 text-gray-600 text-xs">
-        Rooms you have configured but not booked. Nothing is held until you pay. Amounts exclude VAT,
-        which is determined at checkout from your billing country and VAT number.
+        Rooms you have configured but not booked. Nothing is held until you pay. Amounts exclude VAT, which is
+        determined at checkout from your billing country and VAT number.
       </p>
 
       <ul className="mt-3 divide-y divide-[#000643]/10">
@@ -83,6 +107,11 @@ export default function SavedSelections(): JSX.Element | null {
                 {selection.roomName}
               </span>
               <span className="block truncate text-gray-500 text-xs">{formatSlot(selection)}</span>
+              {clashing.has(selection.slug) ? (
+                <span className="mt-0.5 block text-amber-700 text-xs">
+                  You already have a room that day — pick another day or remove this one.
+                </span>
+              ) : null}
             </Link>
             <span className="shrink-0 font-medium text-[#000643] text-sm">
               {formatPrice(selection.total, selection.currency)}
@@ -103,6 +132,13 @@ export default function SavedSelections(): JSX.Element | null {
           <span className="text-gray-600">Total excl. VAT</span>
           <span className="font-semibold text-[#000643]">{formatPrice(total, currency)}</span>
         </div>
+      ) : null}
+
+      {clashing.size > 0 ? (
+        <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-amber-800 text-sm">
+          Each exhibitor can book one meeting room per day, whatever the time. Adjust the day marked above and
+          you can pay for the rest together.
+        </p>
       ) : null}
 
       {canPay ? (

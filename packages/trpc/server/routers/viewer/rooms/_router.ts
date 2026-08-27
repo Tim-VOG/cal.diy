@@ -626,6 +626,21 @@ export const roomsRouter = router({
     });
   }),
 
+  /**
+   * The event days this exhibitor already has a room on — confirmed or still
+   * held. One room per exhibitor per day is a commercial rule enforced in the
+   * order service; this lets the shortlist and the room page say so BEFORE the
+   * buyer commits, instead of the rule surfacing as a refusal at payment.
+   */
+  myBookedDays: authedProcedure.query(async ({ ctx }): Promise<{ days: string[] }> => {
+    const { getNe26OrderRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
+    );
+    const { eventDateOf } = await import("@calcom/features/ne26-rooms/lib/deskDay");
+    const starts = await getNe26OrderRepository().findBookedStartsForUser(ctx.user.id, new Date());
+    return { days: Array.from(new Set(starts.map(eventDateOf))).sort() };
+  }),
+
   /** The shortlist, paid in one go: several rooms, one payment, one invoice. */
   createOrder: authedProcedure.input(ZCreateOrderInputSchema).mutation(async ({ ctx, input }) => {
     const { startOrderCheckout } = await import(

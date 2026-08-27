@@ -1,10 +1,7 @@
 "use client";
 
+import { EXTENDED_USE_DISCOUNT_NOTE, extendedUseDiscountPct } from "@calcom/features/ne26-rooms/lib/discount";
 import type { DurationHours } from "@calcom/features/ne26-rooms/lib/eventSchedule";
-import {
-  EXTENDED_USE_DISCOUNT_NOTE,
-  extendedUseDiscountPct,
-} from "@calcom/features/ne26-rooms/lib/discount";
 import { computeAddOnLine } from "@calcom/features/ne26-rooms/lib/pricing";
 import { buildRoomPhotoList } from "@calcom/features/ne26-rooms/lib/roomImages";
 import type { RoomAvailability } from "@calcom/features/ne26-rooms/services/RoomAvailabilityService";
@@ -13,8 +10,8 @@ import { AddOnPriceType } from "@calcom/prisma/enums";
 import { trpc } from "@calcom/trpc/react";
 import { Building, Clock, Euro, Info, Scaling, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { clearSelection, getSelection, saveSelection } from "../selectionStore";
 import { servicesFor } from "../amenities";
+import { clearSelection, getSelection, saveSelection } from "../selectionStore";
 import RoomGallery from "./RoomGallery";
 
 const TZ = "Europe/Istanbul";
@@ -254,6 +251,7 @@ function SelectionSummary({
   errorMessage,
   isPending,
   canBook,
+  dayAlreadyBooked,
   onSubmit,
 }: {
   room: Room;
@@ -271,6 +269,8 @@ function SelectionSummary({
   errorMessage: string | null;
   isPending: boolean;
   canBook: boolean;
+  /** This exhibitor already has a room on the selected day. */
+  dayAlreadyBooked: boolean;
   onSubmit: () => void;
 }): JSX.Element {
   return (
@@ -353,6 +353,18 @@ function SelectionSummary({
                 Complete billing details
               </a>
             </>
+          ) : dayAlreadyBooked ? (
+            <>
+              <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-amber-800 text-sm">
+                You already have a meeting room that day. Each exhibitor can book one room per day, whatever
+                the time — pick another day, or cancel the room you have.
+              </p>
+              <a
+                href="/rooms/bookings"
+                className="mt-3 block w-full rounded-lg border border-[#000643] px-4 py-2.5 text-center font-semibold text-[#000643] text-sm transition hover:bg-[#000643]/5">
+                See my bookings
+              </a>
+            </>
           ) : (
             <button
               type="button"
@@ -427,6 +439,9 @@ export default function RoomBookingClient({
   }, [room.slug, days, addOnsBySlug]);
 
   const createBooking = trpc.viewer.rooms.createBooking.useMutation();
+  // One room per exhibitor per day. Enforced in the order service; asked for
+  // here so the rule is visible before the buyer commits to a slot.
+  const bookedDays = trpc.viewer.rooms.myBookedDays.useQuery(undefined, { enabled: isAuthed });
 
   const day = useMemo(() => days.find((d) => d.date === selectedDate), [days, selectedDate]);
   const selectedStart = useMemo(
@@ -454,7 +469,9 @@ export default function RoomBookingClient({
   }
   const addOnTotal = addOnLines.reduce((sum, line) => sum + line.lineTotal, 0);
   const total = selectedDuration ? priceForDuration[selectedDuration] + addOnTotal : null;
-  const canBook = Boolean(selectedStartUtc && selectedDuration) && !createBooking.isPending;
+  const dayAlreadyBooked = (bookedDays.data?.days ?? []).includes(selectedDate);
+  const canBook =
+    Boolean(selectedStartUtc && selectedDuration) && !createBooking.isPending && !dayAlreadyBooked;
 
   // Remember the selection as it changes, so leaving to compare another room
   // does not throw the work away. Skipped until the restore has run, or the
@@ -471,7 +488,16 @@ export default function RoomBookingClient({
       total: total ?? 0,
       currency: room.currency,
     });
-  }, [room.slug, room.name, room.currency, selectedDate, selectedStartUtc, selectedDuration, selectedAddOns, total]);
+  }, [
+    room.slug,
+    room.name,
+    room.currency,
+    selectedDate,
+    selectedStartUtc,
+    selectedDuration,
+    selectedAddOns,
+    total,
+  ]);
 
   const addOnsPayload = useMemo(
     () => Object.entries(selectedAddOns).map(([slug, quantity]) => ({ slug, quantity })),
@@ -609,8 +635,7 @@ export default function RoomBookingClient({
                 className={`${CELL_BASE} ${CELL_CLASS[cellState(isSelected, true)]}`}>
                 {d}h — {formatPrice(priceForDuration[d], room.currency)}
                 {discount ? (
-                  <span
-                    className={`ml-1.5 font-semibold ${isSelected ? "text-white/90" : "text-green-700"}`}>
+                  <span className={`ml-1.5 font-semibold ${isSelected ? "text-white/90" : "text-green-700"}`}>
                     −{discount}%
                   </span>
                 ) : null}
@@ -620,9 +645,7 @@ export default function RoomBookingClient({
         </div>
         {/* The last sentence matters commercially: two separate 1h bookings do
             not earn the 2h price, and buyers do ask. */}
-        <p className="mt-2 max-w-prose text-gray-500 text-xs leading-relaxed">
-          {EXTENDED_USE_DISCOUNT_NOTE}
-        </p>
+        <p className="mt-2 max-w-prose text-gray-500 text-xs leading-relaxed">{EXTENDED_USE_DISCOUNT_NOTE}</p>
 
         {/* Start times — only those that can fit the chosen duration are enabled */}
         <h2 className="mt-6 flex items-center gap-1.5 font-semibold text-gray-500 text-sm uppercase tracking-wide">
@@ -672,6 +695,7 @@ export default function RoomBookingClient({
         errorMessage={createBooking.error?.message ?? null}
         isPending={createBooking.isPending}
         canBook={canBook}
+        dayAlreadyBooked={dayAlreadyBooked}
         onSubmit={submit}
       />
     </div>
