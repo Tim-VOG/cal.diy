@@ -5,7 +5,7 @@ import { getNe26BillingProfileRepository } from "../di/Ne26BillingProfileReposit
 import { getNe26OrderRepository } from "../di/Ne26OrderRepository.container";
 import { getStripeCheckoutService } from "../di/StripeCheckoutService.container";
 import { isBillingProfileComplete } from "../lib/billing";
-import { ROOM_VAT_RATE_BP, buildInvoiceModel } from "../lib/invoice";
+import { buildInvoiceModel, ROOM_VAT_RATE_BP } from "../lib/invoice";
 import { resolveVatTreatment } from "../lib/vat";
 import { Ne26OrderService, type OrderRoomSelection } from "./Ne26OrderService";
 
@@ -177,10 +177,7 @@ export async function resumeOrderCheckout(input: {
   }
 
   const issuer = await getInvoiceSettingsRepository().get();
-  const vat = resolveVatTreatment(
-    { country: order.bookerCountry, vatNumber: order.bookerVatNumber },
-    issuer
-  );
+  const vat = resolveVatTreatment({ country: order.bookerCountry, vatNumber: order.bookerVatNumber }, issuer);
   const model = buildInvoiceModel(
     {
       currency: order.currency,

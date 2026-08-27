@@ -51,10 +51,7 @@ describe("Ne26OrderService.createOrder", () => {
         },
         select: { id: true },
       });
-    const [a, b] = await Promise.all([
-      make("TEST Order Room A", SLUG_A),
-      make("TEST Order Room B", SLUG_B),
-    ]);
+    const [a, b] = await Promise.all([make("TEST Order Room A", SLUG_A), make("TEST Order Room B", SLUG_B)]);
     roomA = a.id;
     roomB = b.id;
 
@@ -307,9 +304,9 @@ describe("Ne26OrderService.createOrder", () => {
 
     it("explains the rule rather than just refusing", async () => {
       await service.createOrder({ buyer: buyer(), rooms: [room(SLUG_A, TUE, 14)] });
-      await expect(
-        service.createOrder({ buyer: buyer(), rooms: [room(SLUG_B, TUE, 16)] })
-      ).rejects.toThrow(/one meeting room per day/i);
+      await expect(service.createOrder({ buyer: buyer(), rooms: [room(SLUG_B, TUE, 16)] })).rejects.toThrow(
+        /one meeting room per day/i
+      );
     });
 
     it("does not apply at the counter, which has no account to attach it to", async () => {
@@ -392,8 +389,9 @@ describe("Ne26OrderService.createOrder", () => {
         data: { holdExpiresAt: expired },
       });
 
-      await expect(service.createOrder({ buyer: buyer(), rooms: [room(SLUG_B, TUE, 15)] })).resolves
-        .toMatchObject({ order: { status: ResourceBookingStatus.PENDING } });
+      await expect(
+        service.createOrder({ buyer: buyer(), rooms: [room(SLUG_B, TUE, 15)] })
+      ).resolves.toMatchObject({ order: { status: ResourceBookingStatus.PENDING } });
     });
   });
 });

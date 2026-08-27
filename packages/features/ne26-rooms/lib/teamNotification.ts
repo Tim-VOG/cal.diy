@@ -73,9 +73,7 @@ export function saleNotification(input: SaleNotificationInput): { subject: strin
   // Naming every room in the subject would run past what any client shows, so
   // one room is named and the rest counted.
   const what =
-    rooms.length === 1
-      ? `${rooms[0].roomName}, ${rooms[0].durationMinutes / 60}h`
-      : `${rooms.length} rooms`;
+    rooms.length === 1 ? `${rooms[0].roomName}, ${rooms[0].durationMinutes / 60}h` : `${rooms.length} rooms`;
   const subject = `Room sold — ${what}${paid === null ? "" : ` (${formatMoney(paid, input.currency)})`}`;
 
   const lines: string[] = [];
@@ -91,9 +89,7 @@ export function saleNotification(input: SaleNotificationInput): { subject: strin
 
   lines.push(field("Buyer", input.bookerEmail ? `${buyer} <${input.bookerEmail}>` : buyer));
   if (input.bookerCountry || input.bookerVatNumber) {
-    lines.push(
-      field("VAT", [input.bookerVatNumber, input.bookerCountry].filter(Boolean).join(" · ") || "-")
-    );
+    lines.push(field("VAT", [input.bookerVatNumber, input.bookerCountry].filter(Boolean).join(" · ") || "-"));
   }
 
   lines.push("", field("Total excl. VAT", formatMoney(input.amountHt, input.currency)));

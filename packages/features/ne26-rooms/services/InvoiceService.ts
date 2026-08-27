@@ -1,6 +1,6 @@
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
 import { buildOrderIcs } from "../lib/ics";
-import { ROOM_VAT_RATE_BP, buildInvoiceModel } from "../lib/invoice";
+import { buildInvoiceModel, ROOM_VAT_RATE_BP } from "../lib/invoice";
 import type { InvoiceMeta } from "../lib/invoicePdf";
 import { renderInvoicePdf } from "../lib/invoicePdf";
 import { readInvoicePdf, saveInvoicePdf } from "../lib/invoiceStorage";

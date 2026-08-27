@@ -11,7 +11,6 @@ import type { ResourceRepository } from "../repositories/ResourceRepository";
 
 const MS_PER_MINUTE = 60 * 1000;
 
-
 export interface IResourceBookingServiceDeps {
   resourceRepository: ResourceRepository;
   addOnRepository: AddOnRepository;
@@ -88,5 +87,4 @@ export class ResourceBookingService {
     const catalog = await this.deps.addOnRepository.findManyActiveBySlugs(requested.map((a) => a.slug));
     return resolveAddOnLines(requested, catalog, { durationHours, roomCapacity });
   }
-
 }

@@ -6,7 +6,7 @@ import { getNe26RoomSettingsRepository } from "../di/Ne26RoomSettingsRepository.
 import { getResourceRepository } from "../di/ResourceRepository.container";
 import { getAtomicSlotStarts, getBufferSlotStarts } from "../lib/atomicSlots";
 import { eventDateOf } from "../lib/deskDay";
-import { type DurationHours, buildEventSchedule, buildOpenSlotMs } from "../lib/eventSchedule";
+import { buildEventSchedule, buildOpenSlotMs, type DurationHours } from "../lib/eventSchedule";
 import { resolveAddOnLines } from "../lib/pricing";
 import { formatSlotRange } from "../lib/teamNotification";
 

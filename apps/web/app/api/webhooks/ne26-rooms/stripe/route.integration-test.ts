@@ -1,7 +1,7 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-
+import process from "node:process";
 import { prisma } from "@calcom/prisma";
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 // Stripe credentials must exist before the DI container builds its client.
 // process.env is typed read-only in this repo, hence the widened alias.
@@ -15,10 +15,10 @@ vi.mock("@calcom/features/ne26-rooms/lib/mailer", () => ({
   sendTeamEmail: vi.fn().mockResolvedValue(undefined),
 }));
 
-import Stripe from "stripe";
 import { getNe26OrderRepository } from "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container";
 import { getAtomicSlotStarts } from "@calcom/features/ne26-rooms/lib/atomicSlots";
 import { sendInvoiceEmail, sendTeamEmail } from "@calcom/features/ne26-rooms/lib/mailer";
+import Stripe from "stripe";
 import { POST } from "./route";
 
 const orders = getNe26OrderRepository();
@@ -30,6 +30,10 @@ const TEAM_EMAIL = "sales@vo-europe.test";
 
 let roomA: number;
 let roomB: number;
+// Orders here are attached to an account on purpose: the counter hold cap
+// counts account-less orders globally, so leaving these unattached would
+// inflate the count for the suite that tests that cap.
+let userId: number;
 let slotCursor = 0;
 
 /**
@@ -56,7 +60,7 @@ async function heldOrder(
   });
 
   const order = await orders.createWithRooms({
-    bookerUserId: null,
+    bookerUserId: userId,
     bookerEmail: "webhook@test.com",
     bookerName: "Webhook Tester",
     amountTotal: 35000 * count,
@@ -161,6 +165,12 @@ describe("NE26 Stripe webhook", () => {
     roomA = a.id;
     roomB = b.id;
 
+    const user = await prisma.user.create({
+      data: { email: `webhook-${STAMP}@test.com`, username: `webhook-${STAMP}`, name: "Webhook Tester" },
+      select: { id: true },
+    });
+    userId = user.id;
+
     // Team notifications go to the admin-configured list.
     await prisma.ne26InvoiceSettings.upsert({
       where: { id: 1 },
@@ -177,6 +187,7 @@ describe("NE26 Stripe webhook", () => {
 
   afterAll(async () => {
     await prisma.resource.deleteMany({ where: { id: { in: [roomA, roomB] } } });
+    await prisma.user.delete({ where: { id: userId } });
   });
 
   describe("signature verification", () => {
@@ -257,9 +268,7 @@ describe("NE26 Stripe webhook", () => {
     it("confirms every room in the order on a single payment", async () => {
       const { uid, startTimes } = await heldOrder({ rooms: 2 });
 
-      await deliver(
-        sessionEvent("checkout.session.completed", { orderUid: uid, amountTotal: 70000 })
-      );
+      await deliver(sessionEvent("checkout.session.completed", { orderUid: uid, amountTotal: 70000 }));
 
       const order = await orders.findByUid(uid);
       expect(order?.status).toBe(ResourceBookingStatus.CONFIRMED);
@@ -351,9 +360,7 @@ describe("NE26 Stripe webhook", () => {
   describe("delayed payments", () => {
     it("confirms when the payment later settles", async () => {
       const { uid } = await heldOrder();
-      await deliver(
-        sessionEvent("checkout.session.completed", { orderUid: uid, paymentStatus: "unpaid" })
-      );
+      await deliver(sessionEvent("checkout.session.completed", { orderUid: uid, paymentStatus: "unpaid" }));
       expect((await orders.findByUid(uid))?.status).toBe(ResourceBookingStatus.PENDING);
 
       await deliver(sessionEvent("checkout.session.async_payment_succeeded", { orderUid: uid }));
@@ -391,10 +398,7 @@ describe("NE26 Stripe webhook", () => {
   });
 
   describe("charge.refunded", () => {
-    async function paidOrder(
-      paymentIntent: string,
-      rooms = 1
-    ): Promise<{ uid: string; startTimes: Date[] }> {
+    async function paidOrder(paymentIntent: string, rooms = 1): Promise<{ uid: string; startTimes: Date[] }> {
       const held = await heldOrder({ rooms });
       await deliver(
         sessionEvent("checkout.session.completed", {

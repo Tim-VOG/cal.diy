@@ -431,13 +431,18 @@ export const roomsRouter = router({
     return { issued };
   }),
 
-  // Admin-only: confirm a PENDING booking paid outside Stripe (e.g. bank
+  // Admin-only: confirm a PENDING ORDER paid outside Stripe (e.g. bank
   // transfer), then issue its invoice (best-effort).
+  //
+  // The uid is the order's, not a room's: one payment can cover several rooms,
+  // and confirming half of what was settled would leave the rest to expire.
+  // Passing null for the payment id is what marks it settled off-Stripe — the
+  // invoice then prints no card reference.
   confirmBookingManually: ne26AdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
-    const { getResourceBookingService } = await import(
-      "@calcom/features/ne26-rooms/di/ResourceBookingService.container"
+    const { getNe26OrderRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
     );
-    const confirmed = await getResourceBookingService().confirmManually(input.uid);
+    const confirmed = await getNe26OrderRepository().confirmPaid(input.uid, null);
     if (confirmed) {
       const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
       await getInvoiceService().issueInvoice(input.uid);
@@ -445,13 +450,13 @@ export const roomsRouter = router({
     return { confirmed };
   }),
 
-  // Admin-only: cancel a PENDING booking without a credit note (test/no-show)
-  // and free its slots. Paid bookings must use the credit-note flow instead.
+  // Admin-only: cancel a PENDING order without a credit note (test/no-show) and
+  // free every room it holds. Paid orders must use the credit-note flow.
   cancelPendingBooking: ne26AdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
-    const { getResourceBookingService } = await import(
-      "@calcom/features/ne26-rooms/di/ResourceBookingService.container"
+    const { getNe26OrderRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
     );
-    const cancelled = await getResourceBookingService().cancelPending(input.uid);
+    const cancelled = await getNe26OrderRepository().cancelPending(input.uid);
     return { cancelled };
   }),
 
@@ -463,12 +468,12 @@ export const roomsRouter = router({
   // database by hand. issueInvoice is idempotent, so this is safe to retry.
   issueInvoice: ne26AdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
     const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
-    const { getResourceBookingRepository } = await import(
-      "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container"
+    const { getNe26OrderRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
     );
     await getInvoiceService().issueInvoice(input.uid);
-    const booking = await getResourceBookingRepository().findByUid(input.uid);
-    return { issued: Boolean(booking?.invoiceNumber) };
+    const order = await getNe26OrderRepository().findByUid(input.uid);
+    return { issued: Boolean(order?.invoiceNumber) };
   }),
 
   // Admin-only: re-send an already-issued invoice email to the booker.

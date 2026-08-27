@@ -114,12 +114,19 @@ export default function BookingSidePanel({
         </div>
 
         <div className="mt-4 border-gray-100 border-t pt-4">
-          <BookingActions
-            uid={booking.uid}
-            status={booking.status}
-            hasInvoice={Boolean(booking.invoiceNumber)}
-            hasCreditNote={Boolean(booking.creditNoteNumber)}
-          />
+          {booking.orderUid ? (
+            <BookingActions
+              orderUid={booking.orderUid}
+              status={booking.status}
+              hasInvoice={Boolean(booking.invoiceNumber)}
+              hasCreditNote={Boolean(booking.creditNoteNumber)}
+              roomCount={booking.orderRoomCount}
+            />
+          ) : (
+            <p className="text-amber-700 text-sm">
+              No order attached — this room predates the order model and has no payment to act on.
+            </p>
+          )}
         </div>
 
         <a

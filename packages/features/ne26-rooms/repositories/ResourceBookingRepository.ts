@@ -407,10 +407,26 @@ export class ResourceBookingRepository {
         order: {
           select: {
             uid: true,
+            status: true,
             invoiceNumber: true,
             creditNoteNumber: true,
             stripePaymentId: true,
             amountTotal: true,
+            currency: true,
+            holdExpiresAt: true,
+            // The other rooms this same payment covers. Without them an admin
+            // crediting from this page cannot see that two more rooms go with
+            // it — and the credit note cancels all of them.
+            bookings: {
+              orderBy: { startTime: "asc" },
+              select: {
+                uid: true,
+                startTime: true,
+                endTime: true,
+                amountTotal: true,
+                resource: { select: { name: true } },
+              },
+            },
           },
         },
         updatedAt: true,
@@ -564,6 +580,9 @@ export class ResourceBookingRepository {
             creditNoteNumber: true,
             stripePaymentId: true,
             amountTotal: true,
+            // How many rooms this one payment covers, so the admin list can warn
+            // that an action here reaches further than the row it was clicked on.
+            _count: { select: { bookings: true } },
           },
         },
         resource: { select: { name: true, slug: true, category: true } },
@@ -683,7 +702,6 @@ export class ResourceBookingRepository {
       },
     });
   }
-
 
   async allocateCreditNoteNumber(year = new Date().getUTCFullYear()): Promise<string> {
     const rows = await this.prismaClient.$queryRaw<

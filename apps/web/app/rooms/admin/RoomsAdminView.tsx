@@ -22,6 +22,7 @@ export interface AdminBookingRow {
   amountTotal: number;
   currency: string;
   stripePaymentId: string | null;
+  orderRoomCount: number;
   orderUid: string | null;
   invoiceNumber: string | null;
   creditNoteNumber: string | null;
