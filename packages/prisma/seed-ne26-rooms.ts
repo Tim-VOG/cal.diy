@@ -61,9 +61,14 @@ const addOns: Array<{
   price: number;
   priceType: AddOnPriceType;
   vatRate: number;
+  /** Minutes from event-local midnight; omitted means available all day. */
+  availableFromMinute?: number;
+  availableToMinute?: number;
 }> = [
   // Catering is billed per cover; Belgian catering VAT often differs from room rental (placeholder 12%).
-  { name: "Catering - Lunch", slug: "catering-lunch", description: "Lunch per person", price: 3500, priceType: AddOnPriceType.PER_PERSON, vatRate: 1200 },
+  // Served 11:00-14:00 (660-840): a 09:00 booking should not be offered lunch.
+  // The hours are editable in the admin — the caterer's schedule will move.
+  { name: "Catering - Lunch", slug: "catering-lunch", description: "Lunch per person", price: 3500, priceType: AddOnPriceType.PER_PERSON, vatRate: 1200, availableFromMinute: 660, availableToMinute: 840 },
   { name: "AV Screen", slug: "av-screen", description: "Large display screen", price: 5000, priceType: AddOnPriceType.FLAT, vatRate: 2100 },
   { name: "Drinks Service", slug: "drinks-service", description: "Drinks service per hour", price: 4000, priceType: AddOnPriceType.PER_HOUR, vatRate: 2100 },
 ];

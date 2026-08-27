@@ -2,7 +2,13 @@ import { AddOnPriceType } from "@calcom/prisma/enums";
 import { describe, expect, it } from "vitest";
 import { ErrorCode } from "@calcom/lib/errorCodes";
 
-import { type AddOnCatalogEntry, computeAddOnLine, resolveAddOnLines } from "./pricing";
+import {
+  type AddOnCatalogEntry,
+  computeAddOnLine,
+  formatAddOnWindow,
+  isAddOnOfferedDuring,
+  resolveAddOnLines,
+} from "./pricing";
 
 describe("computeAddOnLine", () => {
   it("FLAT ignores quantity and duration", () => {
@@ -92,5 +98,108 @@ describe("resolveAddOnLines", () => {
     expect(
       resolveAddOnLines([{ slug: "av-screen", quantity: 99 }], catalog, context)[0]
     ).toMatchObject({ quantity: 1, lineTotal: 5000 });
+  });
+});
+
+describe("serving windows", () => {
+  // The complaint that started this: a 09:00 booking was still offered lunch.
+  const LUNCH = { availableFromMinute: 660, availableToMinute: 840 }; // 11:00-14:00
+  const at = (startHour: number, hours: number) => ({
+    startMinute: startHour * 60,
+    endMinute: (startHour + hours) * 60,
+  });
+
+  describe("isAddOnOfferedDuring", () => {
+    it("offers it to a booking sitting inside the window", () => {
+      expect(isAddOnOfferedDuring(LUNCH, at(12, 1))).toBe(true);
+    });
+
+    it("offers it to a booking that runs INTO the window", () => {
+      // 10:00-12:00 reaches lunch service. Requiring the booking to sit wholly
+      // inside would refuse most 2h and 3h bookings — the ones most likely to
+      // want catering in the first place.
+      expect(isAddOnOfferedDuring(LUNCH, at(10, 2))).toBe(true);
+    });
+
+    it("offers it to a booking that starts inside and runs past the end", () => {
+      expect(isAddOnOfferedDuring(LUNCH, at(13, 3))).toBe(true);
+    });
+
+    it("refuses a booking that ends exactly when service starts", () => {
+      // 09:00-11:00 is over before the first cover is served.
+      expect(isAddOnOfferedDuring(LUNCH, at(9, 2))).toBe(false);
+    });
+
+    it("refuses a booking that starts exactly when service ends", () => {
+      expect(isAddOnOfferedDuring(LUNCH, at(14, 1))).toBe(false);
+    });
+
+    it("refuses the 09:00 booking from the feedback", () => {
+      expect(isAddOnOfferedDuring(LUNCH, at(9, 1))).toBe(false);
+    });
+
+    it("always offers an add-on with no window", () => {
+      expect(isAddOnOfferedDuring({}, at(9, 1))).toBe(true);
+      expect(isAddOnOfferedDuring({ availableFromMinute: null, availableToMinute: null }, at(9, 1))).toBe(
+        true
+      );
+    });
+
+    it("fails open on a half-configured window", () => {
+      // An admin who filled one field and not the other must not silently stop
+      // the add-on being sold.
+      expect(isAddOnOfferedDuring({ availableFromMinute: 660, availableToMinute: null }, at(9, 1))).toBe(
+        true
+      );
+    });
+  });
+
+  describe("resolveAddOnLines", () => {
+    const LUNCH_ENTRY: AddOnCatalogEntry = {
+      id: 1,
+      slug: "catering-lunch",
+      name: "Catering - Lunch",
+      price: 3500,
+      priceType: AddOnPriceType.PER_PERSON,
+      vatRate: 1200,
+      ...LUNCH,
+    };
+
+    it("refuses lunch on a 09:00 booking, naming the hours", () => {
+      expect(() =>
+        resolveAddOnLines([{ slug: "catering-lunch", quantity: 4 }], [LUNCH_ENTRY], {
+          durationHours: 1,
+          roomCapacity: 6,
+          slot: at(9, 1),
+        })
+      ).toThrowError(/only served between 11:00-14:00/);
+    });
+
+    it("sells it at 12:00", () => {
+      const [line] = resolveAddOnLines([{ slug: "catering-lunch", quantity: 4 }], [LUNCH_ENTRY], {
+        durationHours: 1,
+        roomCapacity: 6,
+        slot: at(12, 1),
+      });
+      expect(line.lineTotal).toBe(14000);
+    });
+
+    it("skips the check when no slot is supplied", () => {
+      // Callers that genuinely have no time of day (an admin re-pricing) must
+      // not be broken by a window.
+      expect(
+        resolveAddOnLines([{ slug: "catering-lunch", quantity: 4 }], [LUNCH_ENTRY], {
+          durationHours: 1,
+          roomCapacity: 6,
+        })
+      ).toHaveLength(1);
+    });
+  });
+
+  describe("formatAddOnWindow", () => {
+    it("reads as a time range", () => {
+      expect(formatAddOnWindow(660, 840)).toBe("11:00-14:00");
+      expect(formatAddOnWindow(690, 845)).toBe("11:30-14:05");
+    });
   });
 });

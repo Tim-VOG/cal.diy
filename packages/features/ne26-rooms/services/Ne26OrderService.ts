@@ -5,7 +5,7 @@ import { getNe26OrderRepository } from "../di/Ne26OrderRepository.container";
 import { getNe26RoomSettingsRepository } from "../di/Ne26RoomSettingsRepository.container";
 import { getResourceRepository } from "../di/ResourceRepository.container";
 import { getAtomicSlotStarts, getBufferSlotStarts } from "../lib/atomicSlots";
-import { eventDateOf } from "../lib/deskDay";
+import { eventDateOf, eventMinuteOfDay } from "../lib/deskDay";
 import { buildEventSchedule, buildOpenSlotMs, type DurationHours } from "../lib/eventSchedule";
 import { resolveAddOnLines } from "../lib/pricing";
 import { formatSlotRange } from "../lib/teamNotification";
@@ -220,6 +220,12 @@ export class Ne26OrderService {
     const addOnLines = resolveAddOnLines(selection.addOns ?? [], catalogue, {
       durationHours: selection.durationHours,
       roomCapacity: room.capacity,
+      // Time of day, so an add-on served only at certain hours cannot be
+      // ordered outside them by posting straight to the API.
+      slot: {
+        startMinute: eventMinuteOfDay(selection.startUtc),
+        endMinute: eventMinuteOfDay(selection.startUtc) + durationMinutes,
+      },
     });
 
     const roomPrice = { 1: room.price1h, 2: room.price2h, 3: room.price3h }[selection.durationHours];

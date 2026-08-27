@@ -62,6 +62,24 @@ export function eventDayBounds(date: string): { fromUtc: Date; toUtc: Date } {
   return { fromUtc, toUtc };
 }
 
+/**
+ * Minutes since event-local midnight — 11:00 in Izmir is 660, whatever the
+ * instant's own offset. Used to compare a booking against a time-of-day window
+ * without dragging dates into it.
+ */
+export function eventMinuteOfDay(instant: Date): number {
+  const [hours, minutes] = new Intl.DateTimeFormat("en-GB", {
+    timeZone: EVENT_TIME_ZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })
+    .format(instant)
+    .split(":")
+    .map(Number);
+  return hours * 60 + minutes;
+}
+
 /** The event-local calendar date a UTC instant falls on, as "YYYY-MM-DD". */
 export function eventDateOf(instant: Date): string {
   return new Intl.DateTimeFormat("en-CA", {

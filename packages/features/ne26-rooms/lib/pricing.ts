@@ -39,6 +39,44 @@ export interface AddOnCatalogEntry {
   price: number;
   priceType: AddOnPriceType;
   vatRate: number;
+  /** Minutes from event-local midnight; null means available all day. */
+  availableFromMinute?: number | null;
+  availableToMinute?: number | null;
+}
+
+/** A booking's own time of day, in minutes from event-local midnight. */
+export interface SlotWindow {
+  startMinute: number;
+  endMinute: number;
+}
+
+/**
+ * Whether an add-on can be ordered for a booking at this time of day.
+ *
+ * Overlap, not containment: a 10:00-12:00 booking runs into lunch service and
+ * should be able to order it, even though it starts before 11:00. Requiring the
+ * booking to sit entirely inside the window would refuse most two- and
+ * three-hour bookings, which are the ones most likely to want catering.
+ *
+ * An add-on with no window (or only half of one, which would be a
+ * half-configured row) is always available — the rule has to fail open, or a
+ * mistake in the admin silently stops selling something.
+ */
+export function isAddOnOfferedDuring(
+  addOn: Pick<AddOnCatalogEntry, "availableFromMinute" | "availableToMinute">,
+  slot: SlotWindow
+): boolean {
+  const from = addOn.availableFromMinute;
+  const to = addOn.availableToMinute;
+  if (from == null || to == null) return true;
+  return slot.startMinute < to && slot.endMinute > from;
+}
+
+/** "11:00-14:00", for saying why an add-on is not on offer. */
+export function formatAddOnWindow(fromMinute: number, toMinute: number): string {
+  const hhmm = (m: number) =>
+    `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  return `${hhmm(fromMinute)}-${hhmm(toMinute)}`;
 }
 
 export interface ResolvedAddOnLine {
@@ -66,11 +104,13 @@ export interface ResolvedAddOnLine {
  *   what happened before (two BookingAddOn rows, two charges, one line shown);
  * - a PER_PERSON quantity above the room's capacity → rejected: 500 catering
  *   covers for a 6-person room is an input error or an attack, never an order.
+ * - an add-on outside its serving window → rejected, so a 09:00 booking cannot
+ *   order lunch even by posting straight to the API.
  */
 export function resolveAddOnLines(
   requested: { slug: string; quantity: number }[],
   catalog: AddOnCatalogEntry[],
-  context: { durationHours: number; roomCapacity: number }
+  context: { durationHours: number; roomCapacity: number; slot?: SlotWindow }
 ): ResolvedAddOnLine[] {
   if (!requested.length) return [];
 
@@ -88,6 +128,16 @@ export function resolveAddOnLines(
     const addOn = bySlug.get(req.slug);
     if (!addOn) {
       throw new ErrorWithCode(ErrorCode.BadRequest, `Unknown or inactive add-on "${req.slug}"`);
+    }
+    if (context.slot && !isAddOnOfferedDuring(addOn, context.slot)) {
+      const window = formatAddOnWindow(
+        addOn.availableFromMinute as number,
+        addOn.availableToMinute as number
+      );
+      throw new ErrorWithCode(
+        ErrorCode.BadRequest,
+        `"${addOn.name}" is only served between ${window}, and this booking falls outside that.`
+      );
     }
     if (addOn.priceType === AddOnPriceType.PER_PERSON && req.quantity > context.roomCapacity) {
       throw new ErrorWithCode(

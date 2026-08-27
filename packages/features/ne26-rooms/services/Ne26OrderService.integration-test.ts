@@ -24,6 +24,7 @@ const SLUG_B = `test-order-b-${STAMP}`;
 // totals against it would make this suite depend on production prices.
 const CATERING_SLUG = `test-order-catering-${STAMP}`;
 const SCREEN_SLUG = `test-order-screen-${STAMP}`;
+const LUNCH_SLUG = `test-order-lunch-${STAMP}`;
 
 let roomA: number;
 let roomB: number;
@@ -65,6 +66,15 @@ describe("Ne26OrderService.createOrder", () => {
       data: [
         { name: "TEST Catering", slug: CATERING_SLUG, price: 3500, priceType: "PER_PERSON" },
         { name: "TEST Screen", slug: SCREEN_SLUG, price: 5000, priceType: "FLAT" },
+        // Served 11:00-14:00 event-local, like the real catering line.
+        {
+          name: "TEST Lunch",
+          slug: LUNCH_SLUG,
+          price: 3500,
+          priceType: "PER_PERSON",
+          availableFromMinute: 660,
+          availableToMinute: 840,
+        },
       ],
     });
 
@@ -92,7 +102,7 @@ describe("Ne26OrderService.createOrder", () => {
 
   afterAll(async () => {
     await prisma.resource.deleteMany({ where: { id: { in: [roomA, roomB] } } });
-    await prisma.addOn.deleteMany({ where: { slug: { in: [CATERING_SLUG, SCREEN_SLUG] } } });
+    await prisma.addOn.deleteMany({ where: { slug: { in: [CATERING_SLUG, SCREEN_SLUG, LUNCH_SLUG] } } });
     await prisma.user.delete({ where: { id: userId } });
   });
 
@@ -221,6 +231,35 @@ describe("Ne26OrderService.createOrder", () => {
     expect(rows.every((r) => r.status === ResourceBookingStatus.CONFIRMED)).toBe(true);
     // No hold left to expire underneath a paid order.
     expect(rows.every((r) => r.holdExpiresAt === null)).toBe(true);
+  });
+
+  describe("an add-on with serving hours", () => {
+    // The feedback that started this: booking at 09:00 still offered lunch.
+    it("refuses lunch on an early booking, naming the hours", async () => {
+      await expect(
+        service.createOrder({
+          buyer: buyer(),
+          rooms: [{ ...room(SLUG_A, WED, 9), addOns: [{ slug: LUNCH_SLUG, quantity: 4 }] }],
+        })
+      ).rejects.toThrow(/only served between 11:00-14:00/);
+    });
+
+    it("sells it to a booking that runs into the serving hours", async () => {
+      // 10:00-12:00 reaches lunch. Refusing it would lose a legitimate sale.
+      const { order } = await service.createOrder({
+        buyer: buyer(),
+        rooms: [{ ...room(SLUG_A, WED, 10, 2), addOns: [{ slug: LUNCH_SLUG, quantity: 4 }] }],
+      });
+      expect(order.amountTotal).toBe(65000 + 14000);
+    });
+
+    it("still sells an add-on that has no serving hours", async () => {
+      const { order } = await service.createOrder({
+        buyer: buyer(),
+        rooms: [{ ...room(SLUG_A, WED, 9), addOns: [{ slug: SCREEN_SLUG, quantity: 1 }] }],
+      });
+      expect(order.amountTotal).toBe(35000 + 5000);
+    });
   });
 
   describe("mid-event, with the booking URL still live", () => {

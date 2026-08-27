@@ -3,6 +3,9 @@ import { z } from "zod";
 export const ZPreviewVatInputSchema = z.object({
   slug: z.string().min(1),
   durationHours: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  // Optional so a page left open before this shipped still gets a quote; when
+  // absent the serving-window check is skipped here and the booking catches it.
+  startUtc: z.string().datetime().optional(),
   // The bounds are a hard stop, not a business rule: an unbounded quantity lets a
   // PER_PERSON add-on build an absurd Stripe total, and past ~600k it overflows
   // the int4 lineTotal column into an unhandled 500. The real per-room limit is

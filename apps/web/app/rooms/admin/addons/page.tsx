@@ -30,6 +30,8 @@ export default async function ManageAddOnsPage(): Promise<JSX.Element> {
         currency: a.currency,
         vatRate: a.vatRate,
         isActive: a.isActive,
+        availableFromMinute: a.availableFromMinute,
+        availableToMinute: a.availableToMinute,
       }))}
     />
   );

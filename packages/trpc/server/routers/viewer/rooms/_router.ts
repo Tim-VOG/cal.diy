@@ -112,6 +112,7 @@ export const roomsRouter = router({
       userId: ctx.user.id,
       slug: input.slug,
       durationHours: input.durationHours,
+      startUtc: input.startUtc,
       addOns: input.addOns,
     });
   }),

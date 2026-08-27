@@ -13,6 +13,11 @@ const publicSelect = {
   currency: true,
   priceType: true,
   vatRate: true,
+  // The serving window travels with the add-on everywhere: the room page needs
+  // it to grey the option out, and the order path needs it to refuse one that
+  // was posted anyway.
+  availableFromMinute: true,
+  availableToMinute: true,
 } as const;
 
 export class AddOnRepository {
@@ -51,6 +56,8 @@ export class AddOnRepository {
       price?: number;
       vatRate?: number;
       isActive?: boolean;
+      availableFromMinute?: number | null;
+      availableToMinute?: number | null;
     }
   ) {
     return this.prismaClient.addOn.update({

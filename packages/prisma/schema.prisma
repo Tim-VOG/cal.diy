@@ -3007,18 +3007,25 @@ model ResourceSlot {
 }
 
 model AddOn {
-  id            Int            @id @default(autoincrement())
-  name          String
-  slug          String         @unique
-  description   String?
+  id                  Int            @id @default(autoincrement())
+  name                String
+  slug                String         @unique
+  description         String?
   // Unit price in cents.
-  price         Int
-  currency      String         @default("EUR")
-  priceType     AddOnPriceType
+  price               Int
+  currency            String         @default("EUR")
+  priceType           AddOnPriceType
   // VAT rate in basis points (2100 = 21%). Catering may differ from room rental.
-  vatRate       Int            @default(2100)
-  isActive      Boolean        @default(true)
-  bookingAddOns BookingAddOn[]
+  vatRate             Int            @default(2100)
+  isActive            Boolean        @default(true)
+  // NE26: minutes from midnight, event-local, during which this add-on can be
+  // ordered — 660/840 is 11:00-14:00. A booking may order it when its own time
+  // range overlaps this one. Both null (the default) means always available, so
+  // an add-on with no natural mealtime needs no configuration. Kept as minutes
+  // rather than hours so a 11:30 start never needs another migration.
+  availableFromMinute Int?
+  availableToMinute   Int?
+  bookingAddOns       BookingAddOn[]
 
   @@index([isActive])
 }

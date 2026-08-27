@@ -13,7 +13,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { servicesFor } from "../amenities";
 import { clearSelection, getSelection, saveSelection } from "../selectionStore";
 import RoomGallery from "./RoomGallery";
+import { eventMinuteOfDay } from "@calcom/features/ne26-rooms/lib/deskDay";
 import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
+import {
+  formatAddOnWindow,
+  isAddOnOfferedDuring,
+  type SlotWindow,
+} from "@calcom/features/ne26-rooms/lib/pricing";
 
 const TZ = EVENT_TIME_ZONE;
 const MS_PER_HOUR = 60 * 60 * 1000;
@@ -28,6 +34,9 @@ export interface PublicAddOn {
   currency: string;
   priceType: AddOnPriceType;
   vatRate: number;
+  /** Minutes from event-local midnight; null means available all day. */
+  availableFromMinute: number | null;
+  availableToMinute: number | null;
 }
 
 type Room = RoomAvailability["room"];
@@ -96,6 +105,7 @@ function AddOnList({
   addOns,
   selected,
   roomCapacity,
+  slot,
   onToggle,
   onSetQuantity,
 }: {
@@ -103,6 +113,8 @@ function AddOnList({
   selected: Record<string, number>;
   /** Per-person add-ons cannot exceed the seats in the room. */
   roomCapacity: number;
+  /** The chosen slot, so an add-on served only at certain hours can say so. */
+  slot: SlotWindow | null;
   onToggle: (slug: string, checked: boolean) => void;
   onSetQuantity: (slug: string, quantity: number) => void;
 }): JSX.Element | null {
@@ -117,22 +129,35 @@ function AddOnList({
           const isSelected = addOn.slug in selected;
           const quantity = selected[addOn.slug] ?? 1;
           const infoOpen = infoSlug === addOn.slug;
+          // Shown greyed rather than hidden: an exhibitor looking for lunch
+          // needs to learn it is served 11:00-14:00, not find it silently gone.
+          const offered = !slot || isAddOnOfferedDuring(addOn, slot);
+          const window =
+            addOn.availableFromMinute != null && addOn.availableToMinute != null
+              ? formatAddOnWindow(addOn.availableFromMinute, addOn.availableToMinute)
+              : null;
           return (
             <div
               key={addOn.slug}
-              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm">
+              className={`w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm ${
+                offered ? "" : "opacity-60"
+              }`}>
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
                   <label className="flex items-center gap-2">
                     <input
                       type="checkbox"
                       checked={isSelected}
+                      disabled={!offered}
                       onChange={(e) => onToggle(addOn.slug, e.target.checked)}
-                      className="h-4 w-4 accent-[#000643]"
+                      className="h-4 w-4 accent-[#000643] disabled:cursor-not-allowed"
                     />
                     <span>
                       <span className="font-medium">{addOn.name}</span>
                       <span className="ml-2 text-gray-400">{priceHint(addOn)}</span>
+                      {!offered && window ? (
+                        <span className="ml-2 text-amber-700 text-xs">served {window}</span>
+                      ) : null}
                     </span>
                   </label>
                   {addOn.description ? (
@@ -470,6 +495,33 @@ export default function RoomBookingClient({
   }
   const addOnTotal = addOnLines.reduce((sum, line) => sum + line.lineTotal, 0);
   const total = selectedDuration ? priceForDuration[selectedDuration] + addOnTotal : null;
+  // The chosen slot in event-local minutes, so an add-on's serving window can be
+  // compared against it without pulling dates in.
+  const addOnSlot: SlotWindow | null =
+    selectedStartUtc && selectedDuration
+      ? (() => {
+          const startMinute = eventMinuteOfDay(new Date(selectedStartUtc));
+          return { startMinute, endMinute: startMinute + selectedDuration * 60 };
+        })()
+      : null;
+
+  // Moving the slot can take an add-on out of its serving hours. Drop it rather
+  // than carrying a selection the server will refuse: the exhibitor picked lunch
+  // for a midday slot, then moved to 09:00, and would only find out at payment.
+  useEffect(() => {
+    if (!addOnSlot) return;
+    setSelectedAddOns((current) => {
+      const kept = Object.fromEntries(
+        Object.entries(current).filter(([slug]) => {
+          const addOn = addOnsBySlug.get(slug);
+          return !addOn || isAddOnOfferedDuring(addOn, addOnSlot);
+        })
+      );
+      // Same object unless something actually went, so this cannot loop.
+      return Object.keys(kept).length === Object.keys(current).length ? current : kept;
+    });
+  }, [addOnSlot?.startMinute, addOnSlot?.endMinute, addOnsBySlug]);
+
   const dayAlreadyBooked = (bookedDays.data?.days ?? []).includes(selectedDate);
   const canBook =
     Boolean(selectedStartUtc && selectedDuration) && !createBooking.isPending && !dayAlreadyBooked;
@@ -505,7 +557,12 @@ export default function RoomBookingClient({
     [selectedAddOns]
   );
   const vatPreview = trpc.viewer.rooms.previewVat.useQuery(
-    { slug: room.slug, durationHours: (selectedDuration ?? 1) as DurationHours, addOns: addOnsPayload },
+    {
+      slug: room.slug,
+      durationHours: (selectedDuration ?? 1) as DurationHours,
+      startUtc: selectedStartUtc ?? undefined,
+      addOns: addOnsPayload,
+    },
     { enabled: isAuthed && Boolean(selectedStartUtc) && selectedDuration != null }
   );
 
@@ -675,6 +732,7 @@ export default function RoomBookingClient({
           addOns={addOns}
           selected={selectedAddOns}
           roomCapacity={room.capacity}
+          slot={addOnSlot}
           onToggle={toggleAddOn}
           onSetQuantity={setQuantity}
         />

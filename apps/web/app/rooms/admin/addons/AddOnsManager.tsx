@@ -1,5 +1,6 @@
 "use client";
 
+import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { trpc } from "@calcom/trpc/react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -13,6 +14,20 @@ export interface AddOnRow {
   currency: string;
   vatRate: number;
   isActive: boolean;
+  /** Minutes from event-local midnight; null on both means all day. */
+  availableFromMinute: number | null;
+  availableToMinute: number | null;
+}
+
+/** "11:00" from 660, and back. The admin types a time, we store minutes. */
+function toTimeValue(minute: number | null): string {
+  if (minute == null) return "";
+  return `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
+}
+function fromTimeValue(value: string): number | null {
+  if (!value) return null;
+  const [h, m] = value.split(":").map(Number);
+  return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
 }
 
 const PRICE_TYPES = [
@@ -49,7 +64,11 @@ export default function AddOnsManager({ addOns }: { addOns: AddOnRow[] }): JSX.E
   const [newPrice, setNewPrice] = useState(0);
   const [newVat, setNewVat] = useState(21);
 
-  function setField(id: number, field: keyof AddOnRow, value: number | boolean | string): void {
+  function setField(
+    id: number,
+    field: keyof AddOnRow,
+    value: number | boolean | string | null
+  ): void {
     setDraft((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
   }
 
@@ -63,6 +82,8 @@ export default function AddOnsManager({ addOns }: { addOns: AddOnRow[] }): JSX.E
       price: row.price,
       vatRate: row.vatRate,
       isActive: row.isActive,
+      availableFromMinute: row.availableFromMinute,
+      availableToMinute: row.availableToMinute,
     });
   }
 
@@ -205,6 +226,32 @@ export default function AddOnsManager({ addOns }: { addOns: AddOnRow[] }): JSX.E
                 />
               </label>
             </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <label>
+                <span className={label}>Served from</span>
+                <input
+                  type="time"
+                  className={input}
+                  value={toTimeValue(r.availableFromMinute)}
+                  onChange={(e) => setField(r.id, "availableFromMinute", fromTimeValue(e.target.value))}
+                />
+              </label>
+              <label>
+                <span className={label}>Served until</span>
+                <input
+                  type="time"
+                  className={input}
+                  value={toTimeValue(r.availableToMinute)}
+                  onChange={(e) => setField(r.id, "availableToMinute", fromTimeValue(e.target.value))}
+                />
+              </label>
+            </div>
+            <p className="mt-1 text-gray-400 text-xs">
+              {r.availableFromMinute != null && r.availableToMinute != null
+                ? `Offered only to bookings that run between these hours (${EVENT_TIME_ZONE}). Clear both to sell it all day.`
+                : `Available all day. Set both to limit it to serving hours (${EVENT_TIME_ZONE}) — a 09:00 booking should not be offered lunch.`}
+            </p>
 
             <label className="mt-3 block">
               <span className={label}>Description</span>

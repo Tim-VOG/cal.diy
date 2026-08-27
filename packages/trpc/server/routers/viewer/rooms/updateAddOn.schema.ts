@@ -12,6 +12,14 @@ export const ZUpdateAddOnInputSchema = z.object({
   /** VAT rate in basis points (e.g. 2100 = 21%). */
   vatRate: z.number().int().min(0).max(10000).optional(),
   isActive: z.boolean().optional(),
+  /**
+   * Serving hours, in minutes from event-local midnight (660 = 11:00). Null
+   * clears the window, putting the add-on back on sale all day. Nullable rather
+   * than merely optional, because "leave unchanged" and "available all day"
+   * have to be different instructions.
+   */
+  availableFromMinute: z.number().int().min(0).max(1439).nullable().optional(),
+  availableToMinute: z.number().int().min(1).max(1440).nullable().optional(),
 });
 export type TUpdateAddOnInputSchema = z.infer<typeof ZUpdateAddOnInputSchema>;
 

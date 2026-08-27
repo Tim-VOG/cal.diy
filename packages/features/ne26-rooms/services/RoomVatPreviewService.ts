@@ -8,6 +8,7 @@ import type { AddOnRepository } from "../repositories/AddOnRepository";
 import type { InvoiceSettingsRepository } from "../repositories/InvoiceSettingsRepository";
 import type { Ne26BillingProfileRepository } from "../repositories/Ne26BillingProfileRepository";
 import type { ResourceRepository } from "../repositories/ResourceRepository";
+import { eventMinuteOfDay } from "../lib/deskDay";
 
 export interface IRoomVatPreviewServiceDeps {
   resourceRepository: ResourceRepository;
@@ -27,6 +28,8 @@ export interface VatPreviewInput {
   billing?: { country?: string | null; vatNumber?: string | null };
   slug: string;
   durationHours: DurationHours;
+  /** ISO start. Lets the quote apply an add-on's serving window. */
+  startUtc?: string;
   addOns?: { slug: string; quantity: number }[];
 }
 
@@ -67,9 +70,16 @@ export class RoomVatPreviewService {
       : [];
     // Same resolver as createBooking, so the quoted total can't drift from the
     // charged one and the preview rejects exactly what the booking rejects.
+    const start = input.startUtc ? new Date(input.startUtc) : null;
     const addOnLines = resolveAddOnLines(requested, catalog, {
       durationHours: input.durationHours,
       roomCapacity: room.capacity,
+      slot: start
+        ? {
+            startMinute: eventMinuteOfDay(start),
+            endMinute: eventMinuteOfDay(start) + durationMinutes,
+          }
+        : undefined,
     });
 
     const amountTotal = roomPrice + addOnLines.reduce((sum, l) => sum + l.lineTotal, 0);
