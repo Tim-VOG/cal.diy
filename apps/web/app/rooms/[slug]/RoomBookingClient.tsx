@@ -96,11 +96,14 @@ function cellState(isSelected: boolean, isEnabled: boolean): CellState {
 function AddOnList({
   addOns,
   selected,
+  roomCapacity,
   onToggle,
   onSetQuantity,
 }: {
   addOns: PublicAddOn[];
   selected: Record<string, number>;
+  /** Per-person add-ons cannot exceed the seats in the room. */
+  roomCapacity: number;
   onToggle: (slug: string, checked: boolean) => void;
   onSetQuantity: (slug: string, quantity: number) => void;
 }): JSX.Element | null {
@@ -158,13 +161,21 @@ function AddOnList({
                       <span className="w-8 text-center font-medium text-sm tabular-nums">{quantity}</span>
                       <button
                         type="button"
-                        onClick={() => onSetQuantity(addOn.slug, quantity + 1)}
+                        onClick={() => onSetQuantity(addOn.slug, Math.min(roomCapacity, quantity + 1))}
+                        disabled={quantity >= roomCapacity}
                         aria-label={`More ${addOn.name}`}
-                        className="px-2.5 py-1 text-[#000643] text-lg leading-none">
+                        className="px-2.5 py-1 text-[#000643] text-lg leading-none disabled:cursor-not-allowed disabled:text-gray-300">
                         +
                       </button>
                     </div>
-                    <span className="text-gray-400 text-xs">people</span>
+                    {/* Stopping here beats refusing at checkout. The server
+                        rejects more covers than seats, but it did so only once
+                        everything else had been configured — so the buyer had
+                        chosen a slot, added extras and pressed pay before being
+                        told the number was impossible. */}
+                    <span className="whitespace-nowrap text-gray-400 text-xs">
+                      {quantity >= roomCapacity ? `people · room seats ${roomCapacity}` : "people"}
+                    </span>
                   </div>
                 ) : null}
               </div>
@@ -493,7 +504,10 @@ export default function RoomBookingClient({
   }
 
   function setQuantity(slug: string, quantity: number): void {
-    setSelectedAddOns((prev) => ({ ...prev, [slug]: Math.max(1, quantity) }));
+    // Clamped here too, not only on the buttons: a restored shortlist can carry
+    // a quantity from before the room's capacity was edited down.
+    const capped = Math.min(room.capacity, Math.max(1, quantity));
+    setSelectedAddOns((prev) => ({ ...prev, [slug]: capped }));
   }
 
   function submit(): void {
@@ -635,6 +649,7 @@ export default function RoomBookingClient({
         <AddOnList
           addOns={addOns}
           selected={selectedAddOns}
+          roomCapacity={room.capacity}
           onToggle={toggleAddOn}
           onSetQuantity={setQuantity}
         />
