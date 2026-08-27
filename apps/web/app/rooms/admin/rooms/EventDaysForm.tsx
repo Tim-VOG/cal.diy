@@ -5,8 +5,9 @@ import { trpc } from "@calcom/trpc/react";
 import { CalendarClock, Check, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 
-const TZ = "Europe/Istanbul";
+const TZ = EVENT_TIME_ZONE;
 
 function dayLabel(date: string): string {
   return new Intl.DateTimeFormat("en-GB", {

@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 
-const TZ = "Europe/Istanbul";
+const TZ = EVENT_TIME_ZONE;
 
 export interface BookerBooking {
   uid: string;

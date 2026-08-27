@@ -4,6 +4,7 @@ import { trpc } from "@calcom/trpc/react";
 import { ShieldCheck, Trash2, UserPlus } from "lucide-react";
 import { useState } from "react";
 import DeskModeCard from "./DeskModeCard";
+import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 
 const inputClass =
   "w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#000643] focus:outline-none";
@@ -28,7 +29,7 @@ function RoleBadge({ role }: { role: "ADMIN" | "HOSTESS" }): JSX.Element {
 
 function when(value: string): string {
   return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Istanbul",
+    timeZone: EVENT_TIME_ZONE,
     day: "2-digit",
     month: "short",
     hour: "2-digit",

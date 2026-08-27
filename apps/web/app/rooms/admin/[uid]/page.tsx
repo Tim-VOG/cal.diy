@@ -8,13 +8,14 @@ import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { requireNotDeskMode } from "../requireNotDeskMode";
 import BookingActions from "./BookingActions";
+import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 
 export const metadata: Metadata = {
   title: "Booking · NATO Edge 26 admin",
   robots: { index: false, follow: false },
 };
 
-const TZ = "Europe/Istanbul";
+const TZ = EVENT_TIME_ZONE;
 
 function fmtDateTime(d: Date): string {
   return new Intl.DateTimeFormat("en-GB", {

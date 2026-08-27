@@ -9,8 +9,9 @@ import {
 import { trpc } from "@calcom/trpc/react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 
-const TZ = "Europe/Istanbul";
+const TZ = EVENT_TIME_ZONE;
 
 interface RoomOption {
   slug: string;
@@ -99,7 +100,7 @@ export default function BlocksManager({
             </select>
           </label>
           <label className="text-sm">
-            <span className="block font-medium text-gray-700">Start (Brussels)</span>
+            <span className="block font-medium text-gray-700">Start (Istanbul)</span>
             <select
               className={`${inputClass} mt-1`}
               value={startUtc}
@@ -140,7 +141,7 @@ export default function BlocksManager({
           <thead className="border-gray-100 border-b bg-gray-50 text-gray-500 text-xs uppercase">
             <tr>
               <th className="px-3 py-2">Room</th>
-              <th className="px-3 py-2">When (Brussels)</th>
+              <th className="px-3 py-2">When (Istanbul)</th>
               <th className="px-3 py-2" />
             </tr>
           </thead>

@@ -6,8 +6,9 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import BookingCalendar from "./BookingCalendar";
 import BookingSidePanel from "./BookingSidePanel";
+import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 
-const TZ = "Europe/Istanbul";
+const TZ = EVENT_TIME_ZONE;
 
 export interface AdminBookingRow {
   uid: string;
@@ -57,7 +58,7 @@ function fmtTime(iso: string): string {
 function fmtMoney(cents: number, currency: string): string {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(cents / 100);
 }
-// Sortable Brussels calendar date (YYYY-MM-DD) used as the day-filter key.
+// Sortable event-local calendar date (YYYY-MM-DD) used as the day-filter key.
 function dayKey(iso: string): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: TZ,
@@ -74,7 +75,7 @@ function toCsv(rows: AdminBookingRow[]): string {
   const header = [
     "Room",
     "Category",
-    "Date (Brussels)",
+    "Date (Istanbul)",
     "Start",
     "End",
     "Hours",
@@ -323,7 +324,7 @@ export default function RoomsAdminView({
             <thead className="border-gray-100 border-b bg-gray-50 text-gray-500 text-xs uppercase">
               <tr>
                 <th className="px-3 py-2">Room</th>
-                <th className="px-3 py-2">When (Brussels)</th>
+                <th className="px-3 py-2">When (Istanbul)</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2">Booker</th>
                 <th className="px-3 py-2">Add-ons</th>

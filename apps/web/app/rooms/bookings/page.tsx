@@ -7,13 +7,14 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireBillingProfile } from "../requireBillingProfile";
 import ResumePaymentButton from "./ResumePaymentButton";
+import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 
 export const metadata: Metadata = {
   title: "My bookings · NATO Edge 26",
   robots: { index: false, follow: false },
 };
 
-const TZ = "Europe/Istanbul";
+const TZ = EVENT_TIME_ZONE;
 const STATUS_BADGE: Record<string, string> = {
   CONFIRMED: "bg-green-100 text-green-700",
   PENDING: "bg-amber-100 text-amber-700",

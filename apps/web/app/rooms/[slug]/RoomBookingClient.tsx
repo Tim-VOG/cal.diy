@@ -13,8 +13,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { servicesFor } from "../amenities";
 import { clearSelection, getSelection, saveSelection } from "../selectionStore";
 import RoomGallery from "./RoomGallery";
+import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 
-const TZ = "Europe/Istanbul";
+const TZ = EVENT_TIME_ZONE;
 const MS_PER_HOUR = 60 * 60 * 1000;
 const DURATIONS: DurationHours[] = [1, 2, 3];
 

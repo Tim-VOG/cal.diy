@@ -3,8 +3,9 @@
 import { buildEventSchedule, type EventDayDefinition } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { useMemo } from "react";
 import type { AdminBookingRow } from "./RoomsAdminView";
+import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 
-const TZ = "Europe/Istanbul";
+const TZ = EVENT_TIME_ZONE;
 
 function hourLabel(iso: string): string {
   return new Intl.DateTimeFormat("en-GB", {

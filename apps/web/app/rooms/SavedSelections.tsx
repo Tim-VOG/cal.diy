@@ -4,13 +4,14 @@ import { trpc } from "@calcom/trpc/react";
 import { CreditCard, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { clearSelection, listSelections, type RoomSelection } from "./selectionStore";
 
 /** The event day a selection falls on, in the event's own time zone. */
 function eventDay(selection: RoomSelection): string {
   if (!selection.startUtc) return selection.date;
   // en-CA gives ISO order (YYYY-MM-DD), which is what the server compares on.
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Istanbul" }).format(
+  return new Intl.DateTimeFormat("en-CA", { timeZone: EVENT_TIME_ZONE }).format(
     new Date(selection.startUtc)
   );
 }
@@ -24,14 +25,14 @@ function formatSlot(selection: RoomSelection): string {
   const start = new Date(selection.startUtc);
   const end = new Date(start.getTime() + selection.durationHours * 60 * 60 * 1000);
   const day = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Istanbul",
+    timeZone: EVENT_TIME_ZONE,
     weekday: "short",
     day: "numeric",
     month: "short",
   }).format(start);
   const time = (d: Date) =>
     new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Europe/Istanbul",
+      timeZone: EVENT_TIME_ZONE,
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,

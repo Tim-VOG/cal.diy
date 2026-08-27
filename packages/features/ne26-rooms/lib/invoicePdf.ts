@@ -1,8 +1,9 @@
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import type { InvoiceModel } from "./invoice";
 import { INVOICE_LOGO_PNG_BASE64, INVOICE_LOGO_PNG_HEIGHT, INVOICE_LOGO_PNG_WIDTH } from "./invoiceLogo";
+import { EVENT_TIME_ZONE } from "./eventSchedule";
 
-const TZ = "Europe/Istanbul";
+const TZ = EVENT_TIME_ZONE;
 const NAVY = rgb(0, 6 / 255, 67 / 255); // #000643
 const GREY = rgb(0.42, 0.42, 0.45);
 
@@ -118,7 +119,7 @@ function dt(d: Date): string {
 /** Day only. An invoice is dated to the day; the time belongs on the booking. */
 function d(date: Date): string {
   return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Istanbul",
+    timeZone: EVENT_TIME_ZONE,
     day: "2-digit",
     month: "short",
     year: "numeric",

@@ -6,12 +6,13 @@ import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 
 type Params = Promise<{ uid: string }>;
 
 export const metadata: Metadata = { title: "Booking confirmation · NATO Edge 26" };
 
-const TZ = "Europe/Istanbul";
+const TZ = EVENT_TIME_ZONE;
 
 function formatRange(start: Date, end: Date): string {
   const day = new Intl.DateTimeFormat("en-GB", {
