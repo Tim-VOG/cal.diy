@@ -3,8 +3,10 @@ import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
 import Footer from "./Footer";
 import LogoutButton from "./LogoutButton";
+import ShortlistBar from "./ShortlistBar";
 
 // Standalone public layout: it deliberately skips Cal's logged-in shell and the
 // booking PageWrapper — these pages are public and brand-themed (NATO Edge 26).
@@ -18,6 +20,11 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
   // Admins had no way in from the site — you had to type /rooms/admin by hand.
   // The link only renders for them; the admin pages keep their own authorization.
   const isAdmin = session?.user?.role === "ADMIN";
+  // The event's days, so the shortlist can say which are still open. Only
+  // needed for someone who can actually book.
+  const eventDays = isLoggedIn
+    ? (await getNe26RoomSettingsRepository().get()).eventDays.map((d) => d.date)
+    : [];
 
   return (
     <div className="flex min-h-screen flex-col bg-gray-50 text-black">
@@ -86,6 +93,11 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
         ) : null}
       </header>
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">{children}</main>
+      {/* Sticky rather than fixed: it keeps its place in the flow, so it never
+          covers the footer, and it costs no layout while the shortlist is
+          empty (the component renders nothing then). Rendered here so it
+          follows the exhibitor from the listing into a room and back. */}
+      {isLoggedIn ? <ShortlistBar eventDays={eventDays} /> : null}
       <Footer />
     </div>
   );

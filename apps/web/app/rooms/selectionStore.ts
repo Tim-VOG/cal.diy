@@ -68,11 +68,24 @@ function read(now: number): Store {
   }
 }
 
+/**
+ * Broadcast so the shortlist bar, which lives in the layout and never remounts
+ * on client-side navigation, notices a change made on the page beneath it.
+ * sessionStorage fires no `storage` event within its own tab, so without this
+ * the bar would stay stale until a full reload.
+ */
+export const SELECTIONS_CHANGED = "ne26:selections-changed";
+
 function write(store: Store): void {
   try {
     globalThis.sessionStorage?.setItem(KEY, JSON.stringify(store));
   } catch {
     // Storage full or unavailable — the selection simply is not remembered.
+  }
+  try {
+    globalThis.dispatchEvent?.(new Event(SELECTIONS_CHANGED));
+  } catch {
+    // No window (server render, or a test environment without one).
   }
 }
 

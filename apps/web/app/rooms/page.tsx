@@ -7,7 +7,6 @@ import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import SavedSelections from "./SavedSelections";
 import { servicesFor } from "./amenities";
 import { requireBillingProfile } from "./requireBillingProfile";
 
@@ -127,8 +126,6 @@ export default async function RoomsListingPage(): Promise<JSX.Element> {
       <p className="mt-2 whitespace-pre-line text-gray-600 text-sm">
         {settings.landingIntro?.trim() ? settings.landingIntro : DEFAULT_LANDING_INTRO}
       </p>
-
-      <SavedSelections />
 
       {orderedCategories.map((category) => (
         <section key={category} className="mt-8">
