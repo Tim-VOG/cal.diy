@@ -62,7 +62,17 @@ export function eventDayBounds(date: string): { fromUtc: Date; toUtc: Date } {
   return { fromUtc, toUtc };
 }
 
-/** Today's date in Istanbul as "YYYY-MM-DD" — what the desk opens on. */
+/** The event-local calendar date a UTC instant falls on, as "YYYY-MM-DD". */
+export function eventDateOf(instant: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: EVENT_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(instant);
+}
+
+/** Today's date in the event's timezone as "YYYY-MM-DD" — what the desk opens on. */
 export function eventToday(now: Date = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: EVENT_TIME_ZONE,

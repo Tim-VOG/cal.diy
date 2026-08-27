@@ -221,9 +221,14 @@ export class Ne26OrderRepository {
         data: { status: ResourceBookingStatus.CONFIRMED, stripePaymentId, holdExpiresAt: null },
       });
       if (result.count === 0) return false;
+      // The payment id is deliberately NOT copied onto the rooms: it is unique
+      // per booking row, so one payment covering three rooms would violate the
+      // constraint and the whole confirmation would roll back — a paid order
+      // left PENDING. The payment belongs to the order, which is where it is
+      // stored and where the refund path resolves it from.
       await tx.resourceBooking.updateMany({
         where: { orderUid: uid, status: ResourceBookingStatus.PENDING },
-        data: { status: ResourceBookingStatus.CONFIRMED, stripePaymentId, holdExpiresAt: null },
+        data: { status: ResourceBookingStatus.CONFIRMED, holdExpiresAt: null },
       });
       return true;
     });
@@ -320,6 +325,30 @@ export class Ne26OrderRepository {
       await tx.resourceBooking.deleteMany({ where: { orderUid: uid } });
       return result.count;
     });
+  }
+
+  /**
+   * When this exhibitor already has a room, so a second one that day can be
+   * refused before any money moves.
+   *
+   * Confirmed bookings and live holds both count: a hold takes the room off sale,
+   * so letting someone hold three days' worth and pay for one would be exactly
+   * the loophole the rule exists to close. Expired holds do not count — they
+   * protect nothing.
+   */
+  async findBookedStartsForUser(bookerUserId: number, now: Date): Promise<Date[]> {
+    const rows = await this.prismaClient.resourceBooking.findMany({
+      where: {
+        bookerUserId,
+        isBlock: false,
+        OR: [
+          { status: ResourceBookingStatus.CONFIRMED },
+          { status: ResourceBookingStatus.PENDING, holdExpiresAt: { gt: now } },
+        ],
+      },
+      select: { startTime: true },
+    });
+    return rows.map((r) => r.startTime);
   }
 
   /** How many orders this buyer is holding without having paid. */

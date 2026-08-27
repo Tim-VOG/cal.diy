@@ -1,17 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { formatMoney, saleNotification } from "./teamNotification";
 
-const BASE = {
-  bookingUid: "2fe0f775-7681-4cb1-a0c3-b21dac06219d",
+const SUITE_1 = {
   roomName: "Suite 1",
   startUtc: new Date("2026-11-17T13:00:00.000Z"),
   endUtc: new Date("2026-11-17T15:00:00.000Z"),
   durationMinutes: 120,
+  addOns: [{ name: "Catering - Lunch", quantity: 2, lineTotal: 14000 }],
+};
+
+const BASE = {
+  orderUid: "2fe0f775-7681-4cb1-a0c3-b21dac06219d",
+  rooms: [SUITE_1],
   bookerName: "Jane Exhibitor",
   bookerEmail: "jane@example.com",
   bookerCountry: "FR",
   bookerVatNumber: "FR12345678901",
-  addOns: [{ name: "Catering - Lunch", quantity: 2, lineTotal: 14000 }],
   amountHt: 72000,
   amountPaid: 87120,
   currency: "EUR",
@@ -66,14 +70,14 @@ describe("saleNotification", () => {
   it("still reads correctly with no add-ons, no VAT number and no invoice yet", () => {
     const { subject, body } = saleNotification({
       ...BASE,
-      addOns: [],
+      rooms: [{ ...SUITE_1, addOns: [] }],
       bookerVatNumber: null,
       bookerCountry: null,
       invoiceNumber: null,
       amountPaid: null,
     });
     expect(subject).toBe("Room sold — Suite 1, 2h");
-    expect(body).not.toContain("Add-ons");
+    expect(body).not.toContain("Catering");
     expect(body).not.toContain("Invoice:");
     expect(body).toContain("720.00 EUR");
   });
@@ -82,5 +86,55 @@ describe("saleNotification", () => {
     const { body } = saleNotification({ ...BASE, bookerName: null, bookerEmail: null });
     expect(body).toContain("An exhibitor");
     expect(body).not.toContain("null");
+  });
+
+  describe("an order covering several rooms", () => {
+    const MULTI = {
+      ...BASE,
+      rooms: [
+        SUITE_1,
+        {
+          roomName: "Studio 3",
+          startUtc: new Date("2026-11-18T07:00:00.000Z"),
+          endUtc: new Date("2026-11-18T08:00:00.000Z"),
+          durationMinutes: 60,
+          addOns: [],
+        },
+      ],
+      amountHt: 102000,
+      amountPaid: 123420,
+    };
+
+    it("counts the rooms in the subject instead of naming them all", () => {
+      // Naming three rooms would run past what any mail client shows.
+      expect(saleNotification(MULTI).subject).toBe("Room sold — 2 rooms (1234.20 EUR)");
+    });
+
+    it("lists every room with its own slot in the body", () => {
+      const { body } = saleNotification(MULTI);
+      expect(body).toContain("Suite 1 — 2h");
+      expect(body).toContain("Tue, 17 Nov 2026, 16:00-18:00 (Europe/Istanbul)");
+      expect(body).toContain("Studio 3 — 1h");
+      expect(body).toContain("Wed, 18 Nov 2026, 10:00-11:00 (Europe/Istanbul)");
+    });
+
+    it("reports one total for the whole order, not one per room", () => {
+      const { body } = saleNotification(MULTI);
+      expect(body).toContain("1020.00 EUR");
+      expect(body).toContain("1234.20 EUR");
+      // The single order reference is what ties the payment to the invoice.
+      expect(body).toContain(BASE.orderUid);
+    });
+
+    it("attaches each add-on to the room it belongs to", () => {
+      // Add-ons were printed in one flat list, so a lunch ordered for Suite 1
+      // read as if it belonged to Studio 3.
+      const body = saleNotification(MULTI).body;
+      const suiteAt = body.indexOf("Suite 1 — 2h");
+      const cateringAt = body.indexOf("Catering - Lunch");
+      const studioAt = body.indexOf("Studio 3 — 1h");
+      expect(cateringAt).toBeGreaterThan(suiteAt);
+      expect(cateringAt).toBeLessThan(studioAt);
+    });
   });
 });

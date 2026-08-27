@@ -5,6 +5,7 @@ import { getNe26OrderRepository } from "../di/Ne26OrderRepository.container";
 import { getNe26RoomSettingsRepository } from "../di/Ne26RoomSettingsRepository.container";
 import { getResourceRepository } from "../di/ResourceRepository.container";
 import { getAtomicSlotStarts, getBufferSlotStarts } from "../lib/atomicSlots";
+import { eventDateOf } from "../lib/deskDay";
 import { type DurationHours, buildEventSchedule, buildOpenSlotMs } from "../lib/eventSchedule";
 import { resolveAddOnLines } from "../lib/pricing";
 import { formatSlotRange } from "../lib/teamNotification";
@@ -26,6 +27,20 @@ const MAX_ACTIVE_ORDERS_PER_USER = 3;
 
 /** The same, for the welcome desk, which sells to people with no account. */
 const MAX_ACTIVE_ORDERS_AT_THE_DESK = 6;
+
+/**
+ * One room per exhibitor per day, whatever the slot.
+ *
+ * A commercial rule, not a technical guard: with nine rooms and three days, one
+ * exhibitor taking two rooms on the same day denies another exhibitor entirely.
+ * It is enforced here rather than only in the UI, because the UI is a shortlist
+ * held in the browser and anyone can post to the API directly.
+ */
+export const MAX_ROOMS_PER_DAY = 1;
+
+/** Shown wherever the rule bites, so it never reads as an unexplained refusal. */
+export const ONE_ROOM_PER_DAY_MESSAGE =
+  "Each exhibitor can book one meeting room per day. You already have a room that day — choose another day, or cancel the one you have.";
 
 export interface OrderRoomSelection {
   slug: string;
@@ -100,6 +115,22 @@ export class Ne26OrderService {
           );
         }
         seen.add(key);
+      }
+    }
+
+    // One room per day, counting what this exhibitor already holds and what this
+    // basket is asking for together — otherwise two rooms on the same day slip
+    // through as long as they arrive in the same order.
+    if (input.buyer.userId) {
+      const existing = await orderRepo.findBookedStartsForUser(input.buyer.userId, now);
+      const takenDays = new Set(existing.map(eventDateOf));
+      const daysInThisOrder = new Set<string>();
+      for (const room of rooms) {
+        const day = eventDateOf(room.startTime);
+        if (takenDays.has(day) || daysInThisOrder.has(day)) {
+          throw new ErrorWithCode(ErrorCode.BadRequest, ONE_ROOM_PER_DAY_MESSAGE);
+        }
+        daysInThisOrder.add(day);
       }
     }
 

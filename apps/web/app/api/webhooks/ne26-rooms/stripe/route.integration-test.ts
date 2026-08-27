@@ -16,46 +16,66 @@ vi.mock("@calcom/features/ne26-rooms/lib/mailer", () => ({
 }));
 
 import Stripe from "stripe";
-import { getResourceBookingRepository } from "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container";
+import { getNe26OrderRepository } from "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container";
 import { getAtomicSlotStarts } from "@calcom/features/ne26-rooms/lib/atomicSlots";
 import { sendInvoiceEmail, sendTeamEmail } from "@calcom/features/ne26-rooms/lib/mailer";
 import { POST } from "./route";
 
-const repo = getResourceBookingRepository();
+const orders = getNe26OrderRepository();
 const stripe = new Stripe(env.STRIPE_PRIVATE_KEY as string, { apiVersion: "2020-08-27" });
 const WEBHOOK_SECRET = env.STRIPE_WEBHOOK_SECRET_NE26_ROOMS as string;
 const MS_PER_MINUTE = 60 * 1000;
-const SLUG = `test-webhook-${Date.now()}`;
+const STAMP = Date.now();
 const TEAM_EMAIL = "sales@vo-europe.test";
 
-let resourceId: number;
+let roomA: number;
+let roomB: number;
 let slotCursor = 0;
 
-/** A held booking on its own slot, so tests never collide with each other. */
-async function heldBooking(overrides: { holdExpiresAt?: Date } = {}): Promise<string> {
-  // Wednesday 09:00 Brussels onwards, one hour apart per booking.
-  const startTime = new Date(Date.parse("2026-11-18T06:00:00.000Z") + slotCursor++ * 60 * MS_PER_MINUTE);
-  const booking = await repo.createWithSlots({
-    resourceId,
-    startTime,
-    endTime: new Date(startTime.getTime() + 60 * MS_PER_MINUTE),
-    durationMinutes: 60,
-    slotStarts: getAtomicSlotStarts(startTime, 60),
+/**
+ * A held order on its own slots, so tests never collide with each other.
+ * `rooms` defaults to one; pass 2 for the "one payment, several rooms" cases.
+ */
+async function heldOrder(
+  overrides: { holdExpiresAt?: Date; rooms?: number } = {}
+): Promise<{ uid: string; startTimes: Date[] }> {
+  const count = overrides.rooms ?? 1;
+  const holdExpiresAt = overrides.holdExpiresAt ?? new Date(Date.now() + 35 * MS_PER_MINUTE);
+  // Wednesday 09:00 Istanbul onwards, one hour apart per room booked.
+  const rooms = Array.from({ length: count }, (_, i) => {
+    const startTime = new Date(Date.parse("2026-11-18T06:00:00.000Z") + slotCursor++ * 60 * MS_PER_MINUTE);
+    return {
+      resourceId: i === 0 ? roomA : roomB,
+      startTime,
+      endTime: new Date(startTime.getTime() + 60 * MS_PER_MINUTE),
+      durationMinutes: 60,
+      slotStarts: getAtomicSlotStarts(startTime, 60),
+      amountTotal: 35000,
+      addOns: [],
+    };
+  });
+
+  const order = await orders.createWithRooms({
+    bookerUserId: null,
     bookerEmail: "webhook@test.com",
     bookerName: "Webhook Tester",
-    amountTotal: 35000,
+    amountTotal: 35000 * count,
     currency: "EUR",
-    status: ResourceBookingStatus.PENDING,
-    holdExpiresAt: overrides.holdExpiresAt ?? new Date(Date.now() + 35 * MS_PER_MINUTE),
+    holdExpiresAt,
+    rooms,
   });
-  return booking.uid;
+  if (!order) throw new Error("order not created");
+  return { uid: order.uid, startTimes: rooms.map((r) => r.startTime) };
 }
 
 interface SessionOptions {
-  bookingUid?: string;
+  orderUid?: string;
+  /** Exercises the legacy key a session created before orders existed carries. */
+  legacyBookingUid?: string;
   paymentStatus?: string;
   source?: string;
   paymentIntent?: string;
+  amountTotal?: number;
 }
 
 function sessionEvent(type: string, options: SessionOptions = {}): string {
@@ -69,7 +89,7 @@ function sessionEvent(type: string, options: SessionOptions = {}): string {
         object: "checkout.session",
         payment_status: options.paymentStatus ?? "paid",
         payment_intent: options.paymentIntent ?? "pi_test_webhook",
-        amount_total: 35000,
+        amount_total: options.amountTotal ?? 35000,
         currency: "eur",
         customer_details: {
           name: "Webhook Buyer BV",
@@ -78,7 +98,8 @@ function sessionEvent(type: string, options: SessionOptions = {}): string {
         },
         metadata: {
           source: options.source ?? "ne26-rooms",
-          ...(options.bookingUid ? { bookingUid: options.bookingUid } : {}),
+          ...(options.orderUid ? { orderUid: options.orderUid } : {}),
+          ...(options.legacyBookingUid ? { bookingUid: options.legacyBookingUid } : {}),
         },
       },
     },
@@ -115,13 +136,30 @@ function deliver(payload: string, secret: string = WEBHOOK_SECRET): Promise<Resp
   );
 }
 
+/** How many slot rows a room still holds — 0 means it is back on sale. */
+function slotsHeld(resourceId: number, slotStart: Date): Promise<number> {
+  return prisma.resourceSlot.count({ where: { resourceId, slotStart } });
+}
+
 describe("NE26 Stripe webhook", () => {
   beforeAll(async () => {
-    const room = await prisma.resource.create({
-      data: { name: "TEST Webhook Room", slug: SLUG, category: "ENTRY", capacity: 6, surface: 18, price1h: 35000, price2h: 65000, price3h: 90000 },
-      select: { id: true },
-    });
-    resourceId = room.id;
+    const make = (n: string) =>
+      prisma.resource.create({
+        data: {
+          name: `TEST Webhook Room ${n}`,
+          slug: `test-webhook-${n}-${STAMP}`,
+          category: "ENTRY",
+          capacity: 6,
+          surface: 18,
+          price1h: 35000,
+          price2h: 65000,
+          price3h: 90000,
+        },
+        select: { id: true },
+      });
+    const [a, b] = await Promise.all([make("a"), make("b")]);
+    roomA = a.id;
+    roomB = b.id;
 
     // Team notifications go to the admin-configured list.
     await prisma.ne26InvoiceSettings.upsert({
@@ -133,21 +171,25 @@ describe("NE26 Stripe webhook", () => {
 
   afterEach(async () => {
     vi.clearAllMocks();
-    await prisma.resourceBooking.deleteMany({ where: { resourceId } });
+    await prisma.ne26Order.deleteMany({ where: { bookerEmail: "webhook@test.com" } });
+    await prisma.resourceBooking.deleteMany({ where: { resourceId: { in: [roomA, roomB] } } });
   });
 
   afterAll(async () => {
-    await prisma.resource.delete({ where: { id: resourceId } });
+    await prisma.resource.deleteMany({ where: { id: { in: [roomA, roomB] } } });
   });
 
   describe("signature verification", () => {
     it("rejects a payload signed with the wrong secret", async () => {
-      const uid = await heldBooking();
-      const response = await deliver(sessionEvent("checkout.session.completed", { bookingUid: uid }), "whsec_wrong");
+      const { uid } = await heldOrder();
+      const response = await deliver(
+        sessionEvent("checkout.session.completed", { orderUid: uid }),
+        "whsec_wrong"
+      );
 
       expect(response.status).toBe(400);
       // Critically, nothing was acted on.
-      expect((await repo.findByUid(uid))?.status).toBe(ResourceBookingStatus.PENDING);
+      expect((await orders.findByUid(uid))?.status).toBe(ResourceBookingStatus.PENDING);
     });
 
     it("rejects a payload with no signature at all", async () => {
@@ -161,8 +203,8 @@ describe("NE26 Stripe webhook", () => {
     });
 
     it("rejects a tampered payload that keeps a valid-looking signature", async () => {
-      const uid = await heldBooking();
-      const payload = sessionEvent("checkout.session.completed", { bookingUid: uid });
+      const { uid } = await heldOrder();
+      const payload = sessionEvent("checkout.session.completed", { orderUid: uid });
       const signature = stripe.webhooks.generateTestHeaderString({ payload, secret: WEBHOOK_SECRET });
       const tampered = payload.replace('"amount_total":35000', '"amount_total":100');
 
@@ -175,27 +217,23 @@ describe("NE26 Stripe webhook", () => {
       );
 
       expect(response.status).toBe(400);
-      expect((await repo.findByUid(uid))?.status).toBe(ResourceBookingStatus.PENDING);
+      expect((await orders.findByUid(uid))?.status).toBe(ResourceBookingStatus.PENDING);
     });
   });
 
   describe("checkout.session.completed", () => {
     it("confirms a paid session, records the payment and invoices it", async () => {
-      const uid = await heldBooking();
+      const { uid } = await heldOrder();
 
-      const response = await deliver(sessionEvent("checkout.session.completed", { bookingUid: uid }));
+      const response = await deliver(sessionEvent("checkout.session.completed", { orderUid: uid }));
       expect(response.status).toBe(200);
 
-      const booking = await repo.findByUid(uid);
-      expect(booking?.status).toBe(ResourceBookingStatus.CONFIRMED);
-      expect(booking?.invoiceNumber).toMatch(/^NE26-2026-\d{4}$/);
+      const order = await orders.findByUid(uid);
+      expect(order?.status).toBe(ResourceBookingStatus.CONFIRMED);
+      expect(order?.invoiceNumber).toMatch(/^NE26-2026-\d{4}$/);
 
       // Billing details Stripe collected drive the invoice VAT.
-      const stored = await prisma.resourceBooking.findUniqueOrThrow({
-        where: { uid },
-        select: { stripePaymentId: true, bookerCountry: true, bookerVatNumber: true, bookerName: true },
-      });
-      expect(stored).toMatchObject({
+      expect(order).toMatchObject({
         stripePaymentId: "pi_test_webhook",
         bookerCountry: "NL",
         bookerVatNumber: "NL123456789B01",
@@ -215,57 +253,96 @@ describe("NE26 Stripe webhook", () => {
       expect(sale.subject).toMatch(/room sold/i);
     });
 
+    // One payment covering several rooms is the whole point of the order model.
+    it("confirms every room in the order on a single payment", async () => {
+      const { uid, startTimes } = await heldOrder({ rooms: 2 });
+
+      await deliver(
+        sessionEvent("checkout.session.completed", { orderUid: uid, amountTotal: 70000 })
+      );
+
+      const order = await orders.findByUid(uid);
+      expect(order?.status).toBe(ResourceBookingStatus.CONFIRMED);
+      expect(order?.bookings).toHaveLength(2);
+
+      const rows = await prisma.resourceBooking.findMany({
+        where: { orderUid: uid },
+        select: { status: true, holdExpiresAt: true },
+      });
+      expect(rows.every((r) => r.status === ResourceBookingStatus.CONFIRMED)).toBe(true);
+      // No hold left to lapse underneath a paid order.
+      expect(rows.every((r) => r.holdExpiresAt === null)).toBe(true);
+      // Both rooms still held by the buyer who paid for them.
+      expect(await slotsHeld(roomA, startTimes[0])).toBe(1);
+      expect(await slotsHeld(roomB, startTimes[1])).toBe(1);
+
+      // One payment, one invoice, one mail — not one per room.
+      expect(order?.invoiceNumber).toMatch(/^NE26-2026-\d{4}$/);
+      expect(sendInvoiceEmail).toHaveBeenCalledTimes(1);
+      expect(sendTeamEmail).toHaveBeenCalledTimes(1);
+    });
+
+    // A session created before orders existed can still be open in a buyer's
+    // tab when this deploys; rejecting it would take the money and confirm
+    // nothing.
+    it("still honours the legacy bookingUid metadata key", async () => {
+      const { uid } = await heldOrder();
+      await deliver(sessionEvent("checkout.session.completed", { legacyBookingUid: uid }));
+      expect((await orders.findByUid(uid))?.status).toBe(ResourceBookingStatus.CONFIRMED);
+    });
+
     // The regression that matters most: SEPA and other delayed methods fire this
     // event immediately with payment_status "unpaid" and settle days later.
     it("does NOT confirm, invoice or allocate a number for an unpaid session", async () => {
-      const uid = await heldBooking();
+      const { uid } = await heldOrder();
 
       const response = await deliver(
-        sessionEvent("checkout.session.completed", { bookingUid: uid, paymentStatus: "unpaid" })
+        sessionEvent("checkout.session.completed", { orderUid: uid, paymentStatus: "unpaid" })
       );
       expect(response.status).toBe(200); // acknowledged, but not acted on
 
-      const booking = await repo.findByUid(uid);
-      expect(booking?.status).toBe(ResourceBookingStatus.PENDING);
-      expect(booking?.invoiceNumber).toBeNull();
+      const order = await orders.findByUid(uid);
+      expect(order?.status).toBe(ResourceBookingStatus.PENDING);
+      expect(order?.invoiceNumber).toBeNull();
     });
 
     it("ignores a session belonging to another integration on the same account", async () => {
-      const uid = await heldBooking();
-      await deliver(sessionEvent("checkout.session.completed", { bookingUid: uid, source: "cal-payments" }));
-      expect((await repo.findByUid(uid))?.status).toBe(ResourceBookingStatus.PENDING);
+      const { uid } = await heldOrder();
+      await deliver(sessionEvent("checkout.session.completed", { orderUid: uid, source: "cal-payments" }));
+      expect((await orders.findByUid(uid))?.status).toBe(ResourceBookingStatus.PENDING);
     });
 
     it("is a no-op on replay: the same delivery twice invoices once", async () => {
-      const uid = await heldBooking();
-      const payload = sessionEvent("checkout.session.completed", { bookingUid: uid });
+      const { uid } = await heldOrder();
+      const payload = sessionEvent("checkout.session.completed", { orderUid: uid });
 
       await deliver(payload);
-      const first = await repo.findByUid(uid);
+      const first = await orders.findByUid(uid);
       await deliver(payload);
-      const second = await repo.findByUid(uid);
+      const second = await orders.findByUid(uid);
 
       expect(second?.status).toBe(ResourceBookingStatus.CONFIRMED);
       expect(second?.invoiceNumber).toBe(first?.invoiceNumber);
+      expect(sendInvoiceEmail).toHaveBeenCalledTimes(1);
     });
 
-    it("does not resurrect a booking whose hold was already reclaimed", async () => {
-      // Money captured against a booking that no longer exists: acknowledge the
+    it("does not resurrect an order whose hold was already reclaimed", async () => {
+      // Money captured against an order that no longer exists: acknowledge the
       // delivery (so Stripe stops retrying) and get a human involved, because
       // nothing downstream retries and nobody reads container logs mid-event.
-      const uid = await heldBooking();
-      await prisma.resourceBooking.delete({ where: { uid } });
+      const { uid } = await heldOrder();
+      await prisma.ne26Order.delete({ where: { uid } });
 
-      const response = await deliver(sessionEvent("checkout.session.completed", { bookingUid: uid }));
+      const response = await deliver(sessionEvent("checkout.session.completed", { orderUid: uid }));
 
       expect(response.status).toBe(200);
-      expect(await repo.findByUid(uid)).toBeNull();
+      expect(await orders.findByUid(uid)).toBeNull();
 
       // Nobody reads container logs mid-event: this has to reach a human, with
       // enough to find the money in Stripe.
       expect(sendTeamEmail).toHaveBeenCalledTimes(1);
       const alert = vi.mocked(sendTeamEmail).mock.calls[0][0];
-      expect(alert.subject).toMatch(/no matching booking/i);
+      expect(alert.subject).toMatch(/no matching order/i);
       expect(alert.body).toContain("pi_test_webhook");
       expect(alert.body).toContain("cs_test_webhook");
     });
@@ -273,69 +350,76 @@ describe("NE26 Stripe webhook", () => {
 
   describe("delayed payments", () => {
     it("confirms when the payment later settles", async () => {
-      const uid = await heldBooking();
-      await deliver(sessionEvent("checkout.session.completed", { bookingUid: uid, paymentStatus: "unpaid" }));
-      expect((await repo.findByUid(uid))?.status).toBe(ResourceBookingStatus.PENDING);
+      const { uid } = await heldOrder();
+      await deliver(
+        sessionEvent("checkout.session.completed", { orderUid: uid, paymentStatus: "unpaid" })
+      );
+      expect((await orders.findByUid(uid))?.status).toBe(ResourceBookingStatus.PENDING);
 
-      await deliver(sessionEvent("checkout.session.async_payment_succeeded", { bookingUid: uid }));
-      expect((await repo.findByUid(uid))?.status).toBe(ResourceBookingStatus.CONFIRMED);
+      await deliver(sessionEvent("checkout.session.async_payment_succeeded", { orderUid: uid }));
+      expect((await orders.findByUid(uid))?.status).toBe(ResourceBookingStatus.CONFIRMED);
     });
 
-    it("releases the hold when the payment fails, freeing the slot", async () => {
-      const uid = await heldBooking();
-      const { startTime } = await prisma.resourceBooking.findUniqueOrThrow({
-        where: { uid },
-        select: { startTime: true },
-      });
+    it("releases the hold when the payment fails, freeing every room", async () => {
+      const { uid, startTimes } = await heldOrder({ rooms: 2 });
 
       await deliver(
-        sessionEvent("checkout.session.async_payment_failed", { bookingUid: uid, paymentStatus: "unpaid" })
+        sessionEvent("checkout.session.async_payment_failed", { orderUid: uid, paymentStatus: "unpaid" })
       );
 
-      expect((await repo.findByUid(uid))?.status).toBe(ResourceBookingStatus.CANCELLED);
-      expect(await prisma.resourceSlot.count({ where: { resourceId, slotStart: startTime } })).toBe(0);
+      // The order is deleted rather than marked cancelled: a cancelled row that
+      // kept its slots would leave the rooms unsellable for the whole event.
+      expect(await orders.findByUid(uid)).toBeNull();
+      expect(await slotsHeld(roomA, startTimes[0])).toBe(0);
+      expect(await slotsHeld(roomB, startTimes[1])).toBe(0);
     });
 
     it("releases the hold when the session expires", async () => {
-      const uid = await heldBooking();
-      await deliver(sessionEvent("checkout.session.expired", { bookingUid: uid, paymentStatus: "unpaid" }));
-      expect((await repo.findByUid(uid))?.status).toBe(ResourceBookingStatus.CANCELLED);
+      const { uid, startTimes } = await heldOrder();
+      await deliver(sessionEvent("checkout.session.expired", { orderUid: uid, paymentStatus: "unpaid" }));
+      expect(await orders.findByUid(uid)).toBeNull();
+      expect(await slotsHeld(roomA, startTimes[0])).toBe(0);
     });
 
-    it("does not release a booking that is already paid", async () => {
-      const uid = await heldBooking();
-      await deliver(sessionEvent("checkout.session.completed", { bookingUid: uid }));
-      await deliver(sessionEvent("checkout.session.expired", { bookingUid: uid, paymentStatus: "unpaid" }));
+    it("does not release an order that is already paid", async () => {
+      const { uid } = await heldOrder();
+      await deliver(sessionEvent("checkout.session.completed", { orderUid: uid }));
+      await deliver(sessionEvent("checkout.session.expired", { orderUid: uid, paymentStatus: "unpaid" }));
 
-      expect((await repo.findByUid(uid))?.status).toBe(ResourceBookingStatus.CONFIRMED);
+      expect((await orders.findByUid(uid))?.status).toBe(ResourceBookingStatus.CONFIRMED);
     });
   });
 
   describe("charge.refunded", () => {
-    async function paidBooking(paymentIntent: string): Promise<string> {
-      const uid = await heldBooking();
-      await deliver(sessionEvent("checkout.session.completed", { bookingUid: uid, paymentIntent }));
+    async function paidOrder(
+      paymentIntent: string,
+      rooms = 1
+    ): Promise<{ uid: string; startTimes: Date[] }> {
+      const held = await heldOrder({ rooms });
+      await deliver(
+        sessionEvent("checkout.session.completed", {
+          orderUid: held.uid,
+          paymentIntent,
+          amountTotal: 35000 * rooms,
+        })
+      );
       vi.clearAllMocks();
-      return uid;
+      return held;
     }
 
     // The other regression that matters: charge.refunded also fires for partial
     // refunds, and our credit note is all-or-nothing.
     it("does NOT credit or cancel on a partial refund", async () => {
-      const uid = await paidBooking("pi_partial");
-      const { startTime } = await prisma.resourceBooking.findUniqueOrThrow({
-        where: { uid },
-        select: { startTime: true },
-      });
+      const { uid, startTimes } = await paidOrder("pi_partial");
 
       const response = await deliver(chargeEvent("pi_partial", 35000, 5000));
       expect(response.status).toBe(200);
 
-      const booking = await repo.findByUid(uid);
-      expect(booking?.status).toBe(ResourceBookingStatus.CONFIRMED);
-      expect(booking?.creditNoteNumber).toBeNull();
+      const order = await orders.findByUid(uid);
+      expect(order?.status).toBe(ResourceBookingStatus.CONFIRMED);
+      expect(order?.creditNoteNumber).toBeNull();
       // The room stays held by the exhibitor who still has it.
-      expect(await prisma.resourceSlot.count({ where: { resourceId, slotStart: startTime } })).toBe(1);
+      expect(await slotsHeld(roomA, startTimes[0])).toBe(1);
 
       // Silence would mean the difference never gets invoiced.
       expect(sendTeamEmail).toHaveBeenCalledTimes(1);
@@ -345,29 +429,37 @@ describe("NE26 Stripe webhook", () => {
     });
 
     it("credits and frees the room on a full refund", async () => {
-      const uid = await paidBooking("pi_full");
-      const { startTime } = await prisma.resourceBooking.findUniqueOrThrow({
-        where: { uid },
-        select: { startTime: true },
-      });
+      const { uid, startTimes } = await paidOrder("pi_full");
 
       await deliver(chargeEvent("pi_full", 35000, 35000));
 
-      const booking = await repo.findByUid(uid);
-      expect(booking?.status).toBe(ResourceBookingStatus.CANCELLED);
-      expect(booking?.creditNoteNumber).toMatch(/^NE26-CN-2026-\d{4}$/);
-      expect(await prisma.resourceSlot.count({ where: { resourceId, slotStart: startTime } })).toBe(0);
+      const order = await orders.findByUid(uid);
+      expect(order?.status).toBe(ResourceBookingStatus.CANCELLED);
+      expect(order?.creditNoteNumber).toMatch(/^NE26-CN-2026-\d{4}$/);
+      expect(await slotsHeld(roomA, startTimes[0])).toBe(0);
+    });
+
+    it("credits the whole order and frees every room when several were paid at once", async () => {
+      const { uid, startTimes } = await paidOrder("pi_full_multi", 2);
+
+      await deliver(chargeEvent("pi_full_multi", 70000, 70000));
+
+      const order = await orders.findByUid(uid);
+      expect(order?.creditNoteNumber).toMatch(/^NE26-CN-2026-\d{4}$/);
+      // One credit note for the payment, and no room left behind holding slots.
+      expect(await slotsHeld(roomA, startTimes[0])).toBe(0);
+      expect(await slotsHeld(roomB, startTimes[1])).toBe(0);
     });
 
     it("is a no-op on replay of a full refund", async () => {
-      const uid = await paidBooking("pi_replay");
+      const { uid } = await paidOrder("pi_replay");
       const payload = chargeEvent("pi_replay", 35000, 35000);
 
       await deliver(payload);
-      const first = (await repo.findByUid(uid))?.creditNoteNumber;
+      const first = (await orders.findByUid(uid))?.creditNoteNumber;
       await deliver(payload);
 
-      expect((await repo.findByUid(uid))?.creditNoteNumber).toBe(first);
+      expect((await orders.findByUid(uid))?.creditNoteNumber).toBe(first);
     });
 
     it("ignores a refund for a payment we know nothing about", async () => {
