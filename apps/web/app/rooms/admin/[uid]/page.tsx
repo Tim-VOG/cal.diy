@@ -72,7 +72,13 @@ export default async function AdminBookingDetailPage({
   if (!booking) notFound();
 
   // Money lives on the order: one payment, one invoice, however many rooms.
+  // A booking taken before orders existed has none, and its own columns still
+  // hold the invoice that was issued for it — shown, but not actionable, since
+  // every action now works through an order.
   const order = booking.order;
+  const invoiceNumber = order?.invoiceNumber ?? booking.invoiceNumber;
+  const creditNoteNumber = order?.creditNoteNumber ?? booking.creditNoteNumber;
+  const documentUid = order?.uid ?? booking.uid;
   const siblings = order?.bookings.filter((b) => b.uid !== booking.uid) ?? [];
 
   return (
@@ -112,7 +118,7 @@ export default async function AdminBookingDetailPage({
           {order && order.bookings.length > 1 ? (
             <Row label="Order total">{fmtMoney(order.amountTotal, order.currency)}</Row>
           ) : null}
-          <Row label="Stripe payment">{order?.stripePaymentId ?? "—"}</Row>
+          <Row label="Stripe payment">{order?.stripePaymentId ?? booking.stripePaymentId ?? "—"}</Row>
           {booking.status === "PENDING" ? (
             <Row label="Hold expires">{booking.holdExpiresAt ? fmtDateTime(booking.holdExpiresAt) : "—"}</Row>
           ) : null}
@@ -120,26 +126,26 @@ export default async function AdminBookingDetailPage({
 
         <Card title="Documents">
           <Row label="Invoice">
-            {order?.invoiceNumber ? (
+            {invoiceNumber ? (
               <a
-                href={`/rooms/invoice/${order.uid}`}
+                href={`/rooms/invoice/${documentUid}`}
                 target="_blank"
                 rel="noreferrer"
                 className="text-[#000643] underline hover:opacity-80">
-                {order.invoiceNumber}
+                {invoiceNumber}
               </a>
             ) : (
               "—"
             )}
           </Row>
           <Row label="Credit note">
-            {order?.creditNoteNumber ? (
+            {creditNoteNumber ? (
               <a
-                href={`/rooms/credit-note/${order.uid}`}
+                href={`/rooms/credit-note/${documentUid}`}
                 target="_blank"
                 rel="noreferrer"
                 className="text-[#000643] underline hover:opacity-80">
-                {order.creditNoteNumber}
+                {creditNoteNumber}
               </a>
             ) : (
               "—"

@@ -42,12 +42,15 @@ export default async function RoomsAdminPage(): Promise<JSX.Element> {
     bookerEmail: b.bookerEmail,
     amountTotal: b.amountTotal,
     currency: b.currency,
-    stripePaymentId: b.stripePaymentId,
-    // The document belongs to the order this room was paid for.
+    stripePaymentId: b.order?.stripePaymentId ?? b.stripePaymentId,
+    // The document belongs to the order this room was paid for. Bookings taken
+    // before orders existed carry theirs on the row instead, and those are real
+    // invoices — falling through to them keeps the admin honest rather than
+    // showing a dash next to a document that was issued and emailed.
     orderUid: b.order?.uid ?? null,
     orderRoomCount: b.order?._count.bookings ?? 1,
-    invoiceNumber: b.order?.invoiceNumber ?? null,
-    creditNoteNumber: b.order?.creditNoteNumber ?? null,
+    invoiceNumber: b.order?.invoiceNumber ?? b.invoiceNumber,
+    creditNoteNumber: b.order?.creditNoteNumber ?? b.creditNoteNumber,
     addOns: b.addOns.map((a) => ({ name: a.addOn.name, quantity: a.quantity, lineTotal: a.lineTotal })),
   }));
 
