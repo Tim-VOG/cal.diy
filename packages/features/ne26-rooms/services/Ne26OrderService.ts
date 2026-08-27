@@ -35,6 +35,10 @@ const MAX_ACTIVE_ORDERS_AT_THE_DESK = 6;
  * exhibitor taking two rooms on the same day denies another exhibitor entirely.
  * It is enforced here rather than only in the UI, because the UI is a shortlist
  * held in the browser and anyone can post to the API directly.
+ *
+ * "Exhibitor" is the account when there is one and the email otherwise, so a
+ * walk-in buying twice at the counter is caught the same way — see
+ * findBookedStartsForUser.
  */
 export const MAX_ROOMS_PER_DAY = 1;
 
@@ -121,17 +125,18 @@ export class Ne26OrderService {
     // One room per day, counting what this exhibitor already holds and what this
     // basket is asking for together — otherwise two rooms on the same day slip
     // through as long as they arrive in the same order.
-    if (input.buyer.userId) {
-      const existing = await orderRepo.findBookedStartsForUser(input.buyer.userId, now);
-      const takenDays = new Set(existing.map(eventDateOf));
-      const daysInThisOrder = new Set<string>();
-      for (const room of rooms) {
-        const day = eventDateOf(room.startTime);
-        if (takenDays.has(day) || daysInThisOrder.has(day)) {
-          throw new ErrorWithCode(ErrorCode.BadRequest, ONE_ROOM_PER_DAY_MESSAGE);
-        }
-        daysInThisOrder.add(day);
+    const existing = await orderRepo.findBookedStartsForUser(
+      { userId: input.buyer.userId, email: input.buyer.email },
+      now
+    );
+    const takenDays = new Set(existing.map(eventDateOf));
+    const daysInThisOrder = new Set<string>();
+    for (const room of rooms) {
+      const day = eventDateOf(room.startTime);
+      if (takenDays.has(day) || daysInThisOrder.has(day)) {
+        throw new ErrorWithCode(ErrorCode.BadRequest, ONE_ROOM_PER_DAY_MESSAGE);
       }
+      daysInThisOrder.add(day);
     }
 
     const amountTotal = rooms.reduce((sum, r) => sum + r.amountTotal, 0);

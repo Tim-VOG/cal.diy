@@ -80,7 +80,12 @@ describe("Ne26OrderService.createOrder", () => {
 
   afterEach(async () => {
     await prisma.ne26Order.deleteMany({
-      where: { bookerEmail: { in: [buyer().email, walkIn.email] } },
+      where: {
+        OR: [
+          { bookerEmail: { in: [buyer().email, walkIn.email] } },
+          { bookerEmail: { endsWith: `-${STAMP}@test.com` } },
+        ],
+      },
     });
     await prisma.resourceBooking.deleteMany({ where: { resourceId: { in: [roomA, roomB] } } });
   });
@@ -309,14 +314,25 @@ describe("Ne26OrderService.createOrder", () => {
       );
     });
 
-    it("does not apply at the counter, which has no account to attach it to", async () => {
-      // A walk-in has no userId, so there is nothing to count days against. The
-      // desk applies the rule with the exhibitor in front of it.
-      const { order } = await service.createOrder({
-        buyer: walkIn,
-        rooms: [room(SLUG_A, TUE, 14), room(SLUG_B, TUE, 16)],
-      });
-      expect(order.bookings).toHaveLength(2);
+    it("holds at the counter too, matched on the exhibitor's email", async () => {
+      // The rule is per EXHIBITOR, not per account. A walk-in has no userId, so
+      // the email the desk collects is what identifies them — otherwise the
+      // counter is a way round the rule.
+      await service.createOrder({ buyer: walkIn, rooms: [room(SLUG_A, TUE, 14)] });
+
+      await expect(
+        service.createOrder({ buyer: walkIn, rooms: [room(SLUG_B, TUE, 16)] })
+      ).rejects.toThrow(/one meeting room per day/i);
+    });
+
+    it("does not confuse two different walk-ins", async () => {
+      await service.createOrder({ buyer: walkIn, rooms: [room(SLUG_A, TUE, 14)] });
+
+      // A different exhibitor, same day: perfectly normal, nine rooms exist.
+      const other = { userId: null, email: `walkin2-${STAMP}@test.com`, name: "Other walk-in" };
+      const { order } = await service.createOrder({ buyer: other, rooms: [room(SLUG_B, TUE, 16)] });
+      expect(order.bookings).toHaveLength(1);
+      await prisma.ne26Order.deleteMany({ where: { bookerEmail: other.email } });
     });
   });
 
@@ -324,8 +340,14 @@ describe("Ne26OrderService.createOrder", () => {
     // A counter sale has no account, so the per-account cap cannot see it. Each
     // hold takes a room off sale, so a desk that keeps starting checkouts it
     // never finishes parks inventory nobody can buy.
+    // A distinct exhibitor per sale: the cap belongs to the counter, which
+    // serves one person after another, not to any single buyer. Using one email
+    // six times would trip the one-room-per-day rule first and test nothing.
     function counterOrder(hour: number) {
-      return service.createOrder({ buyer: walkIn, rooms: [room(SLUG_A, WED, hour)] });
+      return service.createOrder({
+        buyer: { userId: null, email: `counter-${hour}-${STAMP}@test.com`, name: `Walk-in ${hour}` },
+        rooms: [room(SLUG_A, WED, hour)],
+      });
     }
 
     it("refuses a seventh counter order waiting for payment", async () => {

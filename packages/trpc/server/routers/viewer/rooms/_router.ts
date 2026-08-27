@@ -637,7 +637,10 @@ export const roomsRouter = router({
       "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
     );
     const { eventDateOf } = await import("@calcom/features/ne26-rooms/lib/deskDay");
-    const starts = await getNe26OrderRepository().findBookedStartsForUser(ctx.user.id, new Date());
+    const starts = await getNe26OrderRepository().findBookedStartsForUser(
+      { userId: ctx.user.id, email: ctx.user.email },
+      new Date()
+    );
     return { days: Array.from(new Set(starts.map(eventDateOf))).sort() };
   }),
 

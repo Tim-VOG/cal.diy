@@ -336,10 +336,20 @@ export class Ne26OrderRepository {
    * the loophole the rule exists to close. Expired holds do not count — they
    * protect nothing.
    */
-  async findBookedStartsForUser(bookerUserId: number, now: Date): Promise<Date[]> {
+  async findBookedStartsForUser(
+    booker: { userId: number | null; email: string },
+    now: Date
+  ): Promise<Date[]> {
+    // Matched on the account when there is one, and on the email otherwise: the
+    // rule is one room per EXHIBITOR, and a walk-in sold two rooms on the same
+    // day at the counter breaks it just as surely as an account holder would.
+    // The email is what the desk collects, so it is what identifies them.
+    const identity = booker.userId
+      ? { bookerUserId: booker.userId }
+      : { bookerUserId: null, bookerEmail: booker.email };
     const rows = await this.prismaClient.resourceBooking.findMany({
       where: {
-        bookerUserId,
+        ...identity,
         isBlock: false,
         OR: [
           { status: ResourceBookingStatus.CONFIRMED },
