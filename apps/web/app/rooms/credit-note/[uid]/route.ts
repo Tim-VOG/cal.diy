@@ -1,5 +1,5 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
-import { getResourceBookingRepository } from "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container";
+import { getNe26OrderRepository } from "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container";
 import { readInvoicePdf } from "@calcom/features/ne26-rooms/lib/invoiceStorage";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import { cookies, headers } from "next/headers";
@@ -13,7 +13,9 @@ export async function GET(
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
   if (!session?.user?.id) return new Response("Unauthorized", { status: 401 });
 
-  const booking = await getResourceBookingRepository().findByUid(uid);
+  // Documents belong to the order: one payment covers one or more rooms and
+  // produces one invoice.
+  const booking = await getNe26OrderRepository().findByUid(uid);
   if (!booking) return new Response("Not found", { status: 404 });
 
   const isOwner = booking.bookerUserId === session.user.id;

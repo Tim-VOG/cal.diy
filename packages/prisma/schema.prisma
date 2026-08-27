@@ -2967,6 +2967,11 @@ model ResourceBooking {
   // Admin block (maintenance / internal use): occupies the slots like a CONFIRMED
   // booking but is not a real sale (excluded from the bookings list and revenue).
   isBlock                 Boolean               @default(false)
+  // NE26: the paid order this room belongs to. One payment can cover several
+  // rooms, so the money, the invoice and the Stripe payment id live on the
+  // order — a booking is just one room inside it.
+  order                   Ne26Order?            @relation(fields: [orderUid], references: [uid], onDelete: Cascade)
+  orderUid                String?
   // NE26: the welcome desk marking an exhibitor as arrived. Null = not yet.
   // Stored as a timestamp rather than a flag so the log shows when, and so a
   // mistaken check-in can be cleared without losing that it happened.
@@ -2982,6 +2987,7 @@ model ResourceBooking {
   @@index([status])
   @@index([startTime, endTime])
   @@index([status, holdExpiresAt])
+  @@index([orderUid])
 }
 
 // One row per booked atomic 1h slot. THE anti-double-booking guarantee:
@@ -3159,6 +3165,52 @@ model Ne26AuditLog {
 
   @@index([createdAt])
   @@index([action])
+}
+
+// NE26: one payment, one invoice, one or more rooms.
+//
+// An exhibitor booking three rooms expects to pay once and receive one invoice,
+// exactly as they pay once for a room and its add-ons. So the payment, the
+// document and the VAT treatment belong here rather than on any single room —
+// and the Stripe payment id is unique HERE, which is what stops one payment
+// being processed twice.
+model Ne26Order {
+  uid                     String                @id @default(uuid())
+  bookings                ResourceBooking[]
+  // Null for a counter sale: the desk sells to people with no account.
+  bookerUserId            Int?
+  bookerEmail             String
+  bookerName              String
+  // Billing as confirmed at Checkout; drives the invoice's "Bill to" and VAT.
+  bookerCountry           String?
+  bookerVatNumber         String?
+  bookerLegalName         String?
+  bookerAddressLine1      String?
+  bookerAddressLine2      String?
+  bookerPostalCode        String?
+  bookerCity              String?
+  bookerPoNumber          String?
+  bookerInternalReference String?
+  // Sum of every room and add-on in the order, excl. VAT.
+  amountTotal             Int
+  currency                String                @default("EUR")
+  status                  ResourceBookingStatus @default(PENDING)
+  holdExpiresAt           DateTime?
+  stripePaymentId         String?               @unique
+  invoiceNumber           String?               @unique
+  invoicePdfUrl           String?
+  creditNoteNumber        String?               @unique
+  creditNotePdfUrl        String?
+  // VAT frozen when the invoice is issued, so a later settings change can never
+  // make the credit note contradict the document already sent.
+  roomVatRate             Int?
+  vatZeroRated            Boolean               @default(false)
+  vatMention              String?
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+
+  @@index([bookerUserId])
+  @@index([status, holdExpiresAt])
 }
 
 // NE26: room photos uploaded from the admin.

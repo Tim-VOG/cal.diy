@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type Stripe from "stripe";
-import { checkoutOutcome, isFullRefund, ne26BookingUid, paymentIdOf } from "./stripeEvents";
+import { checkoutOutcome, isFullRefund, ne26OrderUid, paymentIdOf } from "./stripeEvents";
 
 function session(overrides: Partial<Stripe.Checkout.Session> = {}): Stripe.Checkout.Session {
   return {
@@ -16,19 +16,33 @@ function charge(amount: number, amountRefunded: number): Stripe.Charge {
   return { amount, amount_refunded: amountRefunded, currency: "eur" } as Stripe.Charge;
 }
 
-describe("ne26BookingUid", () => {
+describe("ne26OrderUid", () => {
+  it("reads the orderUid a current session carries", () => {
+    expect(ne26OrderUid(session({ metadata: { source: "ne26-rooms", orderUid: "order-9" } }))).toBe(
+      "order-9"
+    );
+  });
+
+  it("still reads a session created before orders existed", () => {
+    // One of those can be sitting in a buyer's tab when this deploys. Rejecting
+    // it would take the money and confirm nothing.
+    expect(ne26OrderUid(session({ metadata: { source: "ne26-rooms", bookingUid: "old-1" } }))).toBe(
+      "old-1"
+    );
+  });
+
   it("returns the uid for one of our sessions", () => {
-    expect(ne26BookingUid(session())).toBe("uid-1");
+    expect(ne26OrderUid(session())).toBe("uid-1");
   });
 
   it("ignores a session from another integration on the same Stripe account", () => {
     // Cal's own Stripe app shares this account; its sessions must not be touched.
-    expect(ne26BookingUid(session({ metadata: { source: "cal-payments", bookingUid: "uid-1" } }))).toBeNull();
-    expect(ne26BookingUid(session({ metadata: null }))).toBeNull();
+    expect(ne26OrderUid(session({ metadata: { source: "cal-payments", bookingUid: "uid-1" } }))).toBeNull();
+    expect(ne26OrderUid(session({ metadata: null }))).toBeNull();
   });
 
   it("ignores one of our sessions with no booking uid", () => {
-    expect(ne26BookingUid(session({ metadata: { source: "ne26-rooms" } }))).toBeNull();
+    expect(ne26OrderUid(session({ metadata: { source: "ne26-rooms" } }))).toBeNull();
   });
 });
 

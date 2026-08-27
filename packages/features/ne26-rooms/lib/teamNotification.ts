@@ -29,18 +29,23 @@ export function formatSlotRange(start: Date, end: Date): string {
   return `${day}, ${time(start)}-${time(end)} (Europe/Istanbul)`;
 }
 
-export interface SaleNotificationInput {
-  bookingUid: string;
+export interface SaleNotificationRoom {
   roomName: string;
   startUtc: Date;
   endUtc: Date;
   durationMinutes: number;
+  addOns: { name: string; quantity: number; lineTotal: number }[];
+}
+
+export interface SaleNotificationInput {
+  orderUid: string;
+  /** One payment can cover several rooms; the mail lists them all. */
+  rooms: SaleNotificationRoom[];
   bookerName?: string | null;
   bookerEmail?: string | null;
   bookerCountry?: string | null;
   bookerVatNumber?: string | null;
-  addOns: { name: string; quantity: number; lineTotal: number }[];
-  /** Order total excl. VAT, as stored on the booking. */
+  /** Order total excl. VAT. */
   amountHt: number;
   /** What Stripe actually captured (incl. VAT). Null if the event carried none. */
   amountPaid?: number | null;
@@ -61,40 +66,41 @@ function field(label: string, value: string): string {
  * order without opening the dashboard: which room, when, who, how much.
  */
 export function saleNotification(input: SaleNotificationInput): { subject: string; body: string } {
-  const hours = input.durationMinutes / 60;
   const paid = input.amountPaid ?? null;
   const buyer = input.bookerName?.trim() || "An exhibitor";
+  const rooms = input.rooms;
 
-  const subject = `Room sold — ${input.roomName}, ${hours}h${
-    paid === null ? "" : ` (${formatMoney(paid, input.currency)})`
-  }`;
+  // Naming every room in the subject would run past what any client shows, so
+  // one room is named and the rest counted.
+  const what =
+    rooms.length === 1
+      ? `${rooms[0].roomName}, ${rooms[0].durationMinutes / 60}h`
+      : `${rooms.length} rooms`;
+  const subject = `Room sold — ${what}${paid === null ? "" : ` (${formatMoney(paid, input.currency)})`}`;
 
-  const lines = [
-    `${input.roomName} — ${hours}h`,
-    formatSlotRange(input.startUtc, input.endUtc),
-    "",
-    field("Buyer", input.bookerEmail ? `${buyer} <${input.bookerEmail}>` : buyer),
-  ];
+  const lines: string[] = [];
+  for (const room of rooms) {
+    lines.push(`${room.roomName} — ${room.durationMinutes / 60}h`);
+    lines.push(`  ${formatSlotRange(room.startUtc, room.endUtc)}`);
+    for (const addOn of room.addOns) {
+      const name = addOn.quantity > 1 ? `${addOn.name} x ${addOn.quantity}` : addOn.name;
+      lines.push(`  ${name} — ${formatMoney(addOn.lineTotal, input.currency)}`);
+    }
+    lines.push("");
+  }
 
+  lines.push(field("Buyer", input.bookerEmail ? `${buyer} <${input.bookerEmail}>` : buyer));
   if (input.bookerCountry || input.bookerVatNumber) {
     lines.push(
       field("VAT", [input.bookerVatNumber, input.bookerCountry].filter(Boolean).join(" · ") || "-")
     );
   }
 
-  if (input.addOns.length) {
-    lines.push("", "Add-ons:");
-    for (const addOn of input.addOns) {
-      const name = addOn.quantity > 1 ? `${addOn.name} x ${addOn.quantity}` : addOn.name;
-      lines.push(`  ${name} — ${formatMoney(addOn.lineTotal, input.currency)}`);
-    }
-  }
-
   lines.push("", field("Total excl. VAT", formatMoney(input.amountHt, input.currency)));
   if (paid !== null) lines.push(field("Paid (incl. VAT)", formatMoney(paid, input.currency)));
   if (input.invoiceNumber) lines.push(field("Invoice", input.invoiceNumber));
 
-  lines.push("", field("Booking", input.bookingUid), "", input.adminUrl);
+  lines.push("", field("Order", input.orderUid), "", input.adminUrl);
 
   return { subject, body: lines.join("\n") };
 }

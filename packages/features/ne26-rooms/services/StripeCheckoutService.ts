@@ -9,7 +9,8 @@ const STRIPE_API_VERSION = "2020-08-27";
 const STRIPE_MIN_SESSION_LIFETIME_SECONDS = 30 * 60;
 
 export interface CreateCheckoutSessionInput {
-  bookingUid: string;
+  /** The order this payment settles. One payment can cover several rooms. */
+  orderUid: string;
   currency: string;
   /** Itemised lines shown in the Checkout summary; their sum is the amount charged. */
   lines: { name: string; description?: string; quantity: number; unitAmount: number }[];
@@ -123,10 +124,10 @@ export class StripeCheckoutService {
   }
 
   async createCheckoutSession(input: CreateCheckoutSessionInput): Promise<{ id: string; url: string }> {
-    const metadata = { bookingUid: input.bookingUid, source: "ne26-rooms" };
+    const metadata = { orderUid: input.orderUid, source: "ne26-rooms" };
     const session = await this.stripe.checkout.sessions.create({
       mode: "payment",
-      client_reference_id: input.bookingUid,
+      client_reference_id: input.orderUid,
       line_items: input.lines.map((line) => ({
         quantity: line.quantity,
         price_data: {

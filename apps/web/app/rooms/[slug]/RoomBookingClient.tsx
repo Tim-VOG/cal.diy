@@ -42,7 +42,8 @@ interface BookingResult {
   uid: string;
   amountTotal: number;
   currency: string;
-  holdExpiresAt: string | Date;
+  /** Null once the order is paid; the client only ever reads it while held. */
+  holdExpiresAt: string | Date | null;
 }
 
 function formatTime(iso: string): string {

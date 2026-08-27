@@ -35,16 +35,26 @@ export interface VatTreatmentInput {
   mention: string | null;
 }
 
-export interface InvoiceInput {
-  /** HT (excl. VAT) total = room HT + add-on HT lines. */
+/** One room of an order, with whatever was ordered alongside it. */
+export interface InvoiceRoom {
+  /** HT (excl. VAT) total for this room = its rental HT + its add-on HT lines. */
   amountTotal: number;
-  currency: string;
   roomName: string;
   durationMinutes: number;
   /** "Tue, 17 Nov 2026, 09:00-10:00 (Europe/Istanbul)" — printed under the line. */
   slotLabel?: string;
   /** Add-on lineTotal is HT (excl. VAT). */
   addOns: { name: string; quantity: number; lineTotal: number; vatRate: number }[];
+}
+
+export interface InvoiceInput {
+  currency: string;
+  /**
+   * Every room on the order. One payment can cover several, so the document
+   * lists them all — an exhibitor who booked three rooms receives one invoice,
+   * not three.
+   */
+  rooms: InvoiceRoom[];
   /**
    * Room-rental VAT rate in basis points. Callers pass the rate FROZEN on the
    * booking when re-rendering an issued document, and ROOM_VAT_RATE_BP for a new
@@ -60,8 +70,6 @@ export interface InvoiceInput {
  * / exemption) keeps VAT at 0, so TTC = HT.
  */
 export function buildInvoiceModel(input: InvoiceInput, vat?: VatTreatmentInput): InvoiceModel {
-  const addOnsHt = input.addOns.reduce((sum, a) => sum + a.lineTotal, 0);
-  const roomHt = input.amountTotal - addOnsHt;
   const zeroRated = vat?.zeroRated ?? false;
 
   const lineFor = (label: string, ht: number, baseRate: number, sublabel?: string): InvoiceLine => {
@@ -70,25 +78,29 @@ export function buildInvoiceModel(input: InvoiceInput, vat?: VatTreatmentInput):
     return { label, sublabel, totalTtc: ht + vatAmount, vatRate: baseRate, ht, vat: vatAmount };
   };
 
-  const lines: InvoiceLine[] = [
-    lineFor(
-      `${input.roomName} — meeting room rental (${input.durationMinutes / 60}h)`,
-      roomHt,
-      input.roomVatRate ?? ROOM_VAT_RATE_BP,
-      // When the room was actually booked for. It used to sit in a highlighted
-      // block below the totals, which repeated the line above it and pushed the
-      // money down the page — it belongs with the thing being charged for.
-      input.slotLabel
-    ),
-  ];
-  for (const addOn of input.addOns) {
+  const lines: InvoiceLine[] = [];
+  for (const room of input.rooms) {
+    const addOnsHt = room.addOns.reduce((sum, a) => sum + a.lineTotal, 0);
     lines.push(
       lineFor(
-        addOn.quantity > 1 ? `${addOn.name} × ${addOn.quantity}` : addOn.name,
-        addOn.lineTotal,
-        addOn.vatRate
+        `${room.roomName} — meeting room rental (${room.durationMinutes / 60}h)`,
+        room.amountTotal - addOnsHt,
+        input.roomVatRate ?? ROOM_VAT_RATE_BP,
+        // When the room was actually booked for. It used to sit in a highlighted
+        // block below the totals, which repeated the line above it and pushed the
+        // money down the page — it belongs with the thing being charged for.
+        room.slotLabel
       )
     );
+    for (const addOn of room.addOns) {
+      lines.push(
+        lineFor(
+          addOn.quantity > 1 ? `${addOn.name} × ${addOn.quantity}` : addOn.name,
+          addOn.lineTotal,
+          addOn.vatRate
+        )
+      );
+    }
   }
 
   const byRate = new Map<number, { base: number; vat: number }>();

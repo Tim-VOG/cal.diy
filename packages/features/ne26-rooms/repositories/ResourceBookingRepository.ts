@@ -401,6 +401,18 @@ export class ResourceBookingRepository {
         creditNotePdfUrl: true,
         holdExpiresAt: true,
         createdAt: true,
+        // The invoice lives on the order, not the room: one payment can cover
+        // several rooms and issues one document. Projected here so a booking row
+        // can still say which invoice it belongs to.
+        order: {
+          select: {
+            uid: true,
+            invoiceNumber: true,
+            creditNoteNumber: true,
+            stripePaymentId: true,
+            amountTotal: true,
+          },
+        },
         updatedAt: true,
         resource: { select: { name: true, slug: true, category: true } },
         addOns: {
@@ -542,6 +554,18 @@ export class ResourceBookingRepository {
         invoiceNumber: true,
         creditNoteNumber: true,
         createdAt: true,
+        // The invoice lives on the order, not the room: one payment can cover
+        // several rooms and issues one document. Projected here so a booking row
+        // can still say which invoice it belongs to.
+        order: {
+          select: {
+            uid: true,
+            invoiceNumber: true,
+            creditNoteNumber: true,
+            stripePaymentId: true,
+            amountTotal: true,
+          },
+        },
         resource: { select: { name: true, slug: true, category: true } },
         addOns: { select: { quantity: true, lineTotal: true, addOn: { select: { name: true } } } },
       },
@@ -561,8 +585,9 @@ export class ResourceBookingRepository {
         durationMinutes: true,
         amountTotal: true,
         currency: true,
-        invoiceNumber: true,
-        creditNoteNumber: true,
+        // The invoice belongs to the order this room was paid for, not to the
+        // room: one payment covers one or more rooms and issues one document.
+        order: { select: { uid: true, invoiceNumber: true, creditNoteNumber: true } },
         resource: { select: { name: true, category: true } },
         addOns: { select: { quantity: true, addOn: { select: { name: true } } } },
       },
@@ -598,6 +623,18 @@ export class ResourceBookingRepository {
         invoiceNumber: true,
         creditNoteNumber: true,
         createdAt: true,
+        // The invoice lives on the order, not the room: one payment can cover
+        // several rooms and issues one document. Projected here so a booking row
+        // can still say which invoice it belongs to.
+        order: {
+          select: {
+            uid: true,
+            invoiceNumber: true,
+            creditNoteNumber: true,
+            stripePaymentId: true,
+            amountTotal: true,
+          },
+        },
         // Null means the payment was settled outside Stripe, so the invoice must
         // not print "Paid via Stripe".
         stripePaymentId: true,

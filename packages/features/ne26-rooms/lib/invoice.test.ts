@@ -4,11 +4,16 @@ import { buildInvoiceModel } from "./invoice";
 describe("buildInvoiceModel (HT prices, VAT added on top)", () => {
   it("adds 21% VAT on top of a room-only HT total", () => {
     const m = buildInvoiceModel({
-      amountTotal: 35000, // HT
+      // HT
       currency: "EUR",
-      roomName: "Suite 1",
-      durationMinutes: 60,
-      addOns: [],
+      rooms: [
+        {
+          amountTotal: 35000,
+          roomName: "Suite 1",
+          durationMinutes: 60,
+          addOns: [],
+        },
+      ],
     });
     expect(m.totalHt).toBe(35000);
     expect(m.totalVat).toBe(7350); // 35000 * 21%
@@ -18,11 +23,16 @@ describe("buildInvoiceModel (HT prices, VAT added on top)", () => {
 
   it("computes VAT per rate with add-ons (room 21%, catering 12%)", () => {
     const m = buildInvoiceModel({
-      amountTotal: 42000, // 35000 room HT + 7000 catering HT
+      // 35000 room HT + 7000 catering HT
       currency: "EUR",
-      roomName: "Suite 1",
-      durationMinutes: 60,
-      addOns: [{ name: "Catering - Lunch", quantity: 2, lineTotal: 7000, vatRate: 1200 }],
+      rooms: [
+        {
+          amountTotal: 42000,
+          roomName: "Suite 1",
+          durationMinutes: 60,
+          addOns: [{ name: "Catering - Lunch", quantity: 2, lineTotal: 7000, vatRate: 1200 }],
+        },
+      ],
     });
     expect(m.totalHt).toBe(42000);
     // room: 35000 * 21% = 7350 ; catering: 7000 * 12% = 840
@@ -38,7 +48,17 @@ describe("buildInvoiceModel (HT prices, VAT added on top)", () => {
 
   it("zero-rates every line and carries the mention when reverse-charged", () => {
     const m = buildInvoiceModel(
-      { amountTotal: 35000, currency: "EUR", roomName: "Suite 1", durationMinutes: 60, addOns: [] },
+      {
+        currency: "EUR",
+        rooms: [
+          {
+            amountTotal: 35000,
+            roomName: "Suite 1",
+            durationMinutes: 60,
+            addOns: [],
+          },
+        ],
+      },
       { zeroRated: true, mention: "VAT reverse charge" }
     );
     expect(m.totalHt).toBe(35000);
@@ -54,12 +74,16 @@ describe("buildInvoiceModel — the room VAT rate is an input, not a constant", 
     // Re-rendering an issued document must use the rate FROZEN on the booking, so
     // correcting the default later cannot alter a document already sent out.
     const m = buildInvoiceModel({
-      amountTotal: 10000,
       currency: "EUR",
-      roomName: "Suite 1",
-      durationMinutes: 60,
-      addOns: [],
       roomVatRate: 1200,
+      rooms: [
+        {
+          amountTotal: 10000,
+          roomName: "Suite 1",
+          durationMinutes: 60,
+          addOns: [],
+        },
+      ],
     });
     expect(m.lines[0].vatRate).toBe(1200);
     expect(m.lines[0].ht).toBe(10000);
@@ -69,11 +93,15 @@ describe("buildInvoiceModel — the room VAT rate is an input, not a constant", 
 
   it("falls back to the default room rate when none is frozen", () => {
     const m = buildInvoiceModel({
-      amountTotal: 10000,
       currency: "EUR",
-      roomName: "Suite 1",
-      durationMinutes: 60,
-      addOns: [],
+      rooms: [
+        {
+          amountTotal: 10000,
+          roomName: "Suite 1",
+          durationMinutes: 60,
+          addOns: [],
+        },
+      ],
     });
     expect(m.lines[0].vatRate).toBe(2100);
     expect(m.totalVat).toBe(2100);

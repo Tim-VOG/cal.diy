@@ -4,7 +4,7 @@ import authedProcedure, { authedAdminProcedure } from "../../../procedures/authe
 import { router } from "../../../trpc";
 import { ZBookingUidInputSchema } from "./bookingUid.schema";
 import { ZCreateBlockInputSchema } from "./createBlock.schema";
-import { ZCreateBookingInputSchema } from "./createBooking.schema";
+import { ZCreateBookingInputSchema, ZCreateOrderInputSchema } from "./createBooking.schema";
 import { ZIssueCreditNoteInputSchema } from "./issueCreditNote.schema";
 import {
   ZCreateLegalPageInputSchema,
@@ -253,7 +253,7 @@ export const roomsRouter = router({
   /**
    * Sell a room to someone standing at the counter.
    *
-   * Runs through the same startCheckout() path an exhibitor uses on their own
+   * Runs through the same startOrderCheckout() path an exhibitor uses on their own
    * phone, so the billing gate, the VAT lines and the hold-release-on-failure
    * behave identically. The hostess never handles a card: this returns the
    * Stripe Checkout URL for the exhibitor to complete.
@@ -268,16 +268,22 @@ export const roomsRouter = router({
       // anyway: an exhibitor at the counter should not be told to go and sign up.
       const existing = await repo.findUserByEmail(input.exhibitorEmail);
 
-      const { startCheckout } = await import("@calcom/features/ne26-rooms/services/startCheckout");
+      const { startOrderCheckout } = await import(
+        "@calcom/features/ne26-rooms/services/startOrderCheckout"
+      );
       const { WEBAPP_URL } = await import("@calcom/lib/constants");
-      const booking = await startCheckout({
+      const booking = await startOrderCheckout({
         buyer: existing
           ? { userId: existing.id, email: existing.email, name: existing.name }
           : { userId: null, email: input.exhibitorEmail, name: input.exhibitorName },
-        slug: input.slug,
-        startUtc: new Date(input.startUtc),
-        durationHours: input.durationHours,
-        addOns: input.addOns,
+        rooms: [
+          {
+            slug: input.slug,
+            startUtc: new Date(input.startUtc),
+            durationHours: input.durationHours,
+            addOns: input.addOns,
+          },
+        ],
         billing: {
           country: input.country,
           vatNumber: input.vatNumber ?? null,
@@ -594,79 +600,58 @@ export const roomsRouter = router({
   // Checkout session for it and return the URL to redirect the booker to.
   // Requires login; the booker identity comes from the session.
   createBooking: authedProcedure.input(ZCreateBookingInputSchema).mutation(async ({ ctx, input }) => {
-    const { startCheckout } = await import("@calcom/features/ne26-rooms/services/startCheckout");
+    // One room is an order of one. There is no separate single-room path: two
+    // implementations of a checkout is two places for the money to diverge.
+    const { startOrderCheckout } = await import(
+      "@calcom/features/ne26-rooms/services/startOrderCheckout"
+    );
     const { WEBAPP_URL } = await import("@calcom/lib/constants");
-    return startCheckout({
+    return startOrderCheckout({
       buyer: { userId: ctx.user.id, email: ctx.user.email, name: ctx.user.name },
-      slug: input.slug,
-      startUtc: new Date(input.startUtc),
-      durationHours: input.durationHours,
-      addOns: input.addOns,
+      rooms: [
+        {
+          slug: input.slug,
+          startUtc: new Date(input.startUtc),
+          durationHours: input.durationHours,
+          addOns: input.addOns,
+        },
+      ],
       webappUrl: WEBAPP_URL,
       cancelPath: `/rooms/${input.slug}`,
     });
   }),
 
-  // Resume an abandoned PENDING booking: rebuild its checkout and return the URL.
-  resumeBooking: authedProcedure.input(ZBookingUidInputSchema).mutation(async ({ ctx, input }) => {
-    const { getResourceBookingService } = await import(
-      "@calcom/features/ne26-rooms/di/ResourceBookingService.container"
-    );
-    const { getStripeCheckoutService } = await import(
-      "@calcom/features/ne26-rooms/di/StripeCheckoutService.container"
-    );
-    const { getNe26BillingProfileRepository } = await import(
-      "@calcom/features/ne26-rooms/di/Ne26BillingProfileRepository.container"
-    );
-    const { getRoomVatPreviewService } = await import(
-      "@calcom/features/ne26-rooms/di/RoomVatPreviewService.container"
+  /** The shortlist, paid in one go: several rooms, one payment, one invoice. */
+  createOrder: authedProcedure.input(ZCreateOrderInputSchema).mutation(async ({ ctx, input }) => {
+    const { startOrderCheckout } = await import(
+      "@calcom/features/ne26-rooms/services/startOrderCheckout"
     );
     const { WEBAPP_URL } = await import("@calcom/lib/constants");
-
-    const resume = await getResourceBookingService().prepareResume(input.uid, ctx.user.id);
-
-    const billingRepo = getNe26BillingProfileRepository();
-    const profile = await billingRepo.findByUserId(ctx.user.id);
-    let customerId: string | undefined;
-    if (profile) {
-      const existing = await billingRepo.findStripeCustomerId(ctx.user.id);
-      customerId = await getStripeCheckoutService().ensureCustomer({
-        customerId: existing,
-        email: ctx.user.email,
-        // The profile owns the contact name; the session copy can still be the
-        // pre-save value when the exhibitor books straight after completing it.
-        name: [profile.firstName, profile.lastName].filter(Boolean).join(" ") || ctx.user.name,
-        legalName: profile.legalName,
-        country: profile.country,
-        addressLine1: profile.addressLine1,
-        addressLine2: profile.addressLine2,
-        postalCode: profile.postalCode,
-        city: profile.city,
-      });
-      if (customerId !== existing) await billingRepo.setStripeCustomerId(ctx.user.id, customerId);
-    }
-
-    const vat = await getRoomVatPreviewService().preview({
-      userId: ctx.user.id,
-      slug: resume.slug,
-      durationHours: resume.durationHours,
-      addOns: resume.addOns,
+    return startOrderCheckout({
+      buyer: { userId: ctx.user.id, email: ctx.user.email, name: ctx.user.name },
+      rooms: input.rooms.map((r) => ({
+        slug: r.slug,
+        startUtc: new Date(r.startUtc),
+        durationHours: r.durationHours,
+        addOns: r.addOns,
+      })),
+      webappUrl: WEBAPP_URL,
+      cancelPath: "/rooms",
     });
-    const vatLines = vat.vatBreakdown
-      .filter((v) => v.vat > 0)
-      .map((v) => ({ name: `VAT ${v.vatRate / 100}%`, quantity: 1, unitAmount: v.vat }));
+  }),
 
-    const checkout = await getStripeCheckoutService().createCheckoutSession({
-      bookingUid: input.uid,
-      currency: resume.currency,
-      lines: [...resume.checkoutLines, ...vatLines],
-      customerEmail: ctx.user.email,
-      customerId,
-      holdExpiresAt: resume.holdExpiresAt,
-      successUrl: `${WEBAPP_URL}/rooms/booked/${input.uid}`,
-      cancelUrl: `${WEBAPP_URL}/rooms/bookings`,
+  // Resume an abandoned PENDING booking: rebuild its checkout and return the URL.
+  /** Rebuild the payment page for an order held but never paid. */
+  resumeOrder: authedProcedure.input(ZBookingUidInputSchema).mutation(async ({ ctx, input }) => {
+    const { resumeOrderCheckout } = await import(
+      "@calcom/features/ne26-rooms/services/startOrderCheckout"
+    );
+    const { WEBAPP_URL } = await import("@calcom/lib/constants");
+    return resumeOrderCheckout({
+      orderUid: input.uid,
+      buyerUserId: ctx.user.id,
+      buyerEmail: ctx.user.email,
+      webappUrl: WEBAPP_URL,
     });
-
-    return { checkoutUrl: checkout.url };
   }),
 });

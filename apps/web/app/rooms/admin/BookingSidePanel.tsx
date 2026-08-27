@@ -88,7 +88,7 @@ export default function BookingSidePanel({
           <Row label="Invoice">
             {booking.invoiceNumber ? (
               <a
-                href={`/rooms/invoice/${booking.uid}`}
+                href={`/rooms/invoice/${booking.orderUid ?? booking.uid}`}
                 target="_blank"
                 rel="noreferrer"
                 className="text-[#000643] underline hover:opacity-80">
@@ -101,7 +101,7 @@ export default function BookingSidePanel({
           <Row label="Credit note">
             {booking.creditNoteNumber ? (
               <a
-                href={`/rooms/credit-note/${booking.uid}`}
+                href={`/rooms/credit-note/${booking.orderUid ?? booking.uid}`}
                 target="_blank"
                 rel="noreferrer"
                 className="text-[#000643] underline hover:opacity-80">

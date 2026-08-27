@@ -16,10 +16,17 @@ export type CheckoutOutcome =
   /** Not ours, or not yet decided — do nothing. */
   | "ignore";
 
-/** The booking uid carried by one of our sessions, or null if the session isn't ours. */
-export function ne26BookingUid(session: Stripe.Checkout.Session): string | null {
+/**
+ * The order uid carried by one of our sessions, or null if the session isn't
+ * ours.
+ *
+ * `bookingUid` is still read: a session created before orders existed carries
+ * that key, and one of those can still be sitting in a buyer's tab when this
+ * deploys. Rejecting it would take the money and confirm nothing.
+ */
+export function ne26OrderUid(session: Stripe.Checkout.Session): string | null {
   if (session.metadata?.source !== "ne26-rooms") return null;
-  return session.metadata?.bookingUid ?? null;
+  return session.metadata?.orderUid ?? session.metadata?.bookingUid ?? null;
 }
 
 /** The payment intent to record (falls back to the session id). */
@@ -44,7 +51,7 @@ export function paymentIdOf(session: Stripe.Checkout.Session): string {
  * competing booking to reclaim it.
  */
 export function checkoutOutcome(eventType: string, session: Stripe.Checkout.Session): CheckoutOutcome {
-  if (!ne26BookingUid(session)) return "ignore";
+  if (!ne26OrderUid(session)) return "ignore";
 
   switch (eventType) {
     case "checkout.session.completed":

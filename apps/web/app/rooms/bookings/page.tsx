@@ -84,24 +84,24 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
               </div>
               <div className="flex items-center gap-4 sm:flex-col sm:items-end sm:gap-1">
                 <span className="font-semibold text-[#000643]">{money(b.amountTotal, b.currency)}</span>
-                {b.creditNoteNumber ? (
+                {b.order?.creditNoteNumber ? (
                   <a
-                    href={`/rooms/credit-note/${b.uid}`}
+                    href={`/rooms/credit-note/${b.order?.uid ?? b.uid}`}
                     target="_blank"
                     rel="noreferrer"
                     className="text-[#000643] text-sm underline hover:opacity-80">
-                    Credit note {b.creditNoteNumber}
+                    Credit note {b.order?.creditNoteNumber}
                   </a>
-                ) : b.invoiceNumber ? (
+                ) : b.order?.invoiceNumber ? (
                   <a
-                    href={`/rooms/invoice/${b.uid}`}
+                    href={`/rooms/invoice/${b.order?.uid ?? b.uid}`}
                     target="_blank"
                     rel="noreferrer"
                     className="text-[#000643] text-sm underline hover:opacity-80">
-                    Invoice {b.invoiceNumber}
+                    Invoice {b.order?.invoiceNumber}
                   </a>
                 ) : b.status === "PENDING" ? (
-                  <ResumePaymentButton uid={b.uid} />
+                  <ResumePaymentButton uid={b.order?.uid ?? b.uid} />
                 ) : (
                   <span className="text-gray-400 text-xs">—</span>
                 )}

@@ -86,7 +86,17 @@ export class RoomVatPreviewService {
     const vat = resolveVatTreatment({ country, vatNumber }, settings);
 
     const model = buildInvoiceModel(
-      { amountTotal, currency: room.currency, roomName: room.name, durationMinutes, addOns: addOnLines },
+      {
+        currency: room.currency,
+        rooms: [
+          {
+            amountTotal,
+            roomName: room.name,
+            durationMinutes,
+            addOns: addOnLines,
+          },
+        ],
+      },
       vat
     );
 

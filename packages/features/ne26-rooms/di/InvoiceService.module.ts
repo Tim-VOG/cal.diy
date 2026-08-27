@@ -3,6 +3,7 @@ import { DI_TOKENS } from "@calcom/features/di/tokens";
 import { InvoiceService } from "@calcom/features/ne26-rooms/services/InvoiceService";
 import { moduleLoader as invoiceSettingsRepositoryModuleLoader } from "./InvoiceSettingsRepository.module";
 import { moduleLoader as ne26BillingProfileRepositoryModuleLoader } from "./Ne26BillingProfileRepository.module";
+import { moduleLoader as ne26OrderRepositoryModuleLoader } from "./Ne26OrderRepository.module";
 import { moduleLoader as resourceBookingRepositoryModuleLoader } from "./ResourceBookingRepository.module";
 
 export const invoiceServiceModule = createModule();
@@ -15,6 +16,7 @@ const loadModule = bindModuleToClassOnToken({
   token,
   classs: InvoiceService,
   depsMap: {
+    ne26OrderRepository: ne26OrderRepositoryModuleLoader,
     resourceBookingRepository: resourceBookingRepositoryModuleLoader,
     invoiceSettingsRepository: invoiceSettingsRepositoryModuleLoader,
     ne26BillingProfileRepository: ne26BillingProfileRepositoryModuleLoader,

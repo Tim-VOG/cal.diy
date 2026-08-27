@@ -43,8 +43,10 @@ export default async function RoomsAdminPage(): Promise<JSX.Element> {
     amountTotal: b.amountTotal,
     currency: b.currency,
     stripePaymentId: b.stripePaymentId,
-    invoiceNumber: b.invoiceNumber,
-    creditNoteNumber: b.creditNoteNumber,
+    // The document belongs to the order this room was paid for.
+    orderUid: b.order?.uid ?? null,
+    invoiceNumber: b.order?.invoiceNumber ?? null,
+    creditNoteNumber: b.order?.creditNoteNumber ?? null,
     addOns: b.addOns.map((a) => ({ name: a.addOn.name, quantity: a.quantity, lineTotal: a.lineTotal })),
   }));
 

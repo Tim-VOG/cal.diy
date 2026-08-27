@@ -11,11 +11,15 @@ import { renderInvoicePdf, toPdfText } from "./invoicePdf";
 describe("renderInvoicePdf", () => {
   it("produces a valid, non-trivial PDF", async () => {
     const model = buildInvoiceModel({
-      amountTotal: 42000,
       currency: "EUR",
-      roomName: "Suite 1",
-      durationMinutes: 120,
-      addOns: [{ name: "Catering - Lunch", quantity: 2, lineTotal: 7000, vatRate: 1200 }],
+      rooms: [
+        {
+          amountTotal: 42000,
+          roomName: "Suite 1",
+          durationMinutes: 120,
+          addOns: [{ name: "Catering - Lunch", quantity: 2, lineTotal: 7000, vatRate: 1200 }],
+        },
+      ],
     });
     const bytes = await renderInvoicePdf(
       model,
@@ -51,11 +55,15 @@ describe("renderInvoicePdf", () => {
 
   it("renders a credit note variant", async () => {
     const model = buildInvoiceModel({
-      amountTotal: 42000,
       currency: "EUR",
-      roomName: "Suite 1",
-      durationMinutes: 120,
-      addOns: [],
+      rooms: [
+        {
+          amountTotal: 42000,
+          roomName: "Suite 1",
+          durationMinutes: 120,
+          addOns: [],
+        },
+      ],
     });
     const bytes = await renderInvoicePdf(
       model,
@@ -93,11 +101,15 @@ describe("renderInvoicePdf", () => {
 
   it("renders a three-column, multi-line footer", async () => {
     const model = buildInvoiceModel({
-      amountTotal: 42000,
       currency: "EUR",
-      roomName: "Suite 1",
-      durationMinutes: 120,
-      addOns: [],
+      rooms: [
+        {
+          amountTotal: 42000,
+          roomName: "Suite 1",
+          durationMinutes: 120,
+          addOns: [],
+        },
+      ],
     });
     const bytes = await renderInvoicePdf(
       model,
@@ -159,12 +171,16 @@ describe("renderInvoicePdf — the buyer's own references", () => {
   };
   const model = () =>
     buildInvoiceModel({
-      amountTotal: 60000,
       currency: "EUR",
-      roomName: "Suite 1",
-      durationMinutes: 120,
-      slotLabel: "Tue, 17 Nov 2026, 14:00-16:00 (Europe/Istanbul)",
-      addOns: [],
+      rooms: [
+        {
+          amountTotal: 60000,
+          roomName: "Suite 1",
+          durationMinutes: 120,
+          slotLabel: "Tue, 17 Nov 2026, 14:00-16:00 (Europe/Istanbul)",
+          addOns: [],
+        },
+      ],
     });
 
   it("renders with both references", async () => {
@@ -258,11 +274,15 @@ describe("renderInvoicePdf — layout limits", () => {
       vatRate: 2100,
     }));
     const model = buildInvoiceModel({
-      amountTotal: 60000,
       currency: "EUR",
-      roomName: "Suite 1",
-      durationMinutes: 120,
-      addOns,
+      rooms: [
+        {
+          amountTotal: 60000,
+          roomName: "Suite 1",
+          durationMinutes: 120,
+          addOns,
+        },
+      ],
     });
 
     const bytes = await renderInvoicePdf(model, META, ISSUER);
@@ -272,11 +292,15 @@ describe("renderInvoicePdf — layout limits", () => {
 
   it("stays on one page for an ordinary booking", async () => {
     const model = buildInvoiceModel({
-      amountTotal: 60000,
       currency: "EUR",
-      roomName: "Suite 1",
-      durationMinutes: 120,
-      addOns: [{ name: "Catering", quantity: 8, lineTotal: 12000, vatRate: 600 }],
+      rooms: [
+        {
+          amountTotal: 60000,
+          roomName: "Suite 1",
+          durationMinutes: 120,
+          addOns: [{ name: "Catering", quantity: 8, lineTotal: 12000, vatRate: 600 }],
+        },
+      ],
     });
 
     const bytes = await renderInvoicePdf(model, META, ISSUER);
@@ -285,11 +309,15 @@ describe("renderInvoicePdf — layout limits", () => {
 
   it("embeds the logo rather than falling back to text", async () => {
     const model = buildInvoiceModel({
-      amountTotal: 60000,
       currency: "EUR",
-      roomName: "Suite 1",
-      durationMinutes: 60,
-      addOns: [],
+      rooms: [
+        {
+          amountTotal: 60000,
+          roomName: "Suite 1",
+          durationMinutes: 60,
+          addOns: [],
+        },
+      ],
     });
     const bytes = await renderInvoicePdf(model, META, ISSUER);
     // The fallback draws text only; an embedded PNG makes the file much larger.

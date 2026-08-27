@@ -3,7 +3,7 @@
 import { trpc } from "@calcom/trpc/react";
 
 export default function ResumePaymentButton({ uid }: { uid: string }): JSX.Element {
-  const resume = trpc.viewer.rooms.resumeBooking.useMutation({
+  const resume = trpc.viewer.rooms.resumeOrder.useMutation({
     onSuccess: (data) => {
       if (data.checkoutUrl) window.location.href = data.checkoutUrl;
     },

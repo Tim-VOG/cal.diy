@@ -1,5 +1,5 @@
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
-import { buildBookingIcs } from "../lib/ics";
+import { buildOrderIcs } from "../lib/ics";
 import { ROOM_VAT_RATE_BP, buildInvoiceModel } from "../lib/invoice";
 import type { InvoiceMeta } from "../lib/invoicePdf";
 import { renderInvoicePdf } from "../lib/invoicePdf";
@@ -9,171 +9,184 @@ import { formatSlotRange } from "../lib/teamNotification";
 import { resolveVatTreatment } from "../lib/vat";
 import type { InvoiceSettingsRepository } from "../repositories/InvoiceSettingsRepository";
 import type { Ne26BillingProfileRepository } from "../repositories/Ne26BillingProfileRepository";
+import type { Ne26OrderRepository } from "../repositories/Ne26OrderRepository";
 import type { ResourceBookingRepository } from "../repositories/ResourceBookingRepository";
 
 export interface IInvoiceServiceDeps {
+  ne26OrderRepository: Ne26OrderRepository;
+  /** Only for the invoice / credit-note number sequences. */
   resourceBookingRepository: ResourceBookingRepository;
   invoiceSettingsRepository: InvoiceSettingsRepository;
   ne26BillingProfileRepository: Ne26BillingProfileRepository;
 }
 
+type Order = NonNullable<Awaited<ReturnType<Ne26OrderRepository["findByUid"]>>>;
+
+/**
+ * One order, one invoice.
+ *
+ * An exhibitor who books three rooms pays once and receives one document
+ * listing all three — the same way a room and its add-ons have always shared an
+ * invoice. Numbering, VAT freezing and crediting therefore all happen at the
+ * order, never per room.
+ */
 export class InvoiceService {
   constructor(private deps: IInvoiceServiceDeps) {}
 
   /**
-   * Resolve the invoice "Bill to" details: the full address comes from the
-   * exhibitor's saved billing profile (which also pre-fills Stripe Checkout),
-   * while country/VAT prefer the booking's values — these are synced back from
-   * what the buyer actually confirmed at checkout — so VAT display matches the
-   * VAT treatment used to compute the totals.
+   * The invoice "Bill to".
+   *
+   * What the buyer confirmed at Checkout wins over the saved profile: a counter
+   * sale has no profile at all, and on a web order the address typed at payment
+   * is more current than one saved months earlier.
    */
-  private async resolveBillTo(booking: {
-    bookerUserId: number | null;
-    bookerCountry: string | null;
-    bookerVatNumber: string | null;
-    bookerLegalName?: string | null;
-    bookerAddressLine1?: string | null;
-    bookerAddressLine2?: string | null;
-    bookerPostalCode?: string | null;
-    bookerCity?: string | null;
-  }): Promise<NonNullable<InvoiceMeta["billTo"]>> {
-    const profile = booking.bookerUserId
-      ? await this.deps.ne26BillingProfileRepository.findByUserId(booking.bookerUserId)
+  private async resolveBillTo(order: Order): Promise<NonNullable<InvoiceMeta["billTo"]>> {
+    const profile = order.bookerUserId
+      ? await this.deps.ne26BillingProfileRepository.findByUserId(order.bookerUserId)
       : null;
-
-    // What the buyer confirmed at Checkout wins over the saved profile. On a
-    // counter sale there is no profile at all — the exhibitor has no account, and
-    // the address on these columns is the only one that exists. On a web booking
-    // they are empty, so the profile still supplies it.
     return {
-      legalName: booking.bookerLegalName || profile?.legalName || null,
-      addressLine1: booking.bookerAddressLine1 || profile?.addressLine1 || null,
-      addressLine2: booking.bookerAddressLine2 || profile?.addressLine2 || null,
-      postalCode: booking.bookerPostalCode || profile?.postalCode || null,
-      city: booking.bookerCity || profile?.city || null,
-      country: booking.bookerCountry || profile?.country || null,
-      vatNumber: booking.bookerVatNumber || profile?.vatNumber || null,
+      legalName: order.bookerLegalName || profile?.legalName || null,
+      addressLine1: order.bookerAddressLine1 || profile?.addressLine1 || null,
+      addressLine2: order.bookerAddressLine2 || profile?.addressLine2 || null,
+      postalCode: order.bookerPostalCode || profile?.postalCode || null,
+      city: order.bookerCity || profile?.city || null,
+      country: order.bookerCountry || profile?.country || null,
+      vatNumber: order.bookerVatNumber || profile?.vatNumber || null,
     };
   }
 
+  private invoiceRooms(order: Order) {
+    return order.bookings.map((b) => ({
+      amountTotal: b.amountTotal,
+      roomName: b.resource.name,
+      durationMinutes: b.durationMinutes,
+      slotLabel: formatSlotRange(b.startTime, b.endTime),
+      addOns: b.addOns.map((a) => ({
+        name: a.addOn.name,
+        quantity: a.quantity,
+        lineTotal: a.lineTotal,
+        vatRate: a.vatRate,
+      })),
+    }));
+  }
+
+  /** "Suite 1" for one room, "Suite 1 + 2 more" beyond — for email subjects. */
+  private roomLabel(order: Order): string {
+    const [first, ...rest] = order.bookings;
+    if (!first) return "NATO Edge 26";
+    return rest.length === 0 ? first.resource.name : `${first.resource.name} + ${rest.length} more`;
+  }
+
   /**
-   * Issue the invoice for a confirmed booking: allocate a sequential number,
-   * render the PDF, store it, persist invoiceNumber/invoicePdfUrl, then email it.
-   * Idempotent: no-op if the booking is missing, not CONFIRMED, or already invoiced.
+   * Issue the invoice for a paid order: allocate a sequential number, render the
+   * PDF, store it, persist the number, then email it with the calendar invites.
+   * Idempotent: a no-op if the order is missing, not CONFIRMED, or already
+   * invoiced — which is what makes a replayed webhook harmless.
    */
   async issueInvoice(uid: string): Promise<void> {
-    const booking = await this.deps.resourceBookingRepository.findByUidForInvoice(uid);
-    if (!booking || booking.status !== ResourceBookingStatus.CONFIRMED || booking.invoiceNumber) return;
+    const order = await this.deps.ne26OrderRepository.findByUid(uid);
+    if (!order || order.status !== ResourceBookingStatus.CONFIRMED || order.invoiceNumber) return;
 
     const issuer = await this.deps.invoiceSettingsRepository.get();
     const vat = resolveVatTreatment(
-      { country: booking.bookerCountry, vatNumber: booking.bookerVatNumber },
+      { country: order.bookerCountry, vatNumber: order.bookerVatNumber },
       issuer
     );
-    // The rate in force for this order; frozen onto the booking below.
+    // The rate in force for this order; frozen onto the order below.
     const roomVatRate = ROOM_VAT_RATE_BP;
     const model = buildInvoiceModel(
-      {
-        amountTotal: booking.amountTotal,
-        currency: booking.currency,
-        roomName: booking.resource.name,
-        durationMinutes: booking.durationMinutes,
-        slotLabel: formatSlotRange(booking.startTime, booking.endTime),
-        addOns: booking.addOns.map((a) => ({
-          name: a.addOn.name,
-          quantity: a.quantity,
-          lineTotal: a.lineTotal,
-          vatRate: a.vatRate,
-        })),
-        roomVatRate,
-      },
+      { currency: order.currency, roomVatRate, rooms: this.invoiceRooms(order) },
       vat
     );
 
-    // Year comes from the issue date, not a literal: a document raised in January
-    // 2027 (a late invoice, a refund) was being stamped 2026.
+    // Year comes from the issue date, not a literal: a document raised in
+    // January 2027 was being stamped 2026.
     const issueDate = new Date();
     const invoiceNumber = await this.deps.resourceBookingRepository.allocateInvoiceNumber(
       issueDate.getUTCFullYear()
     );
-    const billTo = await this.resolveBillTo(booking);
+    const billTo = await this.resolveBillTo(order);
+    const first = order.bookings[0];
     const pdf = await renderInvoicePdf(
       model,
       {
         invoiceNumber,
         issueDate,
-        // A booking with no Stripe payment id was confirmed offline (bank transfer).
-        paidViaStripe: Boolean(booking.stripePaymentId),
-        bookerName: booking.bookerName,
-        bookerEmail: booking.bookerEmail,
-        poNumber: booking.bookerPoNumber,
-        internalReference: booking.bookerInternalReference,
+        // An order with no Stripe payment id was settled offline (bank transfer).
+        paidViaStripe: Boolean(order.stripePaymentId),
+        bookerName: order.bookerName,
+        bookerEmail: order.bookerEmail,
+        poNumber: order.bookerPoNumber,
+        internalReference: order.bookerInternalReference,
         billTo,
-        roomName: booking.resource.name,
-        startUtc: booking.startTime,
-        endUtc: booking.endTime,
+        roomName: this.roomLabel(order),
+        startUtc: first?.startTime ?? issueDate,
+        endUtc: first?.endTime ?? issueDate,
       },
       issuer
     );
 
     await saveInvoicePdf(uid, pdf);
-    // Persist before emailing: the invoice now exists (idempotency anchor); a
-    // failed email is logged by the caller and can be resent, without re-issuing.
-    await this.deps.resourceBookingRepository.setInvoice(uid, invoiceNumber, `/rooms/invoice/${uid}`, {
+    // Persist before emailing: the invoice now exists (the idempotency anchor);
+    // a failed email is logged by the caller and can be resent without
+    // re-issuing, which would burn a second sequential number.
+    await this.deps.ne26OrderRepository.setInvoice(uid, invoiceNumber, `/rooms/invoice/${uid}`, {
       roomVatRate,
       zeroRated: vat.zeroRated,
       mention: vat.mention,
     });
     await sendInvoiceEmail({
-      to: booking.bookerEmail,
-      bookerName: booking.bookerName,
+      to: order.bookerEmail,
+      bookerName: order.bookerName,
       invoiceNumber,
-      roomName: booking.resource.name,
-      amountLabel: `${(booking.amountTotal / 100).toFixed(2)} ${booking.currency}`,
+      roomName: this.roomLabel(order),
+      amountLabel: `${(model.totalTtc / 100).toFixed(2)} ${order.currency}`,
       pdf,
-      ics: buildBookingIcs({
-        uid: booking.uid,
-        roomName: booking.resource.name,
-        startUtc: booking.startTime,
-        endUtc: booking.endTime,
-      }),
+      // One calendar file holding every room: an exhibitor who booked three
+      // should press "add to calendar" once.
+      ics: buildOrderIcs(
+        order.bookings.map((b) => ({
+          uid: b.uid,
+          roomName: b.resource.name,
+          startUtc: b.startTime,
+          endUtc: b.endTime,
+        }))
+      ),
     });
   }
 
   /**
-   * Re-send an already-issued invoice email (admin action, e.g. the booker lost
-   * it). Reads the stored PDF and re-sends; no-op if the booking has no invoice
-   * or the PDF is missing. Returns true if an email was sent.
+   * Re-send an already-issued invoice (admin action, e.g. the buyer lost it).
+   * Reads the stored PDF; never re-issues, so the number never changes.
    */
   async resendInvoice(uid: string): Promise<boolean> {
-    const booking = await this.deps.resourceBookingRepository.findByUidForInvoice(uid);
-    if (!booking?.invoiceNumber) return false;
+    const order = await this.deps.ne26OrderRepository.findByUid(uid);
+    if (!order?.invoiceNumber) return false;
     const pdf = await readInvoicePdf(uid, "invoice");
     if (!pdf) return false;
     await sendInvoiceEmail({
-      to: booking.bookerEmail,
-      bookerName: booking.bookerName,
-      invoiceNumber: booking.invoiceNumber,
-      roomName: booking.resource.name,
-      amountLabel: `${(booking.amountTotal / 100).toFixed(2)} ${booking.currency}`,
+      to: order.bookerEmail,
+      bookerName: order.bookerName,
+      invoiceNumber: order.invoiceNumber,
+      roomName: this.roomLabel(order),
+      amountLabel: `${(order.amountTotal / 100).toFixed(2)} ${order.currency}`,
       pdf,
     });
     return true;
   }
 
   /**
-   * Issue a credit note that cancels a confirmed, invoiced booking (full refund):
-   * allocate a CN number, cancel the booking + free its slots, render/store the
-   * credit-note PDF, and email it. Idempotent (no-op if not eligible or already
-   * credited). Returns true if a credit note was issued.
+   * Credit a fully refunded order: allocate a CN number, cancel the order and
+   * free every room, render and store the credit note, then email it.
+   * Idempotent, and returns whether one was issued.
    */
   async issueCreditNote(uid: string): Promise<boolean> {
-    const booking = await this.deps.resourceBookingRepository.findByUidForInvoice(uid);
+    const order = await this.deps.ne26OrderRepository.findByUid(uid);
     if (
-      !booking ||
-      booking.status !== ResourceBookingStatus.CONFIRMED ||
-      !booking.invoiceNumber ||
-      booking.creditNoteNumber
+      !order ||
+      order.status !== ResourceBookingStatus.CONFIRMED ||
+      !order.invoiceNumber ||
+      order.creditNoteNumber
     ) {
       return false;
     }
@@ -181,23 +194,14 @@ export class InvoiceService {
     const issuer = await this.deps.invoiceSettingsRepository.get();
     // Re-use the treatment FROZEN when the invoice was issued — never recompute
     // from the live settings. The invoice PDF is stored and immutable, so a rate
-    // corrected or a reverse-charge toggle flipped since then would produce a
-    // credit note that contradicts the invoice it credits.
-    const vat = { zeroRated: booking.vatZeroRated, mention: booking.vatMention };
+    // corrected or a toggle flipped since would produce a credit note that
+    // contradicts the document it credits.
+    const vat = { zeroRated: order.vatZeroRated, mention: order.vatMention };
     const model = buildInvoiceModel(
       {
-        amountTotal: booking.amountTotal,
-        currency: booking.currency,
-        roomName: booking.resource.name,
-        durationMinutes: booking.durationMinutes,
-        slotLabel: formatSlotRange(booking.startTime, booking.endTime),
-        addOns: booking.addOns.map((a) => ({
-          name: a.addOn.name,
-          quantity: a.quantity,
-          lineTotal: a.lineTotal,
-          vatRate: a.vatRate,
-        })),
-        roomVatRate: booking.roomVatRate ?? ROOM_VAT_RATE_BP,
+        currency: order.currency,
+        roomVatRate: order.roomVatRate ?? ROOM_VAT_RATE_BP,
+        rooms: this.invoiceRooms(order),
       },
       vat
     );
@@ -206,50 +210,52 @@ export class InvoiceService {
     const creditNoteNumber = await this.deps.resourceBookingRepository.allocateCreditNoteNumber(
       issueDate.getUTCFullYear()
     );
-    // Anchor first (atomic, cancels + frees slots); only the winner proceeds.
-    const count = await this.deps.resourceBookingRepository.creditNoteAndCancel(
+    // Anchor first: the number is claimed in the same statement that cancels the
+    // order, so only one of two concurrent refund events proceeds.
+    const count = await this.deps.ne26OrderRepository.creditNoteAndCancel(
       uid,
       creditNoteNumber,
       `/rooms/credit-note/${uid}`
     );
     if (count === 0) return false;
 
-    const billTo = await this.resolveBillTo(booking);
+    const billTo = await this.resolveBillTo(order);
+    const first = order.bookings[0];
     const pdf = await renderInvoicePdf(
       model,
       {
         invoiceNumber: creditNoteNumber,
-        relatedInvoiceNumber: booking.invoiceNumber,
+        relatedInvoiceNumber: order.invoiceNumber,
         kind: "credit_note",
         issueDate,
-        bookerName: booking.bookerName,
-        bookerEmail: booking.bookerEmail,
-        poNumber: booking.bookerPoNumber,
-        internalReference: booking.bookerInternalReference,
+        bookerName: order.bookerName,
+        bookerEmail: order.bookerEmail,
+        poNumber: order.bookerPoNumber,
+        internalReference: order.bookerInternalReference,
         billTo,
-        roomName: booking.resource.name,
-        startUtc: booking.startTime,
-        endUtc: booking.endTime,
+        roomName: this.roomLabel(order),
+        startUtc: first?.startTime ?? issueDate,
+        endUtc: first?.endTime ?? issueDate,
       },
       issuer
     );
     await saveInvoicePdf(uid, pdf, "credit_note");
     await sendInvoiceEmail({
-      to: booking.bookerEmail,
-      bookerName: booking.bookerName,
+      to: order.bookerEmail,
+      bookerName: order.bookerName,
       invoiceNumber: creditNoteNumber,
-      roomName: booking.resource.name,
-      amountLabel: `${(booking.amountTotal / 100).toFixed(2)} ${booking.currency}`,
+      roomName: this.roomLabel(order),
+      amountLabel: `${(model.totalTtc / 100).toFixed(2)} ${order.currency}`,
       pdf,
       documentKind: "credit_note",
     });
     return true;
   }
 
-  /** Issue a credit note from a Stripe refund webhook (resolve booking by payment intent). */
+  /** Credit from a Stripe refund webhook, resolving the order by payment intent. */
   async issueCreditNoteByPaymentIntent(stripePaymentId: string): Promise<boolean> {
-    const uid = await this.deps.resourceBookingRepository.findUidByStripePaymentId(stripePaymentId);
-    if (!uid) return false;
-    return this.issueCreditNote(uid);
+    const order = await this.deps.ne26OrderRepository.findByStripePaymentId(stripePaymentId);
+    if (!order) return false;
+    return this.issueCreditNote(order.uid);
   }
 }

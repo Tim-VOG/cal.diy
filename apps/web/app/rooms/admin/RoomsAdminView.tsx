@@ -22,6 +22,7 @@ export interface AdminBookingRow {
   amountTotal: number;
   currency: string;
   stripePaymentId: string | null;
+  orderUid: string | null;
   invoiceNumber: string | null;
   creditNoteNumber: string | null;
   addOns: { name: string; quantity: number; lineTotal: number }[];
@@ -156,7 +157,7 @@ export default function RoomsAdminView({
     if (r.creditNoteNumber) {
       return (
         <a
-          href={`/rooms/credit-note/${r.uid}`}
+          href={`/rooms/credit-note/${r.orderUid ?? r.uid}`}
           target="_blank"
           rel="noreferrer"
           className="text-[#000643] underline hover:opacity-80">
@@ -369,7 +370,7 @@ export default function RoomsAdminView({
                     <td className="px-3 py-2">
                       {r.invoiceNumber ? (
                         <a
-                          href={`/rooms/invoice/${r.uid}`}
+                          href={`/rooms/invoice/${r.orderUid ?? r.uid}`}
                           target="_blank"
                           rel="noreferrer"
                           className="text-[#000643] underline hover:opacity-80">

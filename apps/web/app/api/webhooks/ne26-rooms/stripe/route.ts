@@ -4,7 +4,7 @@ import { getStripeCheckoutService } from "@calcom/features/ne26-rooms/di/StripeC
 import {
   checkoutOutcome,
   isFullRefund,
-  ne26BookingUid,
+  ne26OrderUid,
   paymentIdOf,
 } from "@calcom/features/ne26-rooms/lib/stripeEvents";
 import { formatMoney, saleNotification } from "@calcom/features/ne26-rooms/lib/teamNotification";
@@ -53,44 +53,46 @@ function money(minorUnits: number | null | undefined, currency: string | null | 
  * the slot, the buyer and the invoice number instead of a bare uid — and falls
  * back to the uid alone rather than staying silent if that read fails.
  */
-async function notifySale(bookingUid: string, session: Stripe.Checkout.Session): Promise<void> {
+async function notifySale(orderUid: string, session: Stripe.Checkout.Session): Promise<void> {
   const adminUrl = `${WEBAPP_URL}/rooms/admin`;
   try {
-    const { getResourceBookingRepository } = await import(
-      "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container"
+    const { getNe26OrderRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
     );
-    const booking = await getResourceBookingRepository().findByUidForInvoice(bookingUid);
-    if (booking) {
+    const order = await getNe26OrderRepository().findByUid(orderUid);
+    if (order) {
       const { subject, body } = saleNotification({
-        bookingUid,
-        roomName: booking.resource.name,
-        startUtc: booking.startTime,
-        endUtc: booking.endTime,
-        durationMinutes: booking.durationMinutes,
-        bookerName: booking.bookerName,
-        bookerEmail: booking.bookerEmail,
-        bookerCountry: booking.bookerCountry,
-        bookerVatNumber: booking.bookerVatNumber,
-        addOns: booking.addOns.map((line) => ({
-          name: line.addOn.name,
-          quantity: line.quantity,
-          lineTotal: line.lineTotal,
+        orderUid,
+        rooms: order.bookings.map((b) => ({
+          roomName: b.resource.name,
+          startUtc: b.startTime,
+          endUtc: b.endTime,
+          durationMinutes: b.durationMinutes,
+          addOns: b.addOns.map((a) => ({
+            name: a.addOn.name,
+            quantity: a.quantity,
+            lineTotal: a.lineTotal,
+          })),
         })),
-        amountHt: booking.amountTotal,
+        bookerName: order.bookerName,
+        bookerEmail: order.bookerEmail,
+        bookerCountry: order.bookerCountry,
+        bookerVatNumber: order.bookerVatNumber,
+        amountHt: order.amountTotal,
         amountPaid: session.amount_total,
-        currency: booking.currency,
-        invoiceNumber: booking.invoiceNumber,
+        currency: order.currency,
+        invoiceNumber: order.invoiceNumber,
         adminUrl,
       });
       await notifyTeam(subject, body);
       return;
     }
   } catch (e) {
-    log.error(`Could not build the sale notification for booking ${bookingUid}`, e);
+    log.error(`Could not build the sale notification for order ${orderUid}`, e);
   }
   await notifyTeam(
     "Room sold",
-    `Booking ${bookingUid} is paid (${money(session.amount_total, session.currency)}).\n\n${adminUrl}`
+    `Order ${orderUid} is paid (${money(session.amount_total, session.currency)}).\n\n${adminUrl}`
   );
 }
 
@@ -115,22 +117,24 @@ export async function POST(req: Request): Promise<Response> {
 
   if (event.type.startsWith("checkout.session.")) {
     const session = event.data.object as Stripe.Checkout.Session;
-    const bookingUid = ne26BookingUid(session);
+    const orderUid = ne26OrderUid(session);
     const outcome = checkoutOutcome(event.type, session);
-    const bookingService = getResourceBookingService();
+    const { getNe26OrderRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
+    );
+    const orders = getNe26OrderRepository();
 
-    if (bookingUid && outcome === "confirm") {
-      // Persist the billing details Stripe collected (drives the invoice + VAT)
-      // before confirming, while the booking is still PENDING.
+    if (orderUid && outcome === "confirm") {
+      // Persist what Stripe collected before confirming, while the order is
+      // still PENDING. It drives the invoice's "Bill to" and its VAT.
       const details = session.customer_details;
-      await bookingService.applyCheckoutBilling({
-        bookingUid,
+      await orders.applyCheckoutBilling(orderUid, {
         country: details?.address?.country ?? null,
         vatNumber: details?.tax_ids?.[0]?.value ?? null,
         name: details?.name ?? null,
-        // Counter sales have no billing profile behind them, so this is the only
-        // address the invoice will ever have. Kept for web bookings too: what
-        // the buyer confirmed at payment beats what they saved months earlier.
+        // A counter sale has no billing profile behind it, so this is the only
+        // address the invoice will ever have. Kept for web orders too: what the
+        // buyer confirmed at payment beats what they saved months earlier.
         legalName: details?.name ?? null,
         addressLine1: details?.address?.line1 ?? null,
         addressLine2: details?.address?.line2 ?? null,
@@ -139,37 +143,34 @@ export async function POST(req: Request): Promise<Response> {
       });
 
       const stripePaymentId = paymentIdOf(session);
-      const confirmed = await bookingService.confirmPayment({ bookingUid, stripePaymentId });
+      const confirmed = await orders.confirmPaid(orderUid, stripePaymentId);
       if (confirmed) {
-        // Best-effort invoicing: a failed PDF/email must not fail the webhook
-        // (payment is already confirmed) — log it for resend instead.
+        // Best-effort invoicing: a failed PDF or email must not fail the webhook
+        // — the payment is already confirmed — so it is logged for resend.
         try {
           const { getInvoiceService } = await import(
             "@calcom/features/ne26-rooms/di/InvoiceService.container"
           );
-          await getInvoiceService().issueInvoice(bookingUid);
+          await getInvoiceService().issueInvoice(orderUid);
         } catch (e) {
-          log.error(`Invoice issuance failed for booking ${bookingUid}`, e);
+          log.error(`Invoice issuance failed for order ${orderUid}`, e);
         }
-        // Tell the team a room just sold. Best-effort: a failed notification
-        // must never fail an already-confirmed payment.
-        await notifySale(bookingUid, session);
+        await notifySale(orderUid, session);
       } else {
-        // Money is captured but no PENDING booking matched: it was already
-        // handled, or its hold lapsed and was cleared before the payment landed.
-        // Nothing downstream retries, so this needs a human to reconcile or
-        // refund — log at error level with everything needed to find it in Stripe.
-        const detail = `Captured ${money(session.amount_total, session.currency)} for booking ${bookingUid}\nPayment intent: ${stripePaymentId}\nCheckout session: ${session.id}\n\nNo pending booking matched — it was already handled, or its hold lapsed and was cleared before the payment landed. Reconcile or refund this payment in Stripe.`;
+        // Money is captured but no PENDING order matched: already handled, or its
+        // hold lapsed and was cleared before the payment landed. Nothing
+        // downstream retries, so a human has to reconcile or refund it.
+        const detail = `Captured ${money(session.amount_total, session.currency)} for order ${orderUid}\nPayment intent: ${stripePaymentId}\nCheckout session: ${session.id}\n\nNo pending order matched — it was already handled, or its hold lapsed and was cleared before the payment landed. Reconcile or refund this payment in Stripe.`;
         log.error(`UNRECONCILED PAYMENT: ${detail.replace(/\n+/g, " ")}`);
-        await notifyTeam("Payment captured with no matching booking", detail);
+        await notifyTeam("Payment captured with no matching order", detail);
       }
     }
 
-    if (bookingUid && outcome === "release") {
-      // Payment failed or the session expired: free the slots now rather than
-      // leaving a dead hold until something else clears it.
-      const released = await bookingService.cancelPending(bookingUid);
-      log.info(`Released hold for booking ${bookingUid} after ${event.type} (released=${released}).`);
+    if (orderUid && outcome === "release") {
+      // Payment failed or the session expired: free every room in the order now
+      // rather than leaving dead holds until something else clears them.
+      const released = await orders.cancelPending(orderUid);
+      log.info(`Released order ${orderUid} after ${event.type} (released=${released}).`);
     }
   }
 

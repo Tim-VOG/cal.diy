@@ -16,3 +16,14 @@ export const ZCreateBookingInputSchema = z.object({
 });
 
 export type TCreateBookingInputSchema = z.infer<typeof ZCreateBookingInputSchema>;
+
+export const ZCreateOrderInputSchema = z.object({
+  /**
+   * The rooms being paid for together. Bounded because every room in the order
+   * takes slots off sale in one transaction, and the shortlist that feeds this
+   * is client-side state a caller could inflate.
+   */
+  rooms: z.array(ZCreateBookingInputSchema).min(1).max(10),
+});
+
+export type TCreateOrderInputSchema = z.infer<typeof ZCreateOrderInputSchema>;
