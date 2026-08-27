@@ -16,6 +16,16 @@ export const metadata: Metadata = {
   description: "Book a meeting room for NATO Edge 26 (17–19 November 2026).",
 };
 
+/**
+ * Shown when an admin has not set their own intro. Jolanda's wording, adapted
+ * once the one-room-per-day rule was settled: it has to state the rule, because
+ * an exhibitor who only meets it as a refusal at checkout has already chosen a
+ * room. TRT is Turkey Time — the event runs in Izmir.
+ */
+const DEFAULT_LANDING_INTRO = `Reserve a private meeting room during NATO Edge 26 (17–19 November 2026, Izmir) for professional, confidential meetings. Ideal for strategic discussions, partnership negotiations, and client meetings.
+
+You can book a maximum of one room per day, for one time slot of either 1, 2, or 3 hours. Choose your room, select your preferred 1-, 2-, or 3-hour slot, add any extras, then confirm and pay securely online. All times are shown in TRT.`;
+
 const CATEGORY_LABEL: Record<string, string> = {
   PREMIUM: "Premium",
   INTERMEDIATE: "Intermediate",
@@ -115,9 +125,7 @@ export default async function RoomsListingPage(): Promise<JSX.Element> {
       ) : null}
       <h1 className="mt-1 font-bold text-2xl text-[#000643]">Book a meeting room</h1>
       <p className="mt-2 whitespace-pre-line text-gray-600 text-sm">
-        {settings.landingIntro?.trim()
-          ? settings.landingIntro
-          : "Choose a room, a time slot (1h, 2h or 3h) and add-ons. Times shown in Europe/Istanbul."}
+        {settings.landingIntro?.trim() ? settings.landingIntro : DEFAULT_LANDING_INTRO}
       </p>
 
       <SavedSelections />
