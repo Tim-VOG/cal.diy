@@ -6,6 +6,7 @@ import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireBillingProfile } from "../requireBillingProfile";
+import HoldCountdown from "./HoldCountdown";
 import ResumePaymentButton from "./ResumePaymentButton";
 import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 
@@ -102,7 +103,12 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                     Invoice {b.order?.invoiceNumber}
                   </a>
                 ) : b.status === "PENDING" ? (
-                  <ResumePaymentButton uid={b.order?.uid ?? b.uid} />
+                  <>
+                    {b.order?.holdExpiresAt ? (
+                      <HoldCountdown expiresAt={b.order.holdExpiresAt.toISOString()} />
+                    ) : null}
+                    <ResumePaymentButton uid={b.order?.uid ?? b.uid} />
+                  </>
                 ) : (
                   <span className="text-gray-400 text-xs">—</span>
                 )}

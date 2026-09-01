@@ -361,6 +361,47 @@ export class Ne26OrderRepository {
     return rows.map((r) => r.startTime);
   }
 
+  /**
+   * Held orders whose time is nearly up and who have not been warned yet.
+   *
+   * Bounded by `from` as well as `before`: an order whose hold already lapsed is
+   * past saving, and mailing "10 minutes left" about a room that is back on sale
+   * would be worse than saying nothing.
+   */
+  findHoldsExpiringSoon(from: Date, before: Date) {
+    return this.prismaClient.ne26Order.findMany({
+      where: {
+        status: ResourceBookingStatus.PENDING,
+        holdReminderSentAt: null,
+        holdExpiresAt: { gt: from, lte: before },
+      },
+      select: {
+        uid: true,
+        bookerName: true,
+        bookerEmail: true,
+        holdExpiresAt: true,
+        bookings: {
+          orderBy: { startTime: "asc" },
+          select: { startTime: true, endTime: true, resource: { select: { name: true } } },
+        },
+      },
+    });
+  }
+
+  /**
+   * Claim the reminder for one order, returning whether this caller won it.
+   *
+   * Scoped to holdReminderSentAt still being null, so two overlapping cron runs
+   * cannot both send: the second updates nothing and is told so.
+   */
+  async claimHoldReminder(uid: string, at: Date): Promise<boolean> {
+    const result = await this.prismaClient.ne26Order.updateMany({
+      where: { uid, holdReminderSentAt: null, status: ResourceBookingStatus.PENDING },
+      data: { holdReminderSentAt: at },
+    });
+    return result.count > 0;
+  }
+
   /** How many orders this buyer is holding without having paid. */
   countActiveHolds(bookerUserId: number | null, now: Date): Promise<number> {
     return this.prismaClient.ne26Order.count({

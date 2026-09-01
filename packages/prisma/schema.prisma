@@ -3203,6 +3203,10 @@ model Ne26Order {
   currency                String                @default("EUR")
   status                  ResourceBookingStatus @default(PENDING)
   holdExpiresAt           DateTime?
+  // NE26: when the "your hold is about to lapse" reminder went out. Set once and
+  // checked before sending, so a cron that runs every five minutes over a
+  // fifteen-minute window cannot mail the same buyer three times.
+  holdReminderSentAt      DateTime?
   stripePaymentId         String?               @unique
   invoiceNumber           String?               @unique
   invoicePdfUrl           String?

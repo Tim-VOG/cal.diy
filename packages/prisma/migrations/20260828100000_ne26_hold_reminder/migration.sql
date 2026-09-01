@@ -1,0 +1,12 @@
+-- NE26: remember that the "your hold is about to lapse" reminder was sent.
+--
+-- The reminder is driven by a cron running every few minutes over a window of
+-- the last quarter of an hour, so without a marker the same buyer would be
+-- mailed on every pass. Set once, checked before sending.
+--
+-- Nullable, no default: every existing order is treated as not yet reminded,
+-- which is correct — none of them ever were.
+--
+-- No index needed: Ne26Order_status_holdExpiresAt_idx already covers the scan,
+-- created with the order table itself.
+ALTER TABLE "Ne26Order" ADD COLUMN "holdReminderSentAt" TIMESTAMP(3);

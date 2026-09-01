@@ -69,6 +69,75 @@ export async function sendTeamEmail(input: {
 
 /** Send the booking confirmation + invoice PDF over the configured SMTP server. */
 /**
+ * The rooms are held, but only for a while — say until when.
+ *
+ * Sent twice for one order: once when the hold is taken, and once when a
+ * quarter of an hour is left. A buyer who leaves the payment page to fetch a
+ * purchase order has no other way of knowing there is a clock, and the first
+ * they learned of it was the room being gone.
+ */
+export async function sendHoldReminderEmail(input: {
+  to: string;
+  bookerName: string;
+  roomName: string;
+  slotLabel: string;
+  /** Event-local wall-clock time the hold lapses, e.g. "14:35". */
+  expiresAtLabel: string;
+  minutesLeft: number;
+  kind: "created" | "expiring";
+  payUrl: string;
+}): Promise<void> {
+  const host = process.env.EMAIL_SERVER_HOST;
+  const port = Number(process.env.EMAIL_SERVER_PORT);
+  const user = process.env.EMAIL_SERVER_USER;
+  const pass = process.env.EMAIL_SERVER_PASSWORD;
+  const from = process.env.EMAIL_FROM;
+  const fromName = process.env.EMAIL_FROM_NAME ?? "NATO Edge 26";
+  if (!host || !port || !from) {
+    throw new ErrorWithCode(
+      ErrorCode.InternalServerError,
+      "SMTP is not configured (EMAIL_SERVER_* / EMAIL_FROM)"
+    );
+  }
+  const transport = nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465,
+    requireTLS: port === 587,
+    auth: user && pass ? { user, pass } : undefined,
+  });
+
+  const name = escapeHtml(input.bookerName);
+  const room = escapeHtml(input.roomName);
+  const slot = escapeHtml(input.slotLabel);
+  const until = escapeHtml(input.expiresAtLabel);
+  const url = escapeHtml(input.payUrl);
+  const isExpiring = input.kind === "expiring";
+
+  const subject = isExpiring
+    ? `${input.minutesLeft} minutes left to pay for ${input.roomName}`
+    : `We are holding ${input.roomName} for you until ${input.expiresAtLabel}`;
+  const opening = isExpiring
+    ? `Your hold on ${input.roomName} (${input.slotLabel}) lapses at ${input.expiresAtLabel} — about ${input.minutesLeft} minutes from now. After that the room goes back on sale and anyone can take it.`
+    : `We are holding ${input.roomName} (${input.slotLabel}) for you until ${input.expiresAtLabel}. Nothing has been charged yet, and the room is not booked until the payment goes through.`;
+
+  const text = `Hi ${input.bookerName},\n\n${opening}\n\nFinish the payment here:\n${input.payUrl}\n\nNATO Edge 26 — Meeting Rooms`;
+  const htmlOpening = isExpiring
+    ? `Your hold on <strong>${room}</strong> (${slot}) lapses at <strong>${until}</strong> — about ${input.minutesLeft} minutes from now. After that the room goes back on sale and anyone can take it.`
+    : `We are holding <strong>${room}</strong> (${slot}) for you until <strong>${until}</strong>. Nothing has been charged yet, and the room is not booked until the payment goes through.`;
+  const html = `<p>Hi ${name},</p><p>${htmlOpening}</p><p><a href="${url}">Finish the payment here</a>.</p><p>NATO Edge 26 — Meeting Rooms</p>`;
+
+  await transport.sendMail({
+    from: `${fromName} <${from}>`,
+    // NE26 test mode: redirect to a single inbox while testing (env-gated).
+    to: process.env.NE26_EMAIL_REDIRECT_TO || input.to,
+    subject,
+    text,
+    html,
+  });
+}
+
+/**
  * Tell the buyer their hold is gone.
  *
  * A declined card or an abandoned checkout released the rooms in silence: the

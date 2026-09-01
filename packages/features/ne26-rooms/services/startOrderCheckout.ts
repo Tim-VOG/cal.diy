@@ -134,6 +134,13 @@ export async function startOrderCheckout(input: StartOrderCheckoutInput) {
       successUrl: `${input.webappUrl}${input.successPath ?? `/rooms/booked/${order.uid}`}`,
       cancelUrl: `${input.webappUrl}${input.cancelPath}`,
     });
+    // Say how long the rooms are held, now, while the buyer still has time to
+    // act on it. Someone who leaves the payment page to fetch a purchase order
+    // has no other way of knowing there is a clock running.
+    await notifyHoldTaken(order, checkout.url).catch(() => {
+      // Best-effort: the rooms are held and the payment page is open. Failing
+      // the checkout over a courtesy email would cost the sale.
+    });
     return { ...order, checkoutUrl: checkout.url };
   } catch {
     await getNe26OrderRepository()
@@ -146,6 +153,34 @@ export async function startOrderCheckout(input: StartOrderCheckoutInput) {
       "We couldn't reach our payment provider. Nothing was charged and the rooms are free again — please try once more."
     );
   }
+}
+
+/**
+ * "We are holding these rooms until 14:35." Sent as soon as the hold is taken.
+ *
+ * Separate from the reminder fifteen minutes before it lapses: this one tells
+ * the buyer a clock exists at all, which is what makes the later warning make
+ * sense rather than arrive out of nowhere.
+ */
+async function notifyHoldTaken(
+  order: { bookerEmail: string; bookerName: string; holdExpiresAt: Date | null; bookings: { startTime: Date; endTime: Date; resource: { name: string } }[] },
+  payUrl: string
+): Promise<void> {
+  if (!order.holdExpiresAt || !order.bookerEmail) return;
+  const { sendHoldReminderEmail } = await import("../lib/mailer");
+  const { holdExpiryLabel, minutesUntil, roomLabelFor } = await import("./HoldReminderService");
+  const { formatSlotRange } = await import("../lib/teamNotification");
+  const first = order.bookings[0];
+  await sendHoldReminderEmail({
+    to: order.bookerEmail,
+    bookerName: order.bookerName || "there",
+    roomName: roomLabelFor(order.bookings),
+    slotLabel: first ? formatSlotRange(first.startTime, first.endTime) : "",
+    expiresAtLabel: holdExpiryLabel(order.holdExpiresAt),
+    minutesLeft: minutesUntil(order.holdExpiresAt, new Date()),
+    kind: "created",
+    payUrl,
+  });
 }
 
 /**

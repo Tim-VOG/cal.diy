@@ -606,7 +606,16 @@ export class ResourceBookingRepository {
         currency: true,
         // The invoice belongs to the order this room was paid for, not to the
         // room: one payment covers one or more rooms and issues one document.
-        order: { select: { uid: true, invoiceNumber: true, creditNoteNumber: true } },
+        // holdExpiresAt comes from the ORDER: it is the order that is held, and
+        // all its rooms lapse together. The countdown on the page reads this.
+        order: {
+          select: {
+            uid: true,
+            invoiceNumber: true,
+            creditNoteNumber: true,
+            holdExpiresAt: true,
+          },
+        },
         resource: { select: { name: true, category: true } },
         addOns: { select: { quantity: true, addOn: { select: { name: true } } } },
       },

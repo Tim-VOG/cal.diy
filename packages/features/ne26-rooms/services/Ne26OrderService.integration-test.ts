@@ -294,6 +294,60 @@ describe("Ne26OrderService.createOrder", () => {
     });
   });
 
+  describe("holds about to lapse", () => {
+    /** Move an order's hold to a given number of minutes from now. */
+    async function holdIn(minutes: number) {
+      const { order } = await service.createOrder({ buyer: buyer(), rooms: [room(SLUG_A, WED, 9)] });
+      const at = new Date(Date.now() + minutes * 60_000);
+      await prisma.ne26Order.update({ where: { uid: order.uid }, data: { holdExpiresAt: at } });
+      return order.uid;
+    }
+
+    it("finds a hold inside the warning window", async () => {
+      const uid = await holdIn(10);
+      const now = new Date();
+      const due = await orders.findHoldsExpiringSoon(now, new Date(now.getTime() + 15 * 60_000));
+      expect(due.map((o) => o.uid)).toContain(uid);
+    });
+
+    it("ignores one with plenty of time left", async () => {
+      const uid = await holdIn(30);
+      const now = new Date();
+      const due = await orders.findHoldsExpiringSoon(now, new Date(now.getTime() + 15 * 60_000));
+      expect(due.map((o) => o.uid)).not.toContain(uid);
+    });
+
+    it("ignores one that has already lapsed", async () => {
+      // "10 minutes left" about a room that is back on sale is worse than silence.
+      const uid = await holdIn(-5);
+      const now = new Date();
+      const due = await orders.findHoldsExpiringSoon(now, new Date(now.getTime() + 15 * 60_000));
+      expect(due.map((o) => o.uid)).not.toContain(uid);
+    });
+
+    it("can be claimed once and only once", async () => {
+      // Two overlapping cron runs must not both mail the same buyer.
+      const uid = await holdIn(10);
+      const now = new Date();
+      expect(await orders.claimHoldReminder(uid, now)).toBe(true);
+      expect(await orders.claimHoldReminder(uid, now)).toBe(false);
+    });
+
+    it("drops out of the window once claimed", async () => {
+      const uid = await holdIn(10);
+      await orders.claimHoldReminder(uid, new Date());
+      const now = new Date();
+      const due = await orders.findHoldsExpiringSoon(now, new Date(now.getTime() + 15 * 60_000));
+      expect(due.map((o) => o.uid)).not.toContain(uid);
+    });
+
+    it("never claims an order that has been paid", async () => {
+      const uid = await holdIn(10);
+      await orders.confirmPaid(uid, `pi_reminder_${STAMP}`);
+      expect(await orders.claimHoldReminder(uid, new Date())).toBe(false);
+    });
+  });
+
   describe("one room per exhibitor per day", () => {
     it("refuses a second room on a day already booked", async () => {
       await service.createOrder({ buyer: buyer(), rooms: [room(SLUG_A, TUE, 14)] });
