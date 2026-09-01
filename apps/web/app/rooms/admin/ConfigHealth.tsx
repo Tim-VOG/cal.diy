@@ -1,4 +1,7 @@
-import { checkNe26ConfigFromProcess } from "@calcom/features/ne26-rooms/lib/configCheck";
+import {
+  type ConfigSettings,
+  checkNe26ConfigFromProcess,
+} from "@calcom/features/ne26-rooms/lib/configCheck";
 import { AlertTriangle, XOctagon } from "lucide-react";
 
 /**
@@ -10,8 +13,13 @@ import { AlertTriangle, XOctagon } from "lucide-react";
  * fix them actually looks, and because each of these is only ever discovered
  * after the sale it broke.
  */
-export default function ConfigHealth(): JSX.Element | null {
-  const issues = checkNe26ConfigFromProcess();
+export default function ConfigHealth({
+  settings,
+}: {
+  /** From the database, which env alone cannot see — the page fetches it. */
+  settings: ConfigSettings;
+}): JSX.Element | null {
+  const issues = checkNe26ConfigFromProcess(settings);
   if (!issues.length) return null;
 
   return (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatMoney, saleNotification } from "./teamNotification";
+import { failureNotification, formatMoney, saleNotification } from "./teamNotification";
 
 const SUITE_1 = {
   roomName: "Suite 1",
@@ -136,5 +136,82 @@ describe("saleNotification", () => {
       expect(cateringAt).toBeGreaterThan(suiteAt);
       expect(cateringAt).toBeLessThan(studioAt);
     });
+  });
+});
+
+describe("the Stripe link on a sale", () => {
+  it("prints the payment link so the desk does not search by amount", () => {
+    const url = "https://dashboard.stripe.com/test/payments/pi_123";
+    expect(saleNotification({ ...BASE, stripeUrl: url }).body).toContain(url);
+  });
+
+  it("stays silent when there is no link — an offline sale has no payment", () => {
+    const { body } = saleNotification({ ...BASE, stripeUrl: null });
+    expect(body).not.toContain("dashboard.stripe.com");
+    expect(body.trimEnd()).toBe(body.trimEnd());
+  });
+});
+
+describe("failureNotification", () => {
+  const FAILED = {
+    orderUid: BASE.orderUid,
+    reason: "payment_failed" as const,
+    rooms: BASE.rooms,
+    bookerName: "Jane Exhibitor",
+    bookerEmail: "jane@example.com",
+    amountHt: 72000,
+    currency: "EUR",
+    adminUrl: BASE.adminUrl,
+  };
+
+  it("names the room and the money that did not come in", () => {
+    expect(failureNotification(FAILED).subject).toBe("Payment failed — Suite 1, 2h (720.00 EUR)");
+  });
+
+  it("distinguishes an abandoned checkout from a declined card", () => {
+    // The desk calls one back differently from the other.
+    const expired = failureNotification({ ...FAILED, reason: "session_expired" });
+    expect(expired.subject).toMatch(/^Checkout expired/);
+    expect(expired.body).toContain("never completed");
+    expect(failureNotification(FAILED).body).toContain("declined");
+  });
+
+  it("says the rooms are back on sale, which is the actionable part", () => {
+    expect(failureNotification(FAILED).body).toContain("back on sale");
+  });
+
+  it("carries the buyer so the desk can call them back", () => {
+    expect(failureNotification(FAILED).body).toContain("Jane Exhibitor <jane@example.com>");
+  });
+
+  it("never prints a raw minor-unit amount", () => {
+    const { subject, body } = failureNotification(FAILED);
+    expect(subject).not.toContain("72000");
+    expect(body).not.toContain("72000");
+    expect(body).toContain("720.00 EUR");
+  });
+
+  it("counts the rooms rather than naming them all", () => {
+    const two = failureNotification({
+      ...FAILED,
+      rooms: [
+        SUITE_1,
+        {
+          roomName: "Studio 3",
+          startUtc: new Date("2026-11-18T07:00:00.000Z"),
+          endUtc: new Date("2026-11-18T08:00:00.000Z"),
+          durationMinutes: 60,
+          addOns: [],
+        },
+      ],
+    });
+    expect(two.subject).toContain("2 rooms");
+    expect(two.body).toContain("Studio 3 — 1h");
+  });
+
+  it("falls back to a neutral buyer label rather than printing 'null'", () => {
+    const { body } = failureNotification({ ...FAILED, bookerName: null, bookerEmail: null });
+    expect(body).toContain("An exhibitor");
+    expect(body).not.toContain("null");
   });
 });

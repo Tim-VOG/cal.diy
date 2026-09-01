@@ -7,9 +7,15 @@ import {
   ne26OrderUid,
   paymentIdOf,
 } from "@calcom/features/ne26-rooms/lib/stripeEvents";
-import { formatMoney, saleNotification } from "@calcom/features/ne26-rooms/lib/teamNotification";
+import {
+  type FailureReason,
+  failureNotification,
+  formatMoney,
+  saleNotification,
+} from "@calcom/features/ne26-rooms/lib/teamNotification";
 import { WEBAPP_URL } from "@calcom/lib/constants";
 import logger from "@calcom/lib/logger";
+import type { Ne26OrderRepository as Ne26OrderRepositoryLike } from "@calcom/features/ne26-rooms/repositories/Ne26OrderRepository";
 import type Stripe from "stripe";
 
 const log = logger.getSubLogger({ prefix: ["[ne26-rooms-stripe-webhook]"] });
@@ -41,11 +47,81 @@ async function notifyTeam(subject: string, body: string): Promise<void> {
   }
 }
 
+/**
+ * Where to find this payment in the Stripe dashboard.
+ *
+ * Test and live are separate dashboards, so the path differs; the key we are
+ * signing with is what says which one we are in. Null when there is no payment
+ * to point at, which is the case for an expired checkout.
+ */
+function stripeUrlFor(paymentId: string | null | undefined): string | null {
+  if (!paymentId || !paymentId.startsWith("pi_")) return null;
+  const testMode = process.env.STRIPE_PRIVATE_KEY?.startsWith("sk_test_") ?? false;
+  return `https://dashboard.stripe.com/${testMode ? "test/" : ""}payments/${paymentId}`;
+}
+
 /** Stripe amounts are minor units; a human must never be shown "87120 EUR". */
 function money(minorUnits: number | null | undefined, currency: string | null | undefined): string {
   return minorUnits === null || minorUnits === undefined
     ? "an unknown amount"
     : formatMoney(minorUnits, currency ?? "EUR");
+}
+
+/**
+ * A hold that came to nothing: tell the buyer, and tell the desk.
+ *
+ * Two audiences, two purposes. The buyer believed they had a room and needs to
+ * know they do not, before they arrive in Izmir expecting one. The desk gets a
+ * lead worth calling back the same morning — until now this was silent on both
+ * sides, and a room simply reappeared on sale.
+ *
+ * Never throws: the webhook must still acknowledge, or Stripe retries forever.
+ */
+async function notifyReleased(
+  order: NonNullable<Awaited<ReturnType<Ne26OrderRepositoryLike["findByUid"]>>>,
+  reason: FailureReason,
+  stripeUrl: string | null
+): Promise<void> {
+  const rooms = order.bookings.map((b) => ({
+    roomName: b.resource.name,
+    startUtc: b.startTime,
+    endUtc: b.endTime,
+    durationMinutes: b.durationMinutes,
+    addOns: b.addOns.map((a) => ({ name: a.addOn.name, quantity: a.quantity, lineTotal: a.lineTotal })),
+  }));
+
+  const { subject, body } = failureNotification({
+    orderUid: order.uid,
+    reason,
+    rooms,
+    bookerName: order.bookerName,
+    bookerEmail: order.bookerEmail,
+    amountHt: order.amountTotal,
+    currency: order.currency,
+    stripeUrl,
+    adminUrl: `${WEBAPP_URL}/rooms/admin`,
+  });
+  await notifyTeam(subject, body);
+
+  const first = rooms[0];
+  if (!order.bookerEmail || !first) return;
+  try {
+    const { sendHoldReleasedEmail } = await import("@calcom/features/ne26-rooms/lib/mailer");
+    const { formatSlotRange } = await import("@calcom/features/ne26-rooms/lib/teamNotification");
+    await sendHoldReleasedEmail({
+      to: order.bookerEmail,
+      bookerName: order.bookerName || "there",
+      // One room named and the rest counted, as everywhere else.
+      roomName: rooms.length === 1 ? first.roomName : `${first.roomName} + ${rooms.length - 1} more`,
+      slotLabel: formatSlotRange(first.startUtc, first.endUtc),
+      reason,
+      bookAgainUrl: `${WEBAPP_URL}/rooms`,
+    });
+  } catch (e) {
+    // The desk has been told either way; a failed buyer email must not make
+    // Stripe retry a delivery we have already acted on.
+    log.error(`Could not tell ${order.bookerEmail} their hold was released`, e);
+  }
 }
 
 /**
@@ -82,6 +158,7 @@ async function notifySale(orderUid: string, session: Stripe.Checkout.Session): P
         amountPaid: session.amount_total,
         currency: order.currency,
         invoiceNumber: order.invoiceNumber,
+        stripeUrl: stripeUrlFor(paymentIdOf(session)),
         adminUrl,
       });
       await notifyTeam(subject, body);
@@ -167,10 +244,21 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     if (orderUid && outcome === "release") {
+      // Read BEFORE cancelling: cancelPending deletes the order, and with it the
+      // buyer's address and the rooms we need in order to tell anyone about it.
+      const doomed = await orders.findByUid(orderUid);
       // Payment failed or the session expired: free every room in the order now
       // rather than leaving dead holds until something else clears them.
       const released = await orders.cancelPending(orderUid);
       log.info(`Released order ${orderUid} after ${event.type} (released=${released}).`);
+
+      // Only when this delivery is what released it. A replayed event, or one
+      // arriving after the hold already lapsed, must not mail anybody twice.
+      if (released && doomed) {
+        const reason =
+          event.type === "checkout.session.async_payment_failed" ? "payment_failed" : "session_expired";
+        await notifyReleased(doomed, reason, stripeUrlFor(paymentIdOf(session)));
+      }
     }
   }
 

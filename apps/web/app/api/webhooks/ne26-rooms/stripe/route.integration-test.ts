@@ -13,11 +13,16 @@ env.STRIPE_WEBHOOK_SECRET_NE26_ROOMS ??= "whsec_ne26_webhook_suite";
 vi.mock("@calcom/features/ne26-rooms/lib/mailer", () => ({
   sendInvoiceEmail: vi.fn().mockResolvedValue(undefined),
   sendTeamEmail: vi.fn().mockResolvedValue(undefined),
+  sendHoldReleasedEmail: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { getNe26OrderRepository } from "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container";
 import { getAtomicSlotStarts } from "@calcom/features/ne26-rooms/lib/atomicSlots";
-import { sendInvoiceEmail, sendTeamEmail } from "@calcom/features/ne26-rooms/lib/mailer";
+import {
+  sendHoldReleasedEmail,
+  sendInvoiceEmail,
+  sendTeamEmail,
+} from "@calcom/features/ne26-rooms/lib/mailer";
 import Stripe from "stripe";
 import { POST } from "./route";
 
@@ -262,6 +267,9 @@ describe("NE26 Stripe webhook", () => {
       const sale = vi.mocked(sendTeamEmail).mock.calls[0][0];
       expect(sale.to).toEqual([TEAM_EMAIL]);
       expect(sale.subject).toMatch(/room sold/i);
+      // One click to the money, instead of searching Stripe by amount and time.
+      expect(sale.body).toContain("dashboard.stripe.com");
+      expect(sale.body).toContain("pi_test_webhook");
     });
 
     // One payment covering several rooms is the whole point of the order model.
@@ -379,6 +387,68 @@ describe("NE26 Stripe webhook", () => {
       expect(await orders.findByUid(uid)).toBeNull();
       expect(await slotsHeld(roomA, startTimes[0])).toBe(0);
       expect(await slotsHeld(roomB, startTimes[1])).toBe(0);
+    });
+
+    // Until now a failure was silent on both sides: the room simply reappeared
+    // on sale, and the buyer found out in Izmir.
+    describe("a hold that came to nothing is not silent", () => {
+      it("tells the desk a payment was declined, with the buyer to call back", async () => {
+        const { uid } = await heldOrder();
+        await deliver(
+          sessionEvent("checkout.session.async_payment_failed", { orderUid: uid, paymentStatus: "unpaid" })
+        );
+
+        expect(sendTeamEmail).toHaveBeenCalledTimes(1);
+        const alert = vi.mocked(sendTeamEmail).mock.calls[0][0];
+        expect(alert.subject).toMatch(/^Payment failed/);
+        expect(alert.body).toContain("webhook@test.com");
+        expect(alert.body).toContain("back on sale");
+        // The money it points at is the one Stripe knows about.
+        expect(alert.body).toContain("pi_test_webhook");
+      });
+
+      it("distinguishes an expired checkout from a declined card", async () => {
+        const { uid } = await heldOrder();
+        await deliver(sessionEvent("checkout.session.expired", { orderUid: uid, paymentStatus: "unpaid" }));
+        expect(vi.mocked(sendTeamEmail).mock.calls[0][0].subject).toMatch(/^Checkout expired/);
+      });
+
+      it("tells the buyer their room is gone and nothing was charged", async () => {
+        const { uid } = await heldOrder();
+        await deliver(
+          sessionEvent("checkout.session.async_payment_failed", { orderUid: uid, paymentStatus: "unpaid" })
+        );
+
+        expect(sendHoldReleasedEmail).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(sendHoldReleasedEmail).mock.calls[0][0]).toMatchObject({
+          to: "webhook@test.com",
+          reason: "payment_failed",
+        });
+      });
+
+      it("does not mail anybody twice when the delivery is replayed", async () => {
+        const { uid } = await heldOrder();
+        const payload = sessionEvent("checkout.session.expired", {
+          orderUid: uid,
+          paymentStatus: "unpaid",
+        });
+        await deliver(payload);
+        await deliver(payload);
+
+        // The second delivery released nothing, so it announces nothing.
+        expect(sendTeamEmail).toHaveBeenCalledTimes(1);
+        expect(sendHoldReleasedEmail).toHaveBeenCalledTimes(1);
+      });
+
+      it("says nothing about an order that was already paid", async () => {
+        const { uid } = await heldOrder();
+        await deliver(sessionEvent("checkout.session.completed", { orderUid: uid }));
+        vi.clearAllMocks();
+
+        await deliver(sessionEvent("checkout.session.expired", { orderUid: uid, paymentStatus: "unpaid" }));
+        expect(sendHoldReleasedEmail).not.toHaveBeenCalled();
+        expect(sendTeamEmail).not.toHaveBeenCalled();
+      });
     });
 
     it("releases the hold when the session expires", async () => {

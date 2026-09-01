@@ -1,4 +1,5 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
+import { getInvoiceSettingsRepository } from "@calcom/features/ne26-rooms/di/InvoiceSettingsRepository.container";
 import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
 import { getResourceBookingRepository } from "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container";
 import { getResourceRepository } from "@calcom/features/ne26-rooms/di/ResourceRepository.container";
@@ -24,10 +25,11 @@ export default async function RoomsAdminPage(): Promise<JSX.Element> {
 
   // Drop abandoned, unpaid bookings whose hold expired before listing.
   await getResourceBookingRepository().deleteExpiredHolds(new Date());
-  const [bookings, allRooms, roomSettings] = await Promise.all([
+  const [bookings, allRooms, roomSettings, settings] = await Promise.all([
     getResourceBookingRepository().findAllWithDetails(),
     getResourceRepository().findAllForAdmin(),
     getNe26RoomSettingsRepository().get(),
+    getInvoiceSettingsRepository().get(),
   ]);
   const roomNames = allRooms.filter((r) => r.isActive).map((r) => r.name);
   const rows = bookings.map((b) => ({
@@ -56,7 +58,9 @@ export default async function RoomsAdminPage(): Promise<JSX.Element> {
 
   return (
     <>
-      <ConfigHealth />
+      <ConfigHealth
+        settings={{ notifyEmails: settings.notifyEmails, contactEmail: settings.contactEmail }}
+      />
       <RoomsAdminView
         rows={rows}
         roomNames={roomNames}

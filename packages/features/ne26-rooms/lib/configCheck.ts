@@ -32,14 +32,39 @@ export interface ConfigEnv {
   CALENDSO_ENCRYPTION_KEY?: string;
 }
 
+/**
+ * The admin-editable side of the configuration, which env alone cannot see.
+ * Optional so a caller with no database handy still gets the env checks.
+ */
+export interface ConfigSettings {
+  notifyEmails?: string | null;
+  contactEmail?: string | null;
+}
+
 const CALENDSO_KEY_LENGTH = 32;
 
 function isSet(value: string | undefined): value is string {
   return Boolean(value?.trim());
 }
 
-export function checkNe26Config(env: ConfigEnv): ConfigIssue[] {
+export function checkNe26Config(env: ConfigEnv, settings?: ConfigSettings): ConfigIssue[] {
   const issues: ConfigIssue[] = [];
+
+  // Alerts — a sale, a failed payment, a payment with no matching order — go to
+  // this list. With it empty they fall back to the contact address and then to
+  // EMAIL_FROM, which is usually a no-reply nobody opens: the alert is sent and
+  // still never read. A webhook outage went unnoticed for four days that way.
+  if (settings && !isSet(settings.notifyEmails ?? undefined)) {
+    const fallback = isSet(settings.contactEmail ?? undefined)
+      ? `the contact address (${settings.contactEmail})`
+      : `EMAIL_FROM (${env.EMAIL_FROM ?? "unset"})`;
+    issues.push({
+      level: "warning",
+      key: "notifyEmails",
+      title: "No one is listed for sales and failure alerts",
+      detail: `Alerts fall back to ${fallback}. Set the notification addresses in Settings so a sale, a declined payment or an unmatched payment reaches someone who acts on it.`,
+    });
+  }
 
   if (!isSet(env.STRIPE_PRIVATE_KEY)) {
     issues.push({
@@ -110,6 +135,6 @@ export function checkNe26Config(env: ConfigEnv): ConfigIssue[] {
 }
 
 /** Read the checks against the running process. */
-export function checkNe26ConfigFromProcess(): ConfigIssue[] {
-  return checkNe26Config(process.env as ConfigEnv);
+export function checkNe26ConfigFromProcess(settings?: ConfigSettings): ConfigIssue[] {
+  return checkNe26Config(process.env as ConfigEnv, settings);
 }

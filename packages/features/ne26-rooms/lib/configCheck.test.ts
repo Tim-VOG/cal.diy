@@ -60,3 +60,42 @@ describe("checkNe26Config", () => {
     expect(checkNe26Config({}).length).toBeGreaterThanOrEqual(4);
   });
 });
+
+describe("nobody listed for alerts", () => {
+  // A webhook outage went unnoticed for four days because the alerts that
+  // should have flagged it went to an address nobody opens.
+  const OK = {
+    STRIPE_PRIVATE_KEY: "sk_live_x",
+    STRIPE_WEBHOOK_SECRET_NE26_ROOMS: "whsec_x",
+    NE26_INVOICE_DIR: "/data/ne26-invoices",
+    EMAIL_FROM: "no-reply@vo-europe.eu",
+    EMAIL_SERVER_HOST: "smtp.example.com",
+    CALENDSO_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef",
+  };
+  const find = (issues: ReturnType<typeof checkNe26Config>) =>
+    issues.find((i) => i.key === "notifyEmails");
+
+  it("warns when the notification list is empty, naming the fallback", () => {
+    const issue = find(checkNe26Config(OK, { notifyEmails: "", contactEmail: "sales@vo-europe.eu" }));
+    expect(issue?.level).toBe("warning");
+    expect(issue?.detail).toContain("sales@vo-europe.eu");
+  });
+
+  it("names EMAIL_FROM when there is no contact address either", () => {
+    const issue = find(checkNe26Config(OK, { notifyEmails: null, contactEmail: null }));
+    expect(issue?.detail).toContain("no-reply@vo-europe.eu");
+  });
+
+  it("says nothing once someone is listed", () => {
+    expect(find(checkNe26Config(OK, { notifyEmails: "sales@vo-europe.eu" }))).toBeUndefined();
+  });
+
+  it("treats whitespace as empty", () => {
+    expect(find(checkNe26Config(OK, { notifyEmails: "   " }))).toBeDefined();
+  });
+
+  it("stays quiet for a caller with no database to read", () => {
+    // The env-only check must not invent a warning it cannot substantiate.
+    expect(find(checkNe26Config(OK))).toBeUndefined();
+  });
+});
