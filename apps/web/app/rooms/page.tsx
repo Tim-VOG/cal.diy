@@ -53,8 +53,8 @@ function RoomCard({ room }: { room: Room }): JSX.Element {
           // biome-ignore lint/performance/noImgElement: admin-provided URL/path, next/image adds no value here
           <img src={room.imageUrl} alt={room.name} className="h-full w-full object-cover" />
         ) : (
-          <div className="flex h-full items-center justify-center text-[#000643]/25">
-            <TitleIcon className="h-10 w-10" aria-hidden />
+          <div className="flex h-full items-center justify-center text-[#000643]/45">
+            <TitleIcon className="h-12 w-12" strokeWidth={1.75} aria-hidden />
           </div>
         )}
         <span className="absolute top-3 left-3 rounded-full bg-white/90 px-2.5 py-0.5 font-medium text-[#000643] text-xs shadow-sm">

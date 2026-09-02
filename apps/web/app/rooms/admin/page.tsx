@@ -44,8 +44,9 @@ export default async function RoomsAdminPage(): Promise<JSX.Element> {
     startUtc: b.startTime.toISOString(),
     endUtc: b.endTime.toISOString(),
     durationMinutes: b.durationMinutes,
-    bookerName: b.bookerName,
-    bookerEmail: b.bookerEmail,
+    // The order's booker, falling back to the room's: what the invoice says.
+    bookerName: b.order?.bookerName || b.bookerName,
+    bookerEmail: b.order?.bookerEmail || b.bookerEmail,
     amountTotal: b.amountTotal,
     currency: b.currency,
     stripePaymentId: b.order?.stripePaymentId ?? b.stripePaymentId,

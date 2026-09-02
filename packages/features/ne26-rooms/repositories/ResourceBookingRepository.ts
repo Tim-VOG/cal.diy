@@ -580,6 +580,12 @@ export class ResourceBookingRepository {
             creditNoteNumber: true,
             stripePaymentId: true,
             amountTotal: true,
+            // Who the invoice is made out to. Confirmed at Stripe Checkout, so it
+            // is written to the ORDER and not back onto each room — which meant
+            // the dashboard showed the profile name while the invoice, the
+            // Stripe payment and this list all disagreed.
+            bookerName: true,
+            bookerEmail: true,
             // When the order was placed and when it was paid: the desk reconciles
             // against Stripe by date, and neither date exists on a booking row.
             createdAt: true,

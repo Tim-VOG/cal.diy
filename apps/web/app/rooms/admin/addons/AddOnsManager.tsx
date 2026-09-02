@@ -1,6 +1,7 @@
 "use client";
 
 import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
+import { List } from "lucide-react";
 import { trpc } from "@calcom/trpc/react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -160,9 +161,13 @@ export default function AddOnsManager({ addOns }: { addOns: AddOnRow[] }): JSX.E
       </div>
 
       {/* Add-on cards */}
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {/* One per row rather than three across: the fields were squeezed into a
+          third of the screen, so "Pricing", "Price" and "VAT %" wrapped to
+          different heights and the caterer's description was a two-line
+          window onto a ten-line text. */}
+      <div className="mt-6 space-y-4">
         {draft.map((r) => (
-          <div key={r.id} className="flex flex-col rounded-xl border border-gray-200 bg-white p-5">
+          <div key={r.id} className="rounded-xl border border-gray-200 bg-white p-5">
             <div className="flex items-start justify-between gap-3">
               <input
                 type="text"
@@ -181,7 +186,7 @@ export default function AddOnsManager({ addOns }: { addOns: AddOnRow[] }): JSX.E
               </label>
             </div>
 
-            <div className="mt-3 grid grid-cols-3 gap-3">
+            <div className="mt-3 grid grid-cols-2 items-end gap-3 sm:grid-cols-3 lg:grid-cols-5">
               <label>
                 <span className={label}>Pricing</span>
                 <select
@@ -225,9 +230,6 @@ export default function AddOnsManager({ addOns }: { addOns: AddOnRow[] }): JSX.E
                   }
                 />
               </label>
-            </div>
-
-            <div className="mt-3 grid grid-cols-2 gap-3">
               <label>
                 <span className={label}>Served from</span>
                 <input
@@ -247,7 +249,7 @@ export default function AddOnsManager({ addOns }: { addOns: AddOnRow[] }): JSX.E
                 />
               </label>
             </div>
-            <p className="mt-1 text-gray-400 text-xs">
+            <p className="mt-1.5 text-gray-400 text-xs">
               {r.availableFromMinute != null && r.availableToMinute != null
                 ? `Offered only to bookings that run between these hours (${EVENT_TIME_ZONE}). Clear both to sell it all day.`
                 : `Available all day. Set both to limit it to serving hours (${EVENT_TIME_ZONE}) — a 09:00 booking should not be offered lunch.`}
@@ -256,12 +258,34 @@ export default function AddOnsManager({ addOns }: { addOns: AddOnRow[] }): JSX.E
             <label className="mt-3 block">
               <span className={label}>Description</span>
               <textarea
-                rows={2}
-                className={input}
+                rows={7}
+                className={`${input} font-mono text-xs leading-relaxed`}
                 value={r.description}
                 onChange={(e) => setField(r.id, "description", e.target.value)}
               />
             </label>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setField(
+                    r.id,
+                    "description",
+                    `${r.description.replace(/\s*$/, "")}\n- `.replace(/^\n/, "")
+                  )
+                }
+                className="rounded-md border border-gray-200 px-2 py-1 font-medium text-[#000643] text-xs transition hover:border-[#000643]">
+                <List className="mr-1 inline h-3 w-3" aria-hidden />
+                Add a bullet
+              </button>
+              {/* The formatting is deliberately two rules rather than an editor:
+                  anything richer would mean storing HTML from the admin and
+                  rendering it on the public page. */}
+              <p className="text-gray-400 text-xs">
+                A line starting with <code className="text-gray-500">-</code> becomes a bullet.
+                Everything else is a paragraph. Blank lines are ignored.
+              </p>
+            </div>
 
             <div className="mt-4 flex gap-2">
               <button

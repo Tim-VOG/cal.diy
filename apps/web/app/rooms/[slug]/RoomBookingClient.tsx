@@ -7,7 +7,7 @@ import { buildRoomPhotoList } from "@calcom/features/ne26-rooms/lib/roomImages";
 import type { RoomAvailability } from "@calcom/features/ne26-rooms/services/RoomAvailabilityService";
 import { AddOnPriceType } from "@calcom/prisma/enums";
 import { trpc } from "@calcom/trpc/react";
-import { Clock, Euro, Info, Scaling, Users } from "lucide-react";
+import { Clock, Euro, Scaling, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { servicesFor } from "../amenities";
 import { clearSelection, getSelection, saveSelection } from "../selectionStore";
@@ -165,7 +165,6 @@ function AddOnList({
   onToggle: (slug: string, checked: boolean) => void;
   onSetQuantity: (slug: string, quantity: number) => void;
 }): JSX.Element | null {
-  const [infoSlug, setInfoSlug] = useState<string | null>(null);
   if (addOns.length === 0) return null;
   return (
     <>
@@ -175,7 +174,6 @@ function AddOnList({
         {addOns.map((addOn) => {
           const isSelected = addOn.slug in selected;
           const quantity = selected[addOn.slug] ?? 1;
-          const infoOpen = infoSlug === addOn.slug;
           // Shown greyed rather than hidden: an exhibitor looking for lunch
           // needs to learn it is served 11:00-14:00, not find it silently gone.
           const offered = !slot || isAddOnOfferedDuring(addOn, slot);
@@ -209,16 +207,6 @@ function AddOnList({
                       ) : null}
                     </span>
                   </label>
-                  {addOn.description ? (
-                    <button
-                      type="button"
-                      aria-label={`About ${addOn.name}`}
-                      aria-expanded={infoOpen}
-                      onClick={() => setInfoSlug((s) => (s === addOn.slug ? null : addOn.slug))}
-                      className={`shrink-0 transition ${infoOpen ? "text-[#000643]" : "text-gray-400 hover:text-[#000643]"}`}>
-                      <Info className="h-4 w-4" aria-hidden />
-                    </button>
-                  ) : null}
                 </div>
                 {isSelected && addOn.priceType === AddOnPriceType.PER_PERSON ? (
                   <div className="flex items-center gap-2">
@@ -246,18 +234,25 @@ function AddOnList({
                         everything else had been configured — so the buyer had
                         chosen a slot, added extras and pressed pay before being
                         told the number was impossible. */}
-                    <span className="whitespace-nowrap text-gray-400 text-xs">
-                      {quantity >= roomCapacity ? `people · room seats ${roomCapacity}` : "people"}
+                    <span className="w-32 whitespace-nowrap text-gray-400 text-xs">
+                      people{" "}
+                      <span className={quantity >= roomCapacity ? "" : "invisible"}>
+                        &middot; room seats {roomCapacity}
+                      </span>
                     </span>
                   </div>
                 ) : null}
               </div>
-              {addOn.description && infoOpen ? (
-                <div className="mt-2 max-w-xs border-gray-100 border-t pt-2 text-gray-600 text-xs leading-relaxed">
+              {/* Shown, not hidden behind an icon. The caterer's description is
+                  what the buyer is choosing between — three lunches differ only
+                  in what is in the box — so putting it one click away made the
+                  list unreadable. */}
+              {addOn.description ? (
+                <div className="mt-2 border-gray-100 border-t pt-2 text-gray-500 text-xs leading-relaxed">
                   <AddOnDescription text={addOn.description} />
                   {perPerson ? (
                     <p className="mt-1.5 text-gray-400">
-                      Minimum {minimumCovers} people, up to the {roomCapacity} the room seats.
+                      Minimum {minimumCovers} people, up to the {roomCapacity} this room seats.
                     </p>
                   ) : null}
                 </div>
@@ -411,6 +406,14 @@ export default function RoomBookingClient({
       startUtc: selectedStartUtc,
       durationHours: selectedDuration,
       addOns: selectedAddOns,
+      // Priced here, where the catalogue and the duration are known, so the
+      // panel never has to re-derive a price it might get wrong.
+      addOnLines: addOnLines.map((l) => ({
+        slug: l.slug,
+        name: l.label,
+        quantity: selectedAddOns[l.slug] ?? 1,
+        lineTotal: l.lineTotal,
+      })),
       total: total ?? 0,
       currency: room.currency,
     });

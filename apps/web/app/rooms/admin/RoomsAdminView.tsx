@@ -341,16 +341,16 @@ export default function RoomsAdminView({
           <table className="w-full text-left text-sm">
             <thead className="border-gray-100 border-b bg-gray-50 text-gray-500 text-xs uppercase">
               <tr>
-                <th className="px-3 py-2">Room</th>
-                <th className="px-3 py-2">When (Istanbul)</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Booker</th>
-                <th className="px-3 py-2">Ordered</th>
-                <th className="px-3 py-2">Paid</th>
-                <th className="px-3 py-2">Add-ons</th>
-                <th className="px-3 py-2 text-right">Amount</th>
-                <th className="px-3 py-2">Invoice</th>
-                <th className="px-3 py-2">Credit note</th>
+                <th className="px-3 py-3">Room</th>
+                <th className="px-3 py-3">When (Istanbul)</th>
+                <th className="px-3 py-3">Status</th>
+                <th className="px-3 py-3">Booker</th>
+                <th className="px-3 py-3">Ordered</th>
+                <th className="px-3 py-3">Paid</th>
+                <th className="px-3 py-3">Add-ons</th>
+                <th className="px-3 py-3 text-right">Amount</th>
+                <th className="px-3 py-3">Invoice</th>
+                <th className="px-3 py-3">Credit note</th>
               </tr>
             </thead>
             <tbody>
@@ -362,8 +362,10 @@ export default function RoomsAdminView({
                 </tr>
               ) : (
                 filtered.map((r) => (
-                  <tr key={r.uid} className="border-gray-50 border-b last:border-0">
-                    <td className="px-3 py-2">
+                  <tr
+                    key={r.uid}
+                    className="border-gray-200 border-b align-top transition last:border-0 hover:bg-[#000643]/[0.03]">
+                    <td className="px-3 py-3">
                       <a
                         href={`/rooms/admin/${r.uid}`}
                         className="font-medium text-[#000643] hover:underline">
@@ -371,31 +373,31 @@ export default function RoomsAdminView({
                       </a>
                       <div className="text-gray-400 text-xs">{r.category}</div>
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-3">
                       {fmtDate(r.startUtc)} · {fmtTime(r.startUtc)}–{fmtTime(r.endUtc)} (
                       {r.durationMinutes / 60}h)
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-3">
                       <span
                         className={`rounded-full px-2 py-0.5 font-medium text-xs ${STATUS_BADGE[r.status] ?? ""}`}>
                         {r.status}
                       </span>
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-3">
                       <div>{r.bookerName}</div>
                       <div className="text-gray-400 text-xs">{r.bookerEmail}</div>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-gray-500 text-xs">
+                    <td className="whitespace-nowrap px-3 py-3 text-gray-500 text-xs">
                       {fmtDateTime(r.orderedAt)}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-gray-500 text-xs">
+                    <td className="whitespace-nowrap px-3 py-3 text-gray-500 text-xs">
                       {r.paidAt ? fmtDateTime(r.paidAt) : "—"}
                     </td>
                     <td className="px-3 py-2 text-gray-600">{addOnsLabel(r) || "—"}</td>
                     <td className="px-3 py-2 text-right font-medium">
                       {fmtMoney(r.amountTotal, r.currency)}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-3">
                       {r.invoiceNumber ? (
                         <a
                           href={`/rooms/invoice/${r.orderUid ?? r.uid}`}
@@ -408,7 +410,7 @@ export default function RoomsAdminView({
                         <span className="text-gray-300">—</span>
                       )}
                     </td>
-                    <td className="px-3 py-2">{renderCreditNoteCell(r)}</td>
+                    <td className="px-3 py-3">{renderCreditNoteCell(r)}</td>
                   </tr>
                 ))
               )}

@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
 import Footer from "./Footer";
 import LogoutButton from "./LogoutButton";
+import MainArea from "./MainArea";
 import ShortlistPanel from "./ShortlistPanel";
 
 // Standalone public layout: it deliberately skips Cal's logged-in shell and the
@@ -92,7 +93,7 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
           </nav>
         ) : null}
       </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 xl:pr-[23rem]">{children}</main>
+      <MainArea>{children}</MainArea>
       {/* Rendered here so it follows the exhibitor from the listing into a
           room and back. On a wide screen it parks to the right of the content;
           below that it pins to the bottom. Nothing at all when there is

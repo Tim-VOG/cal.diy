@@ -25,6 +25,12 @@ export interface RoomSelection {
   startUtc: string | null;
   durationHours: number;
   addOns: Record<string, number>;
+  /**
+   * The add-ons as priced lines, so the panel can list each one with its total
+   * instead of squeezing slugs into a truncated string. Optional: a selection
+   * saved before this existed still restores, just without the detail.
+   */
+  addOnLines?: { slug: string; name: string; quantity: number; lineTotal: number }[];
   /** Total excl. VAT as displayed when it was saved — for recall only. */
   total: number;
   currency: string;

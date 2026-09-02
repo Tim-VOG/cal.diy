@@ -176,35 +176,50 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
         <>
           <ul className="divide-y divide-[#000643]/10">
             {selections.map((s) => (
-              <li key={s.slug} className="flex items-start gap-2 py-2">
-                <Link href={`/rooms/${s.slug}`} className="group min-w-0 flex-1">
-                  <span className="block truncate font-medium text-[#000643] text-sm group-hover:underline">
-                    {s.roomName}
+              <li key={s.slug} className="py-2">
+                <div className="flex items-start gap-2">
+                  <Link href={`/rooms/${s.slug}`} className="group min-w-0 flex-1">
+                    <span className="block truncate font-medium text-[#000643] text-sm group-hover:underline">
+                      {s.roomName}
+                    </span>
+                    <span className="block truncate text-gray-500 text-xs">{slotLabel(s)}</span>
+                  </Link>
+                  <span className="shrink-0 text-right font-medium text-[#000643] text-sm tabular-nums">
+                    {money(s.total, s.currency)}
                   </span>
-                  <span className="block truncate text-gray-500 text-xs">{slotLabel(s)}</span>
-                  {Object.keys(s.addOns).length > 0 ? (
-                    <span className="block truncate text-gray-400 text-xs">
-                      {Object.entries(s.addOns)
-                        .map(([slug, q]) => `${slug.replace(/^catering-/, "")} ×${q}`)
-                        .join(", ")}
-                    </span>
-                  ) : null}
-                  {clashing.has(s.slug) ? (
-                    <span className="mt-0.5 block text-amber-700 text-xs">
-                      You already have a room that day.
-                    </span>
-                  ) : null}
-                </Link>
-                <span className="shrink-0 text-right font-medium text-[#000643] text-sm tabular-nums">
-                  {money(s.total, s.currency)}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => forget(s.slug)}
-                  aria-label={`Remove ${s.roomName}`}
-                  className="shrink-0 rounded p-1 text-gray-300 transition hover:bg-[#000643]/5 hover:text-[#000643]">
-                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => forget(s.slug)}
+                    aria-label={`Remove ${s.roomName}`}
+                    className="shrink-0 rounded p-1 text-gray-300 transition hover:bg-[#000643]/5 hover:text-[#000643]">
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                </div>
+
+                {/* Each add-on on its own line with its own total, the way the
+                    room has one. A truncated "lunch x6, breakfast x12, lunc…"
+                    told the buyer neither what they had ordered nor what it
+                    cost. */}
+                {s.addOnLines?.length ? (
+                  <ul className="mt-1 space-y-0.5 pl-3">
+                    {s.addOnLines.map((line) => (
+                      <li
+                        key={line.slug}
+                        className="flex items-baseline justify-between gap-2 text-gray-500 text-xs">
+                        <span className="min-w-0 flex-1 truncate">
+                          {line.name} &times; {line.quantity}
+                        </span>
+                        <span className="shrink-0 tabular-nums">
+                          {money(line.lineTotal, s.currency)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+
+                {clashing.has(s.slug) ? (
+                  <p className="mt-1 text-amber-700 text-xs">You already have a room that day.</p>
+                ) : null}
               </li>
             ))}
           </ul>
