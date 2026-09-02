@@ -635,17 +635,30 @@ export const roomsRouter = router({
    * order service; this lets the shortlist and the room page say so BEFORE the
    * buyer commits, instead of the rule surfacing as a refusal at payment.
    */
-  myBookedDays: authedProcedure.query(async ({ ctx }): Promise<{ days: string[] }> => {
-    const { getNe26OrderRepository } = await import(
-      "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
-    );
-    const { eventDateOf } = await import("@calcom/features/ne26-rooms/lib/deskDay");
-    const starts = await getNe26OrderRepository().findBookedStartsForUser(
-      { userId: ctx.user.id, email: ctx.user.email },
-      new Date()
-    );
-    return { days: Array.from(new Set(starts.map(eventDateOf))).sort() };
-  }),
+  myBookedDays: authedProcedure.query(
+    async ({ ctx }): Promise<{ days: string[]; heldDays: string[] }> => {
+      const { getNe26OrderRepository } = await import(
+        "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
+      );
+      const { eventDateOf } = await import("@calcom/features/ne26-rooms/lib/deskDay");
+      const occupied = await getNe26OrderRepository().findOccupiedDaysForUser(
+        { userId: ctx.user.id, email: ctx.user.email },
+        new Date()
+      );
+      // `days` blocks, `heldDays` only informs. A day carrying the exhibitor's
+      // own unpaid hold is not spent: paying for the basket replaces that hold.
+      // Reporting both as "booked" greyed out the day they were shopping for.
+      const days = new Set<string>();
+      const heldDays = new Set<string>();
+      for (const row of occupied) {
+        (row.paid ? days : heldDays).add(eventDateOf(row.startTime));
+      }
+      return {
+        days: Array.from(days).sort(),
+        heldDays: Array.from(heldDays).filter((d) => !days.has(d)).sort(),
+      };
+    }
+  ),
 
   /**
    * The order this exhibitor is holding but has not paid, if any.
@@ -722,6 +735,39 @@ export const roomsRouter = router({
 
   // Resume an abandoned PENDING booking: rebuild its checkout and return the URL.
   /** Rebuild the payment page for an order held but never paid. */
+  /**
+   * Give up a hold without paying for it. The rooms go back on sale at once.
+   *
+   * The exhibitor could start a hold but not end one: the only way out was to
+   * wait thirty-five minutes, during which the rooms were unbookable by anyone,
+   * including by them under a corrected basket.
+   */
+  releaseMyHold: authedProcedure.input(ZBookingUidInputSchema).mutation(async ({ ctx, input }) => {
+    const { getNe26OrderRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
+    );
+    const orders = getNe26OrderRepository();
+    // Read before the delete: the payment page opened for this hold has to be
+    // closed too, or it can still be paid for rooms nobody holds any more.
+    const sessions = await orders.findStripeSessionIds([input.uid]);
+    const released = await orders.releaseOwnHold(input.uid, ctx.user.id);
+    if (!released) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "That hold is no longer yours to release." });
+    }
+    if (sessions.length > 0) {
+      const { getStripeCheckoutService } = await import(
+        "@calcom/features/ne26-rooms/di/StripeCheckoutService.container"
+      );
+      const stripe = getStripeCheckoutService();
+      for (const sessionId of sessions) {
+        await stripe.expireSession(sessionId).catch(() => {
+          // Already paid or already expired — nothing left to close.
+        });
+      }
+    }
+    return { released: true };
+  }),
+
   resumeOrder: authedProcedure.input(ZBookingUidInputSchema).mutation(async ({ ctx, input }) => {
     const { resumeOrderCheckout } = await import(
       "@calcom/features/ne26-rooms/services/startOrderCheckout"

@@ -1,4 +1,5 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
+import { getNe26OrderRepository } from "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container";
 import { getResourceBookingRepository } from "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import { CheckCircle2, Clock } from "lucide-react";
@@ -7,6 +8,7 @@ import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
+import ClearShortlist from "./ClearShortlist";
 
 type Params = Promise<{ uid: string }>;
 
@@ -36,18 +38,40 @@ export default async function BookedPage({ params }: { params: Params }): Promis
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
   if (!session?.user?.id) redirect(`/rooms/login?callbackUrl=/rooms/booked/${uid}`);
 
-  const booking = await getResourceBookingRepository().findByUid(uid);
-  if (!booking) notFound();
-  // Only the booker (or an admin) can see a booking's confirmation.
-  if (booking.bookerUserId !== session.user.id && session.user.role !== "ADMIN") notFound();
+  // Stripe returns the buyer here with the ORDER uid, and an order may cover
+  // several rooms. This page used to look the id up as a single booking, so
+  // every successful payment landed on "This page doesn't exist" — the last
+  // thing an exhibitor saw after handing over their card. The booking lookup is
+  // kept as a fallback: links in mails sent before this fix carry that id.
+  const order = await getNe26OrderRepository().findByUid(uid);
+  const booking = order ? null : await getResourceBookingRepository().findByUid(uid);
+  const found = order ?? booking;
+  if (!found) notFound();
+  // Only the booker (or an admin) may see a confirmation.
+  if (found.bookerUserId !== session.user.id && session.user.role !== "ADMIN") notFound();
 
-  const isConfirmed = booking.status === "CONFIRMED";
-  const amount = new Intl.NumberFormat("en-GB", { style: "currency", currency: booking.currency }).format(
-    booking.amountTotal / 100
+  const rooms = order
+    ? order.bookings.map((b) => ({
+        name: b.resource.name,
+        startTime: b.startTime,
+        endTime: b.endTime,
+      }))
+    : [
+        {
+          name: (booking as NonNullable<typeof booking>).resource.name,
+          startTime: (booking as NonNullable<typeof booking>).startTime,
+          endTime: (booking as NonNullable<typeof booking>).endTime,
+        },
+      ];
+
+  const isConfirmed = found.status === "CONFIRMED";
+  const amount = new Intl.NumberFormat("en-GB", { style: "currency", currency: found.currency }).format(
+    found.amountTotal / 100
   );
 
   return (
     <div className="mx-auto max-w-lg rounded-xl border border-gray-200 bg-white p-8 text-center shadow-sm">
+      <ClearShortlist />
       {isConfirmed ? (
         <CheckCircle2 className="mx-auto h-12 w-12 text-green-600" aria-hidden />
       ) : (
@@ -58,17 +82,23 @@ export default async function BookedPage({ params }: { params: Params }): Promis
       </h1>
       <p className="mt-2 text-gray-600 text-sm">
         {isConfirmed
-          ? "Your payment was received and the room is reserved."
+          ? rooms.length === 1
+            ? "Your payment was received and the room is reserved."
+            : "Your payment was received and the rooms are reserved."
           : "We're confirming your payment with Stripe. This page will reflect the final status shortly."}
       </p>
 
-      <div className="mt-6 space-y-1 rounded-lg bg-gray-50 p-4 text-left text-sm">
-        <p className="font-semibold">{booking.resource.name}</p>
-        <p>{formatRange(booking.startTime, booking.endTime)}</p>
-        <p className="font-bold text-[#000643]">
+      <div className="mt-6 space-y-3 rounded-lg bg-gray-50 p-4 text-left text-sm">
+        {rooms.map((r) => (
+          <div key={`${r.name}-${r.startTime.toISOString()}`}>
+            <p className="font-semibold">{r.name}</p>
+            <p>{formatRange(r.startTime, r.endTime)}</p>
+          </div>
+        ))}
+        <p className="border-gray-200 border-t pt-3 font-bold text-[#000643]">
           {amount} <span className="font-normal text-gray-500 text-xs">excl. VAT</span>
         </p>
-        <p className="text-gray-500 text-xs">Reference {booking.uid.slice(0, 8)}</p>
+        <p className="text-gray-500 text-xs">Reference {uid.slice(0, 8)}</p>
       </div>
 
       <Link

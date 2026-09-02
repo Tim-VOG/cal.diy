@@ -2898,6 +2898,10 @@ model Resource {
   description   String?
   // Card image: a URL or a path under /public (e.g. "/rooms/suite-1.jpg").
   imageUrl      String?
+  // NE26: chosen glyph for a room with no photograph. One of ROOM_ICON_NAMES
+  // (packages/features/ne26-rooms/lib/roomIcons.ts); null falls back to a
+  // default picked from the category.
+  iconName      String?
   // Extra photos for the room detail gallery (up to 4): JSON array of URLs/paths.
   galleryImages Json?
   isActive      Boolean           @default(true)
@@ -3211,6 +3215,10 @@ model Ne26Order {
   // placed, which is a different question and the one the desk asks second.
   // Null while unpaid; set once, by whichever confirmation ran first.
   paidAt                  DateTime?
+  // NE26: the Stripe Checkout session currently open for this order, so it can
+  // be expired when the order is superseded or released. A session left live
+  // over a deleted order captures money against nothing.
+  stripeSessionId         String?
   stripePaymentId         String?               @unique
   invoiceNumber           String?               @unique
   invoicePdfUrl           String?

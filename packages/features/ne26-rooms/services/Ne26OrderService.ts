@@ -46,6 +46,17 @@ export const MAX_ROOMS_PER_DAY = 1;
 export const ONE_ROOM_PER_DAY_MESSAGE =
   "Each exhibitor can book one meeting room per day. You already have a room that day — choose another day, or cancel the one you have.";
 
+/**
+ * The day is taken by another unpaid hold of the buyer's own, which this basket
+ * does not cover in full.
+ *
+ * Distinct from the rule above because the answer is different: nothing is
+ * bought, so there is nothing to cancel with the sales desk — the buyer either
+ * pays for that hold or releases it themselves.
+ */
+export const HOLD_ON_ANOTHER_ORDER_MESSAGE =
+  "You are already holding a room that day on another unpaid order. Pay for it or release it first.";
+
 export interface OrderRoomSelection {
   slug: string;
   startUtc: Date;
@@ -90,7 +101,57 @@ export class Ne26OrderService {
     const openSlotMs = buildOpenSlotMs(buildEventSchedule(settings.eventDays));
     const now = new Date();
 
-    const held = await orderRepo.countActiveHolds(input.buyer.userId, now);
+    // One room per day, weighed against what this exhibitor already occupies.
+    //
+    // A day carrying one of their own unpaid holds is NOT taken: that hold is
+    // their basket, and this order replaces it. Counting it as taken is what
+    // stopped an exhibitor paying for the very rooms they were holding — the
+    // refusal named a room that was their own, and the checkout was unreachable
+    // for as long as the hold ran.
+    const basketDays = input.rooms.map((r) => eventDateOf(r.startUtc));
+    const wantedDays = new Set(basketDays);
+    const occupied = await orderRepo.findOccupiedDaysForUser(
+      { userId: input.buyer.userId, email: input.buyer.email },
+      now
+    );
+
+    const paidDays = new Set<string>();
+    const daysByHold: Record<string, string[]> = {};
+    for (const row of occupied) {
+      const day = eventDateOf(row.startTime);
+      if (row.paid || !row.orderUid) {
+        paidDays.add(day);
+        continue;
+      }
+      const days = daysByHold[row.orderUid] ?? [];
+      if (!days.includes(day)) days.push(day);
+      daysByHold[row.orderUid] = days;
+    }
+
+    for (const day of basketDays) {
+      if (paidDays.has(day)) {
+        throw new ErrorWithCode(ErrorCode.BadRequest, ONE_ROOM_PER_DAY_MESSAGE);
+      }
+    }
+
+    // A hold is replaced only when this basket covers EVERY day it occupies.
+    // Replacing a two-day hold with a one-day basket would quietly hand back a
+    // room the exhibitor still wanted, and they would not find out until the
+    // event.
+    const supersedeOrderUids: string[] = [];
+    for (const uid of Object.keys(daysByHold)) {
+      const days = daysByHold[uid];
+      if (!days.some((d) => wantedDays.has(d))) continue;
+      if (days.every((d) => wantedDays.has(d))) {
+        supersedeOrderUids.push(uid);
+      } else {
+        throw new ErrorWithCode(ErrorCode.BadRequest, HOLD_ON_ANOTHER_ORDER_MESSAGE);
+      }
+    }
+
+    // Holds this order is about to release do not count against the cap, or an
+    // exhibitor at the limit could never revise a basket — only abandon it.
+    const held = (await orderRepo.countActiveHolds(input.buyer.userId, now)) - supersedeOrderUids.length;
     const cap = input.buyer.userId ? MAX_ACTIVE_ORDERS_PER_USER : MAX_ACTIVE_ORDERS_AT_THE_DESK;
     if (held >= cap) {
       throw new ErrorWithCode(
@@ -122,18 +183,12 @@ export class Ne26OrderService {
       }
     }
 
-    // One room per day, counting what this exhibitor already holds and what this
-    // basket is asking for together — otherwise two rooms on the same day slip
-    // through as long as they arrive in the same order.
-    const existing = await orderRepo.findBookedStartsForUser(
-      { userId: input.buyer.userId, email: input.buyer.email },
-      now
-    );
-    const takenDays = new Set(existing.map(eventDateOf));
+    // Two rooms on the same day inside ONE basket. Checked against the priced
+    // rooms rather than the request, so it reads the start the server resolved.
     const daysInThisOrder = new Set<string>();
     for (const room of rooms) {
       const day = eventDateOf(room.startTime);
-      if (takenDays.has(day) || daysInThisOrder.has(day)) {
+      if (daysInThisOrder.has(day)) {
         throw new ErrorWithCode(ErrorCode.BadRequest, ONE_ROOM_PER_DAY_MESSAGE);
       }
       daysInThisOrder.add(day);
@@ -141,6 +196,10 @@ export class Ne26OrderService {
 
     const amountTotal = rooms.reduce((sum, r) => sum + r.amountTotal, 0);
     const currency = rooms[0].currency;
+
+    // Read before the create, which deletes them: a payment page still open on
+    // a superseded order would take money for rooms that order no longer holds.
+    const supersededSessions = await orderRepo.findStripeSessionIds(supersedeOrderUids);
 
     const order = await orderRepo.createWithRooms({
       bookerUserId: input.buyer.userId,
@@ -153,6 +212,7 @@ export class Ne26OrderService {
       amountTotal,
       currency,
       holdExpiresAt: new Date(now.getTime() + HOLD_MINUTES * MS_PER_MINUTE),
+      supersedeOrderUids,
       rooms: rooms.map((r) => ({
         resourceId: r.resourceId,
         startTime: r.startTime,
@@ -165,6 +225,19 @@ export class Ne26OrderService {
     });
 
     if (!order) throw new ErrorWithCode(ErrorCode.InternalServerError, "Order could not be created");
+
+    // Only now that the replacement exists. Closing them earlier would strand a
+    // buyer whose new basket then failed: no payment page, and a hold they can
+    // no longer pay for.
+    if (supersededSessions.length > 0) {
+      const { getStripeCheckoutService } = await import("../di/StripeCheckoutService.container");
+      const stripe = getStripeCheckoutService();
+      for (const sessionId of supersededSessions) {
+        await stripe.expireSession(sessionId).catch(() => {
+          // Already paid or already expired — nothing left to close.
+        });
+      }
+    }
 
     const checkoutLines: CheckoutLine[] = rooms.flatMap((r) => [
       {

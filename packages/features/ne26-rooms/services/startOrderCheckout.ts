@@ -7,7 +7,18 @@ import { getStripeCheckoutService } from "../di/StripeCheckoutService.container"
 import { isBillingProfileComplete } from "../lib/billing";
 import { buildInvoiceModel, ROOM_VAT_RATE_BP } from "../lib/invoice";
 import { resolveVatTreatment } from "../lib/vat";
+import { checkoutExpiresAtSeconds } from "./StripeCheckoutService";
 import { Ne26OrderService, type OrderRoomSelection } from "./Ne26OrderService";
+
+/**
+ * How long an order's rooms may stay held, counting from when it was placed.
+ *
+ * Resuming payment pushes the hold out so it always outlives the Stripe page
+ * (see resumeOrderCheckout). Without a ceiling, an exhibitor could keep a room
+ * off sale for the whole event by pressing "resume" every half hour and never
+ * paying.
+ */
+const MAX_HOLD_LIFETIME_MINUTES = 120;
 
 export interface StartOrderCheckoutInput {
   /**
@@ -189,6 +200,7 @@ export async function startOrderCheckout(input: StartOrderCheckoutInput) {
     // Say how long the rooms are held, now, while the buyer still has time to
     // act on it. Someone who leaves the payment page to fetch a purchase order
     // has no other way of knowing there is a clock running.
+    await getNe26OrderRepository().setStripeSessionId(order.uid, checkout.id);
     await notifyHoldTaken(order, checkout.url).catch(() => {
       // Best-effort: the rooms are held and the payment page is open. Failing
       // the checkout over a courtesy email would cost the sale.
@@ -309,16 +321,46 @@ export async function resumeOrderCheckout(input: {
     ? ((await getNe26BillingProfileRepository().findStripeCustomerId(order.bookerUserId)) ?? undefined)
     : undefined;
 
+  // Stripe refuses a session shorter than 30 minutes, so a hold with 5 minutes
+  // left still buys a 30-minute payment page. The hold has to be pushed out to
+  // cover it: otherwise the rooms go back on sale, somebody else buys them, and
+  // the first buyer's card is charged for rooms that are no longer theirs — with
+  // nothing to alert anyone, because the payment itself succeeds.
+  const now = new Date();
+  const sessionExpiry = new Date(checkoutExpiresAtSeconds(order.holdExpiresAt, now) * 1000);
+  const ceiling = new Date(order.createdAt.getTime() + MAX_HOLD_LIFETIME_MINUTES * 60_000);
+  if (sessionExpiry > ceiling) {
+    throw new ErrorWithCode(
+      ErrorCode.BadRequest,
+      "These rooms have been held for as long as we can hold them. Release them and book again — they are still on sale."
+    );
+  }
+  // Extended BEFORE the session exists, so the hold can never be the shorter of
+  // the two, whatever happens next.
+  await orders.extendHold(order.uid, sessionExpiry);
+
   const checkout = await getStripeCheckoutService().createCheckoutSession({
     orderUid: order.uid,
     currency: order.currency,
     lines,
     customerEmail: input.buyerEmail,
     customerId,
-    holdExpiresAt: order.holdExpiresAt,
+    holdExpiresAt: sessionExpiry,
     requireFullAddress: order.bookerUserId === null,
     successUrl: `${input.webappUrl}/rooms/booked/${order.uid}`,
     cancelUrl: `${input.webappUrl}/rooms/bookings`,
   });
+
+  // One payment page per order. The previous one still pointed at this order and
+  // could be paid from a tab left open, which is a second charge waiting to
+  // happen.
+  if (order.stripeSessionId && order.stripeSessionId !== checkout.id) {
+    await getStripeCheckoutService()
+      .expireSession(order.stripeSessionId)
+      .catch(() => {
+        // Already completed or already expired: nothing to close.
+      });
+  }
+  await orders.setStripeSessionId(order.uid, checkout.id);
   return { checkoutUrl: checkout.url };
 }

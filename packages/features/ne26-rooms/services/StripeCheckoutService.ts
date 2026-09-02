@@ -171,6 +171,19 @@ export class StripeCheckoutService {
     return { id: session.id, url: session.url };
   }
 
+  /**
+   * Close a Checkout session so it can no longer be paid.
+   *
+   * Used when the order behind it is superseded or released: a session outlives
+   * the rooms it was opened for, and paying it would capture money against an
+   * order that no longer exists. Stripe refuses to expire a session that is
+   * already completed or expired, which is why every caller treats a failure
+   * here as nothing to do.
+   */
+  async expireSession(sessionId: string): Promise<void> {
+    await this.stripe.checkout.sessions.expire(sessionId);
+  }
+
   /** Verify a webhook payload's signature and return the typed event. */
   constructWebhookEvent(payload: string | Buffer, signature: string, webhookSecret: string): Stripe.Event {
     return this.stripe.webhooks.constructEvent(payload, signature, webhookSecret);

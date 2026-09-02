@@ -26,6 +26,15 @@ export interface CreateOrderInput {
   currency: string;
   holdExpiresAt: Date;
   rooms: OrderRoomInput[];
+  /**
+   * Live holds of this same buyer that this order replaces.
+   *
+   * Released inside the create transaction rather than before it: an exhibitor
+   * editing the basket they are holding asks for the SAME room at the SAME
+   * slot, so the old rows have to go before the new ones can be written — and
+   * if the write then fails, the rollback has to give them their hold back.
+   */
+  supersedeOrderUids?: string[];
 }
 
 export class Ne26OrderRepository {
@@ -44,6 +53,21 @@ export class Ne26OrderRepository {
     const now = new Date();
     try {
       return await this.prismaClient.$transaction(async (tx) => {
+        // Scoped to PENDING and to this same buyer whatever the caller passed:
+        // a uid is not a permission, and releasing somebody else's hold — or a
+        // paid order — would sell a room out from under them.
+        if (input.supersedeOrderUids?.length) {
+          await tx.ne26Order.deleteMany({
+            where: {
+              uid: { in: input.supersedeOrderUids },
+              status: ResourceBookingStatus.PENDING,
+              ...(input.bookerUserId === null
+                ? { bookerUserId: null, bookerEmail: input.bookerEmail }
+                : { bookerUserId: input.bookerUserId }),
+            },
+          });
+        }
+
         const order = await tx.ne26Order.create({
           data: {
             bookerUserId: input.bookerUserId,
@@ -172,6 +196,7 @@ export class Ne26OrderRepository {
         amountTotal: true,
         currency: true,
         holdExpiresAt: true,
+        stripeSessionId: true,
         stripePaymentId: true,
         paidAt: true,
         invoiceNumber: true,
@@ -238,6 +263,53 @@ export class Ne26OrderRepository {
       });
       return true;
     });
+  }
+
+  /**
+   * Push a live hold further out, never nearer.
+   *
+   * Both the order AND its rooms: the reclaim path frees slots by looking at
+   * the BOOKING's holdExpiresAt, so extending only the order would leave the
+   * rooms collectable while the order still believed it held them.
+   *
+   * `lt: until` makes this monotonic — a concurrent call can only ever move the
+   * expiry forward, never cut a hold short.
+   */
+  async extendHold(uid: string, until: Date): Promise<boolean> {
+    return this.prismaClient.$transaction(async (tx) => {
+      const result = await tx.ne26Order.updateMany({
+        where: {
+          uid,
+          status: ResourceBookingStatus.PENDING,
+          holdExpiresAt: { not: null, lt: until },
+        },
+        data: { holdExpiresAt: until },
+      });
+      if (result.count === 0) return false;
+      await tx.resourceBooking.updateMany({
+        where: { orderUid: uid, status: ResourceBookingStatus.PENDING },
+        data: { holdExpiresAt: until },
+      });
+      return true;
+    });
+  }
+
+  /** Remember which Checkout session is open, so it can be expired later. */
+  async setStripeSessionId(uid: string, sessionId: string | null): Promise<void> {
+    await this.prismaClient.ne26Order.updateMany({
+      where: { uid, status: ResourceBookingStatus.PENDING },
+      data: { stripeSessionId: sessionId },
+    });
+  }
+
+  /** Open Checkout sessions for these orders, read BEFORE the orders are deleted. */
+  async findStripeSessionIds(uids: string[]): Promise<string[]> {
+    if (uids.length === 0) return [];
+    const rows = await this.prismaClient.ne26Order.findMany({
+      where: { uid: { in: uids }, stripeSessionId: { not: null } },
+      select: { stripeSessionId: true },
+    });
+    return rows.map((r) => r.stripeSessionId as string);
   }
 
   /**
@@ -342,10 +414,10 @@ export class Ne26OrderRepository {
    * the loophole the rule exists to close. Expired holds do not count — they
    * protect nothing.
    */
-  async findBookedStartsForUser(
+  async findOccupiedDaysForUser(
     booker: { userId: number | null; email: string },
     now: Date
-  ): Promise<Date[]> {
+  ): Promise<{ startTime: Date; orderUid: string | null; paid: boolean }[]> {
     // Matched on the account when there is one, and on the email otherwise: the
     // rule is one room per EXHIBITOR, and a walk-in sold two rooms on the same
     // day at the counter breaks it just as surely as an account holder would.
@@ -362,9 +434,32 @@ export class Ne26OrderRepository {
           { status: ResourceBookingStatus.PENDING, holdExpiresAt: { gt: now } },
         ],
       },
-      select: { startTime: true },
+      select: { startTime: true, orderUid: true, status: true },
     });
-    return rows.map((r) => r.startTime);
+    // Which order a day belongs to, and whether it is paid for. A CONFIRMED
+    // booking is a room the exhibitor owns and nothing may displace it; a
+    // PENDING one is their own basket, taken off sale, which a new order of
+    // theirs is entitled to replace.
+    return rows.map((r) => ({
+      startTime: r.startTime,
+      orderUid: r.orderUid,
+      paid: r.status === ResourceBookingStatus.CONFIRMED,
+    }));
+  }
+
+  /**
+   * The exhibitor gives up a hold of their own.
+   *
+   * The admin has been able to cancel a pending order since the beginning; the
+   * buyer holding the room could not, and was told to "cancel the one you have"
+   * with nothing to cancel it with. Scoped to the account so a uid seen in a
+   * URL cannot release a stranger's rooms.
+   */
+  async releaseOwnHold(uid: string, bookerUserId: number): Promise<boolean> {
+    const result = await this.prismaClient.ne26Order.deleteMany({
+      where: { uid, bookerUserId, status: ResourceBookingStatus.PENDING },
+    });
+    return result.count > 0;
   }
 
   /**

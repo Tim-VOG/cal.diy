@@ -5,9 +5,10 @@ import { trpc } from "@calcom/trpc/react";
 import { Clock, CreditCard, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   SELECTIONS_CHANGED,
+  clearAllSelections,
   clearSelection,
   listSelections,
   type RoomSelection,
@@ -54,15 +55,32 @@ function slotLabel(selection: RoomSelection): string {
  * is where people go after paying — so the one number with a deadline on it was
  * on the page nobody opens while it is running.
  */
-function Countdown({ expiresAt }: { expiresAt: string }): JSX.Element | null {
+function Countdown({
+  expiresAt,
+  onExpired,
+}: {
+  expiresAt: string;
+  onExpired: () => void;
+}): JSX.Element | null {
   const target = new Date(expiresAt).getTime();
   const [msLeft, setMsLeft] = useState<number | null>(null);
+  // The clock reaching zero used to change nothing but the words on it: the
+  // hold was gone, the rooms were back on sale, and the panel went on offering
+  // to pay for them until the next background refetch, up to a minute later.
+  const fired = useRef(false);
   useEffect(() => {
-    const tick = () => setMsLeft(target - Date.now());
+    const tick = () => {
+      const left = target - Date.now();
+      setMsLeft(left);
+      if (left <= 0 && !fired.current) {
+        fired.current = true;
+        onExpired();
+      }
+    };
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [target]);
+  }, [target, onExpired]);
 
   // Null until mounted: the server has no clock the buyer can trust.
   if (msLeft === null) return null;
@@ -138,10 +156,31 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
       void pending.refetch();
     },
   });
+  // Giving up a hold has to be as easy as taking one. Without it the only exit
+  // was to wait out the clock, with the rooms unbookable by anyone meanwhile.
+  // What to do when the clock runs out. The rooms are back on sale, so the
+  // shortlist that was holding them is no longer a basket anyone can pay for.
+  const [lapsed, setLapsed] = useState(false);
+  const onHoldExpired = useCallback(() => {
+    clearAllSelections();
+    setLapsed(true);
+    void pending.refetch();
+    void bookedDays.refetch();
+    globalThis.dispatchEvent(new Event(SELECTIONS_CHANGED));
+  }, [pending.refetch, bookedDays.refetch]);
+
+  const release = trpc.viewer.rooms.releaseMyHold.useMutation({
+    onSuccess: () => {
+      void pending.refetch();
+      void bookedDays.refetch();
+    },
+  });
 
   if (hidden) return null;
   const heldOrder = pending.data;
-  if (!selections?.length && !heldOrder) return null;
+  // Stay on screen with nothing left to show, just long enough to say why the
+  // shortlist emptied itself. Vanishing silently would read as a bug.
+  if (!selections?.length && !heldOrder && !lapsed) return null;
 
   const currency = selections?.[0]?.currency ?? heldOrder?.currency ?? "EUR";
   const sameCurrency = (selections ?? []).every((s) => s.currency === currency);
@@ -152,12 +191,18 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
   }
 
   // One room per exhibitor per day, surfaced while it can still be fixed.
+  // Only a room they have PAID for blocks the day. A day they are merely
+  // holding is their own basket: paying for the shortlist replaces it, so
+  // flagging it as a clash locked the exhibitor out of their own purchase.
   const alreadyBooked = new Set(bookedDays.data?.days ?? []);
+  const heldDays = new Set(bookedDays.data?.heldDays ?? []);
   const seenDays = new Set<string>();
   const clashing = new Set<string>();
+  const replacing = new Set<string>();
   for (const s of payable) {
     const day = eventDay(s);
     if (alreadyBooked.has(day) || seenDays.has(day)) clashing.add(s.slug);
+    else if (heldDays.has(day)) replacing.add(s.slug);
     seenDays.add(day);
   }
   const canPay = payable.length > 0 && sameCurrency && clashing.size === 0;
@@ -172,11 +217,30 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
 
   const body = (
     <>
+      {lapsed ? (
+        <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+          <p className="text-gray-700 text-xs leading-snug">
+            Your hold ran out and the rooms went back on sale. Your shortlist was cleared — the rooms
+            may well still be free.
+          </p>
+          <div className="mt-2 flex gap-3">
+            <Link href="/rooms" className="font-semibold text-[#000643] text-xs underline">
+              Look again
+            </Link>
+            <button
+              type="button"
+              onClick={() => setLapsed(false)}
+              className="text-gray-500 text-xs underline">
+              Dismiss
+            </button>
+          </div>
+        </div>
+      ) : null}
       {heldOrder ? (
         <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
           <p className="flex items-center gap-1.5 text-amber-900 text-xs">
             <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            <Countdown expiresAt={heldOrder.holdExpiresAt} />
+            <Countdown expiresAt={heldOrder.holdExpiresAt} onExpired={onHoldExpired} />
           </p>
           <p className="mt-0.5 text-amber-800 text-xs">
             {heldOrder.rooms === 1 ? "1 room is held" : `${heldOrder.rooms} rooms are held`} for{" "}
@@ -190,8 +254,18 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
             <CreditCard className="h-4 w-4 shrink-0" aria-hidden />
             {resume.isPending ? "Opening payment…" : "Pay for the rooms you are holding"}
           </button>
+          <button
+            type="button"
+            disabled={release.isPending}
+            onClick={() => release.mutate({ uid: heldOrder.uid })}
+            className="mt-1.5 w-full text-amber-800 text-xs underline underline-offset-2 transition hover:text-amber-900 disabled:opacity-40">
+            {release.isPending ? "Releasing…" : "Release these rooms"}
+          </button>
           {resume.error ? (
             <p className="mt-1.5 text-red-700 text-xs">{resume.error.message}</p>
+          ) : null}
+          {release.error ? (
+            <p className="mt-1.5 text-red-700 text-xs">{release.error.message}</p>
           ) : null}
         </div>
       ) : null}
@@ -230,9 +304,11 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
                       <li
                         key={line.slug}
                         className="flex items-baseline justify-between gap-2 text-gray-500 text-xs">
-                        <span className="min-w-0 flex-1 truncate">
-                          {line.name} &times; {line.quantity}
-                        </span>
+                        {/* The label already carries its own multiplier, and
+                            carries the right one: per person reads "x 6",
+                            per hour "x 2h". Appending the raw quantity here
+                            printed "Breakfast x 6 x 6". */}
+                        <span className="min-w-0 flex-1 truncate">{line.name}</span>
                         <span className="shrink-0 tabular-nums">
                           {money(line.lineTotal, s.currency)}
                         </span>
@@ -243,6 +319,8 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
 
                 {clashing.has(s.slug) ? (
                   <p className="mt-1 text-amber-700 text-xs">You already have a room that day.</p>
+                ) : replacing.has(s.slug) ? (
+                  <p className="mt-1 text-gray-400 text-xs">Replaces the room you hold that day.</p>
                 ) : null}
               </li>
             ))}
