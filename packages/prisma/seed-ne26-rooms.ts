@@ -75,7 +75,9 @@ const addOns: Array<{
   { name: "Lunch (Vegetarian & Halal)", slug: "catering-lunch-veg-halal", description: "A vegetarian and halal lunch selection:\n- Grilled vegetable sandwich\n- Wrap with seasonal greens, cherry tomatoes, hummus and falafel\n- Brownie\n- Carrot muffin\nPer person, excl. VAT and beverages. Ordered for everyone in the room.", price: 3300, priceType: AddOnPriceType.PER_PERSON, vatRate: 1200, availableFromMinute: 660, availableToMinute: 840 },
   { name: "Dessert (Late Afternoon)", slug: "catering-dessert", description: "A sweet afternoon selection:\n- Mini chocolate mousse cup\n- Cinnamon cookie with apple filling\n- Chocolate chip cookie\n- Turkish-style pistachio baklava\nPer person, excl. VAT and beverages. Ordered for everyone in the room.", price: 2000, priceType: AddOnPriceType.PER_PERSON, vatRate: 1200 },
   { name: "Non-Alcoholic Beverages", slug: "catering-beverages", description: "A selection of chilled non-alcoholic beverages:\n- Soft drinks: Coca-Cola, Coca-Cola Zero, Sprite, Fanta and iced tea\n- Bottled sparkling and mineral waters (0.33 L)\nPer person, excl. VAT. Ordered for everyone in the room. Hot beverages are not available in the meeting rooms.", price: 800, priceType: AddOnPriceType.PER_PERSON, vatRate: 1200 },
-  { name: "AV Screen", slug: "av-screen", description: "Large display screen", price: 5000, priceType: AddOnPriceType.FLAT, vatRate: 2100 },
+  // No AV screen here on purpose: the large screen and its HDMI cable are
+  // included in every room's price, and shown as such on the room page. Selling
+  // one as an add-on would be charging for what the buyer already has.
 ];
 
 async function main(): Promise<void> {
