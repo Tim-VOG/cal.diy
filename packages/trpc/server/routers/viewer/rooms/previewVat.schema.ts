@@ -17,3 +17,22 @@ export const ZPreviewVatInputSchema = z.object({
 });
 
 export type TPreviewVatInputSchema = z.infer<typeof ZPreviewVatInputSchema>;
+
+/** The same quote for a whole shortlist. Bounded so a crafted basket cannot
+ * make the server price hundreds of rooms on every keystroke. */
+export const ZPreviewOrderVatInputSchema = z.object({
+  rooms: z
+    .array(
+      z.object({
+        slug: z.string().min(1),
+        durationHours: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+        startUtc: z.string().datetime().optional(),
+        addOns: z
+          .array(z.object({ slug: z.string().min(1), quantity: z.number().int().min(1).max(500) }))
+          .max(20)
+          .optional(),
+      })
+    )
+    .max(10),
+});
+export type TPreviewOrderVatInputSchema = z.infer<typeof ZPreviewOrderVatInputSchema>;

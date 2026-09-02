@@ -2,7 +2,8 @@ import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
 import { getRoomAvailabilityService } from "@calcom/features/ne26-rooms/di/RoomAvailabilityService.container";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
-import { Building, Euro, Scaling, Users } from "lucide-react";
+import { Euro, Scaling, Users } from "lucide-react";
+import { roomIconFor } from "./roomIcon";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import Link from "next/link";
@@ -42,6 +43,7 @@ function formatPrice(cents: number, currency: string): string {
 type Room = Awaited<ReturnType<ReturnType<typeof getRoomAvailabilityService>["getActiveRooms"]>>[number];
 
 function RoomCard({ room }: { room: Room }): JSX.Element {
+  const TitleIcon = roomIconFor(room.category);
   return (
     <Link
       href={`/rooms/${room.slug}`}
@@ -52,7 +54,7 @@ function RoomCard({ room }: { room: Room }): JSX.Element {
           <img src={room.imageUrl} alt={room.name} className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full items-center justify-center text-[#000643]/25">
-            <Building className="h-10 w-10" aria-hidden />
+            <TitleIcon className="h-10 w-10" aria-hidden />
           </div>
         )}
         <span className="absolute top-3 left-3 rounded-full bg-white/90 px-2.5 py-0.5 font-medium text-[#000643] text-xs shadow-sm">
@@ -62,7 +64,7 @@ function RoomCard({ room }: { room: Room }): JSX.Element {
 
       <div className="flex flex-1 flex-col p-5">
         <h3 className="flex items-center gap-2 font-semibold text-lg">
-          <Building className="h-5 w-5 shrink-0 text-[#000643]" aria-hidden />
+          <TitleIcon className="h-5 w-5 shrink-0 text-[#000643]" aria-hidden />
           {room.name}
         </h3>
         <div className="mt-4 flex items-center justify-between text-sm">

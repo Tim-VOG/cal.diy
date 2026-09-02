@@ -98,7 +98,7 @@ export default async function AdminBookingDetailPage({
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Card title="When (Europe/Istanbul)">
+        <Card title="When (TRT)">
           <Row label="Start">{fmtDateTime(booking.startTime)}</Row>
           <Row label="End">{fmtDateTime(booking.endTime)}</Row>
           <Row label="Duration">{booking.durationMinutes / 60}h</Row>

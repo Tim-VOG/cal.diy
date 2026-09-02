@@ -56,7 +56,7 @@ describe("saleNotification", () => {
 
   it("carries the slot in the event's local time, not UTC", () => {
     // Istanbul is UTC+3 all year, so 13:00 UTC is 16:00 locally.
-    expect(saleNotification(BASE).body).toContain("Tue, 17 Nov 2026, 16:00-18:00 (Europe/Istanbul)");
+    expect(saleNotification(BASE).body).toContain("Tue, 17 Nov 2026, 16:00-18:00 TRT");
   });
 
   it("gives a clickable admin link, not a bare path", () => {
@@ -113,9 +113,9 @@ describe("saleNotification", () => {
     it("lists every room with its own slot in the body", () => {
       const { body } = saleNotification(MULTI);
       expect(body).toContain("Suite 1 — 2h");
-      expect(body).toContain("Tue, 17 Nov 2026, 16:00-18:00 (Europe/Istanbul)");
+      expect(body).toContain("Tue, 17 Nov 2026, 16:00-18:00 TRT");
       expect(body).toContain("Studio 3 — 1h");
-      expect(body).toContain("Wed, 18 Nov 2026, 10:00-11:00 (Europe/Istanbul)");
+      expect(body).toContain("Wed, 18 Nov 2026, 10:00-11:00 TRT");
     });
 
     it("reports one total for the whole order, not one per room", () => {

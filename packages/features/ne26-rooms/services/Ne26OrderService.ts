@@ -220,6 +220,7 @@ export class Ne26OrderService {
     const addOnLines = resolveAddOnLines(selection.addOns ?? [], catalogue, {
       durationHours: selection.durationHours,
       roomCapacity: room.capacity,
+      roomCategory: room.category,
       // Time of day, so an add-on served only at certain hours cannot be
       // ordered outside them by posting straight to the API.
       slot: {

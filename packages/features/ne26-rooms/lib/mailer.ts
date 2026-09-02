@@ -3,11 +3,27 @@ import { ErrorCode } from "@calcom/lib/errorCodes";
 import { ErrorWithCode } from "@calcom/lib/errors";
 import nodemailer from "nodemailer";
 
+/** One room as it appears in the confirmation, with what was ordered for it. */
+export interface InvoiceEmailRoom {
+  roomName: string;
+  slotLabel: string;
+  durationMinutes: number;
+  amountLabel: string;
+  addOns: { name: string; quantity: number; lineLabel: string }[];
+}
+
 export interface InvoiceEmailInput {
   to: string;
   bookerName: string;
   invoiceNumber: string;
+  /** Subject line only — the body lists every room in full. */
   roomName: string;
+  /**
+   * Everything bought, room by room. An exhibitor who books three rooms was
+   * told "Suite 1 + 2 more" and had to open the PDF to find out what the other
+   * two were, or whether the catering they ordered had gone through.
+   */
+  rooms?: InvoiceEmailRoom[];
   amountLabel: string;
   pdf: Uint8Array;
   /** "invoice" (default) sends a confirmation; "credit_note" sends a refund notice. */
@@ -232,12 +248,42 @@ export async function sendInvoiceEmail(input: InvoiceEmailInput): Promise<void> 
   const subject = isCredit
     ? `Your NATO Edge 26 refund — credit note ${input.invoiceNumber}`
     : `Your NATO Edge 26 booking — invoice ${input.invoiceNumber}`;
+  // What was actually bought, room by room, in the body — not a count.
+  const rooms = input.rooms ?? [];
+  const roomsText = rooms
+    .map((r) => {
+      const lines = [
+        `${r.roomName} — ${r.durationMinutes / 60}h`,
+        `  ${r.slotLabel}`,
+        ...r.addOns.map((a) => `  + ${a.name} x ${a.quantity} — ${a.lineLabel}`),
+        `  ${r.amountLabel} excl. VAT`,
+      ];
+      return lines.join("\n");
+    })
+    .join("\n\n");
+  const roomsHtml = rooms
+    .map((r) => {
+      const addOns = r.addOns
+        .map(
+          (a) =>
+            `<tr><td style="padding:2px 0 2px 16px;color:#555">+ ${escapeHtml(a.name)} &times; ${a.quantity}</td><td style="padding:2px 0;text-align:right;color:#555;white-space:nowrap">${escapeHtml(a.lineLabel)}</td></tr>`
+        )
+        .join("");
+      return `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;margin:0 0 14px"><tr><td style="padding:2px 0;font-weight:600;color:#000643">${escapeHtml(r.roomName)} — ${r.durationMinutes / 60}h</td><td style="padding:2px 0;text-align:right;font-weight:600;color:#000643;white-space:nowrap">${escapeHtml(r.amountLabel)}</td></tr><tr><td colspan="2" style="padding:0 0 4px;color:#777;font-size:13px">${escapeHtml(r.slotLabel)}</td></tr>${addOns}</table>`;
+    })
+    .join("");
+
   const textBody = isCredit
-    ? `Hi ${input.bookerName},\n\nYour booking of ${input.roomName} at NATO Edge 26 has been cancelled and refunded.\nA refund of ${input.amountLabel} has been issued.\n\nCredit note ${input.invoiceNumber} is attached.\n\nNATO Edge 26 — Meeting Rooms`
-    : `Hi ${input.bookerName},\n\nThank you for booking ${input.roomName} at NATO Edge 26.\nYour payment of ${input.amountLabel} has been received.\n\nInvoice ${input.invoiceNumber} is attached.${icsText}\n\nNATO Edge 26 — Meeting Rooms`;
+    ? `Hi ${input.bookerName},\n\nYour booking at NATO Edge 26 has been cancelled and refunded.\nA refund of ${input.amountLabel} has been issued.\n\n${roomsText}\n\nCredit note ${input.invoiceNumber} is attached.\n\nNATO Edge 26 — Meeting Rooms`
+    : `Hi ${input.bookerName},\n\nThank you for booking with NATO Edge 26. Your payment of ${input.amountLabel} has been received.\n\n${roomsText}\n\nInvoice ${input.invoiceNumber} is attached.${icsText}\n\n17-19 November 2026 — Fuar Izmir, Turkiye\nAll times are shown in TRT.\n\nNATO Edge 26 — Meeting Rooms`;
+
+  const summary = roomsHtml
+    ? `<div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;margin:16px 0">${roomsHtml}<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;border-top:1px solid #e5e7eb"><tr><td style="padding:8px 0 0;font-weight:700;color:#000643">Total paid</td><td style="padding:8px 0 0;text-align:right;font-weight:700;color:#000643;white-space:nowrap">${amount}</td></tr></table></div>`
+    : "";
+
   const htmlBody = isCredit
-    ? `<p>Hi ${name},</p><p>Your booking of <strong>${room}</strong> at NATO Edge 26 has been cancelled and refunded.</p><p>A refund of <strong>${amount}</strong> has been issued. Credit note <strong>${input.invoiceNumber}</strong> is attached.</p><p>NATO Edge 26 — Meeting Rooms</p>`
-    : `<p>Hi ${name},</p><p>Thank you for booking <strong>${room}</strong> at NATO Edge 26.</p><p>Your payment of <strong>${amount}</strong> has been received. Invoice <strong>${input.invoiceNumber}</strong> is attached.${icsHtml}</p><p>NATO Edge 26 — Meeting Rooms</p>`;
+    ? `<p>Hi ${name},</p><p>Your booking at NATO Edge 26 has been cancelled and refunded.</p>${summary}<p>A refund of <strong>${amount}</strong> has been issued. Credit note <strong>${input.invoiceNumber}</strong> is attached.</p><p style="color:#777;font-size:13px">NATO Edge 26 — Meeting Rooms</p>`
+    : `<p>Hi ${name},</p><p>Thank you for booking with NATO Edge 26. Your payment has been received.</p>${summary}<p>Invoice <strong>${input.invoiceNumber}</strong> is attached.${icsHtml}</p><p style="color:#777;font-size:13px">17&ndash;19 November 2026 &middot; Fuar &#304;zmir, T&uuml;rkiye &middot; all times in TRT<br/>NATO Edge 26 &mdash; Meeting Rooms</p>`;
 
   await transport.sendMail({
     from: `${fromName} <${from}>`,

@@ -5,14 +5,14 @@
  * units, so a 871.20 EUR sale was announced to the sales team as "87120 EUR".
  */
 
-import { EVENT_TIME_ZONE } from "./eventSchedule";
+import { EVENT_TIME_ZONE, EVENT_TIME_ZONE_LABEL } from "./eventSchedule";
 
 /** Minor units -> "871.20 EUR". Never hand raw cents to a human. */
 export function formatMoney(minorUnits: number, currency: string): string {
   return `${(minorUnits / 100).toFixed(2)} ${currency.toUpperCase()}`;
 }
 
-/** Event-local slot label, e.g. "Tue, 17 Nov 2026, 14:00-16:00 (Europe/Istanbul)". */
+/** Event-local slot label, e.g. "Tue, 17 Nov 2026, 14:00-16:00 TRT". */
 export function formatSlotRange(start: Date, end: Date): string {
   const day = new Intl.DateTimeFormat("en-GB", {
     timeZone: EVENT_TIME_ZONE,
@@ -28,7 +28,7 @@ export function formatSlotRange(start: Date, end: Date): string {
       minute: "2-digit",
       hour12: false,
     }).format(d);
-  return `${day}, ${time(start)}-${time(end)} (${EVENT_TIME_ZONE})`;
+  return `${day}, ${time(start)}-${time(end)} ${EVENT_TIME_ZONE_LABEL}`;
 }
 
 export interface SaleNotificationRoom {

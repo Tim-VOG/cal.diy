@@ -70,6 +70,29 @@ export class InvoiceService {
     }));
   }
 
+  /**
+   * Every room and every add-on, for the confirmation email's body.
+   *
+   * The subject still names one room and counts the rest — a subject line has
+   * no space — but the body must be exhaustive: an exhibitor who booked three
+   * rooms with catering should not have to open the PDF to check what went
+   * through.
+   */
+  private emailRooms(order: Order) {
+    const label = (cents: number) => `${(cents / 100).toFixed(2)} ${order.currency}`;
+    return order.bookings.map((b) => ({
+      roomName: b.resource.name,
+      slotLabel: formatSlotRange(b.startTime, b.endTime),
+      durationMinutes: b.durationMinutes,
+      amountLabel: label(b.amountTotal),
+      addOns: b.addOns.map((a) => ({
+        name: a.addOn.name,
+        quantity: a.quantity,
+        lineLabel: label(a.lineTotal),
+      })),
+    }));
+  }
+
   /** "Suite 1" for one room, "Suite 1 + 2 more" beyond — for email subjects. */
   private roomLabel(order: Order): string {
     const [first, ...rest] = order.bookings;
@@ -140,6 +163,7 @@ export class InvoiceService {
       bookerName: order.bookerName,
       invoiceNumber,
       roomName: this.roomLabel(order),
+      rooms: this.emailRooms(order),
       amountLabel: `${(model.totalTtc / 100).toFixed(2)} ${order.currency}`,
       pdf,
       // One calendar file holding every room: an exhibitor who booked three
@@ -169,6 +193,7 @@ export class InvoiceService {
       bookerName: order.bookerName,
       invoiceNumber: order.invoiceNumber,
       roomName: this.roomLabel(order),
+      rooms: this.emailRooms(order),
       amountLabel: `${(order.amountTotal / 100).toFixed(2)} ${order.currency}`,
       pdf,
     });
@@ -245,6 +270,7 @@ export class InvoiceService {
       bookerName: order.bookerName,
       invoiceNumber: creditNoteNumber,
       roomName: this.roomLabel(order),
+      rooms: this.emailRooms(order),
       amountLabel: `${(model.totalTtc / 100).toFixed(2)} ${order.currency}`,
       pdf,
       documentKind: "credit_note",

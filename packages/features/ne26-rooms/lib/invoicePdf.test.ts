@@ -177,7 +177,7 @@ describe("renderInvoicePdf — the buyer's own references", () => {
           amountTotal: 60000,
           roomName: "Suite 1",
           durationMinutes: 120,
-          slotLabel: "Tue, 17 Nov 2026, 14:00-16:00 (Europe/Istanbul)",
+          slotLabel: "Tue, 17 Nov 2026, 14:00-16:00 TRT",
           addOns: [],
         },
       ],

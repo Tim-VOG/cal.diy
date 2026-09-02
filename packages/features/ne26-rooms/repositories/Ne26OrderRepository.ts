@@ -436,6 +436,30 @@ export class Ne26OrderRepository {
     });
   }
 
+  /**
+   * The one order this buyer is holding right now, newest first.
+   *
+   * There can be up to three; the panel shows the one about to lapse, which is
+   * the one worth a countdown.
+   */
+  findLiveHoldForUser(bookerUserId: number, now: Date) {
+    return this.prismaClient.ne26Order.findFirst({
+      where: {
+        bookerUserId,
+        status: ResourceBookingStatus.PENDING,
+        holdExpiresAt: { gt: now },
+      },
+      orderBy: { holdExpiresAt: "asc" },
+      select: {
+        uid: true,
+        holdExpiresAt: true,
+        amountTotal: true,
+        currency: true,
+        _count: { select: { bookings: true } },
+      },
+    });
+  }
+
   /** How many orders this buyer is holding without having paid. */
   countActiveHolds(bookerUserId: number | null, now: Date): Promise<number> {
     return this.prismaClient.ne26Order.count({

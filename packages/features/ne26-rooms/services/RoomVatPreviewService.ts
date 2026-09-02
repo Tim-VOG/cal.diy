@@ -2,7 +2,7 @@ import { ErrorCode } from "@calcom/lib/errorCodes";
 import { ErrorWithCode } from "@calcom/lib/errors";
 import type { DurationHours } from "../lib/eventSchedule";
 import { buildInvoiceModel } from "../lib/invoice";
-import { resolveAddOnLines } from "../lib/pricing";
+import { type ResolvedAddOnLine, resolveAddOnLines } from "../lib/pricing";
 import { resolveVatTreatment } from "../lib/vat";
 import type { AddOnRepository } from "../repositories/AddOnRepository";
 import type { InvoiceSettingsRepository } from "../repositories/InvoiceSettingsRepository";
@@ -55,6 +55,92 @@ export interface VatPreview {
 export class RoomVatPreviewService {
   constructor(private deps: IRoomVatPreviewServiceDeps) {}
 
+  /**
+   * The same quote for a whole shortlist.
+   *
+   * The panel that follows the buyer around shows one total, so the VAT has to
+   * be resolved over the basket rather than per room: resolving it once per room
+   * and adding up would round each line separately and drift from what Stripe
+   * charges.
+   *
+   * A room that no longer prices — withdrawn, or an add-on outside its serving
+   * hours — is skipped rather than failing the whole quote. The shortlist is a
+   * scratchpad; the booking is where a bad line has to be refused.
+   */
+  async previewOrder(input: {
+    userId?: number;
+    billing?: { country?: string | null; vatNumber?: string | null };
+    rooms: {
+      slug: string;
+      durationHours: DurationHours;
+      startUtc?: string;
+      addOns?: { slug: string; quantity: number }[];
+    }[];
+  }): Promise<VatPreview & { pricedRooms: number }> {
+    const priced: {
+      amountTotal: number;
+      roomName: string;
+      durationMinutes: number;
+      addOns: ResolvedAddOnLine[];
+    }[] = [];
+    let currency = "EUR";
+
+    for (const selection of input.rooms) {
+      try {
+        const room = await this.deps.resourceRepository.findBySlug(selection.slug);
+        if (!room || !room.isActive) continue;
+        currency = room.currency;
+        const durationMinutes = selection.durationHours * 60;
+        const roomPrice = { 1: room.price1h, 2: room.price2h, 3: room.price3h }[selection.durationHours];
+        const requested = selection.addOns ?? [];
+        const catalog = requested.length
+          ? await this.deps.addOnRepository.findManyActiveBySlugs(requested.map((a) => a.slug))
+          : [];
+        const start = selection.startUtc ? new Date(selection.startUtc) : null;
+        const addOns = resolveAddOnLines(requested, catalog, {
+          durationHours: selection.durationHours,
+          roomCapacity: room.capacity,
+          roomCategory: room.category,
+          slot: start
+            ? {
+                startMinute: eventMinuteOfDay(start),
+                endMinute: eventMinuteOfDay(start) + durationMinutes,
+              }
+            : undefined,
+        });
+        priced.push({
+          amountTotal: roomPrice + addOns.reduce((sum, l) => sum + l.lineTotal, 0),
+          roomName: room.name,
+          durationMinutes,
+          addOns,
+        });
+      } catch {
+        // See the doc comment: one unpriceable line must not blank the total.
+      }
+    }
+
+    const profile = input.userId
+      ? await this.deps.ne26BillingProfileRepository.findByUserId(input.userId)
+      : null;
+    const country = input.billing?.country?.trim() || profile?.country?.trim() || null;
+    const vatNumber = input.billing?.vatNumber?.trim() || profile?.vatNumber || null;
+    const settings = await this.deps.invoiceSettingsRepository.get();
+    const vat = resolveVatTreatment({ country, vatNumber }, settings);
+    const model = buildInvoiceModel({ currency, rooms: priced }, vat);
+
+    return {
+      currency: model.currency,
+      totalTtc: model.totalTtc,
+      totalHt: model.totalHt,
+      totalVat: model.totalVat,
+      vatBreakdown: model.vatBreakdown.map((v) => ({ vatRate: v.vatRate, vat: v.vat })),
+      zeroRated: vat.zeroRated,
+      mention: model.vatMention,
+      hasBuyerCountry: Boolean(country),
+      pricedRooms: priced.length,
+    };
+  }
+
   async preview(input: VatPreviewInput): Promise<VatPreview> {
     const room = await this.deps.resourceRepository.findBySlug(input.slug);
     if (!room || !room.isActive) {
@@ -74,6 +160,7 @@ export class RoomVatPreviewService {
     const addOnLines = resolveAddOnLines(requested, catalog, {
       durationHours: input.durationHours,
       roomCapacity: room.capacity,
+      roomCategory: room.category,
       slot: start
         ? {
             startMinute: eventMinuteOfDay(start),

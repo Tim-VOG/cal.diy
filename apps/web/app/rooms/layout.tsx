@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
 import Footer from "./Footer";
 import LogoutButton from "./LogoutButton";
-import ShortlistBar from "./ShortlistBar";
+import ShortlistPanel from "./ShortlistPanel";
 
 // Standalone public layout: it deliberately skips Cal's logged-in shell and the
 // booking PageWrapper — these pages are public and brand-themed (NATO Edge 26).
@@ -92,12 +92,12 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
           </nav>
         ) : null}
       </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">{children}</main>
-      {/* Sticky rather than fixed: it keeps its place in the flow, so it never
-          covers the footer, and it costs no layout while the shortlist is
-          empty (the component renders nothing then). Rendered here so it
-          follows the exhibitor from the listing into a room and back. */}
-      {isLoggedIn ? <ShortlistBar eventDays={eventDays} /> : null}
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 xl:pr-[23rem]">{children}</main>
+      {/* Rendered here so it follows the exhibitor from the listing into a
+          room and back. On a wide screen it parks to the right of the content;
+          below that it pins to the bottom. Nothing at all when there is
+          neither a shortlist nor an unpaid hold. */}
+      {isLoggedIn ? <ShortlistPanel eventDays={eventDays} /> : null}
       <Footer />
     </div>
   );

@@ -1,4 +1,4 @@
-import { Coffee, GlassWater, type LucideIcon, Monitor } from "lucide-react";
+import { Cable, Coffee, GlassWater, type LucideIcon, Monitor } from "lucide-react";
 
 /**
  * What each category includes in its price, per VO's offer.
@@ -19,7 +19,14 @@ export interface RoomService {
 }
 
 const BASE_SERVICES: RoomService[] = [
-  { icon: Monitor, label: "Screen", detail: "Screen with laptop connection for presentations" },
+  {
+    icon: Monitor,
+    label: "Large screen",
+    // Wim's wording. The ports matter: an exhibitor arriving with a laptop that
+    // has neither wants to know before the meeting, not during it.
+    detail: "A large screen with USB A and HDMI ports",
+  },
+  { icon: Cable, label: "HDMI cable", detail: "A 3-metre HDMI cable is provided" },
   { icon: GlassWater, label: "Water", detail: "Still water provided in the room" },
 ];
 
@@ -27,9 +34,10 @@ const SUITE_EXTRAS: RoomService[] = [
   {
     icon: Coffee,
     label: "Permanent coffee break",
-    // Softs and fruit are still to be confirmed with the caterer — deliberately
-    // not advertised until they are.
-    detail: "Coffee, tea, water and biscuits, available throughout your booking",
+    // The caterer's own list for the suites: a complimentary beverage set-up
+    // available on arrival and throughout the booking.
+    detail:
+      "Coffee machine (espresso, Americano, coffee with milk), a variety of teas, bottled water and soft drinks — available throughout your booking",
   },
 ];
 

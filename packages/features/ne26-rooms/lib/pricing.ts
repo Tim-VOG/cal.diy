@@ -44,6 +44,19 @@ export interface AddOnCatalogEntry {
   availableToMinute?: number | null;
 }
 
+/**
+ * The fewest covers a per-person add-on can be ordered for.
+ *
+ * The caterer will not serve a table of two, and the minimum rises with the
+ * room: a Premium suite seats more, so the floor is higher. Nothing to do with
+ * the add-on itself — the same lunch has a different minimum depending on the
+ * room it is served in — which is why it is derived from the category here
+ * rather than stored on the product.
+ */
+export function minimumCoversFor(roomCategory: string): number {
+  return roomCategory === "PREMIUM" ? 6 : 4;
+}
+
 /** A booking's own time of day, in minutes from event-local midnight. */
 export interface SlotWindow {
   startMinute: number;
@@ -105,12 +118,20 @@ export interface ResolvedAddOnLine {
  * - a PER_PERSON quantity above the room's capacity → rejected: 500 catering
  *   covers for a 6-person room is an input error or an attack, never an order.
  * - an add-on outside its serving window → rejected, so a 09:00 booking cannot
- *   order lunch even by posting straight to the API.
+ *   order lunch even by posting straight to the API;
+ * - a PER_PERSON quantity below the room's minimum → rejected: the caterer will
+ *   not serve fewer, so quoting a price for it would be a promise we cannot keep.
  */
 export function resolveAddOnLines(
   requested: { slug: string; quantity: number }[],
   catalog: AddOnCatalogEntry[],
-  context: { durationHours: number; roomCapacity: number; slot?: SlotWindow }
+  context: {
+    durationHours: number;
+    roomCapacity: number;
+    /** Decides the per-person minimum. Optional so old callers keep working. */
+    roomCategory?: string;
+    slot?: SlotWindow;
+  }
 ): ResolvedAddOnLine[] {
   if (!requested.length) return [];
 
@@ -144,6 +165,15 @@ export function resolveAddOnLines(
         ErrorCode.BadRequest,
         `"${addOn.name}" is priced per person and this room seats ${context.roomCapacity}`
       );
+    }
+    if (addOn.priceType === AddOnPriceType.PER_PERSON && context.roomCategory) {
+      const minimum = minimumCoversFor(context.roomCategory);
+      if (req.quantity < minimum) {
+        throw new ErrorWithCode(
+          ErrorCode.BadRequest,
+          `"${addOn.name}" is served for a minimum of ${minimum} people in this room.`
+        );
+      }
     }
     const { quantity, lineTotal } = computeAddOnLine(
       addOn.priceType,

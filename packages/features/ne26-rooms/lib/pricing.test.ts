@@ -7,6 +7,7 @@ import {
   computeAddOnLine,
   formatAddOnWindow,
   isAddOnOfferedDuring,
+  minimumCoversFor,
   resolveAddOnLines,
 } from "./pricing";
 
@@ -201,5 +202,81 @@ describe("serving windows", () => {
       expect(formatAddOnWindow(660, 840)).toBe("11:00-14:00");
       expect(formatAddOnWindow(690, 845)).toBe("11:30-14:05");
     });
+  });
+});
+
+describe("minimum covers", () => {
+  // The caterer will not serve a table of two, and the floor rises with the
+  // room: a suite seats more, so it starts at six.
+  const LUNCH: AddOnCatalogEntry = {
+    id: 1,
+    slug: "catering-lunch",
+    name: "Lunch",
+    price: 3300,
+    priceType: AddOnPriceType.PER_PERSON,
+    vatRate: 1200,
+  };
+  const SCREEN: AddOnCatalogEntry = {
+    id: 2,
+    slug: "av-screen",
+    name: "AV Screen",
+    price: 5000,
+    priceType: AddOnPriceType.FLAT,
+    vatRate: 2100,
+  };
+
+  it("is 6 in a Premium suite and 4 everywhere else", () => {
+    expect(minimumCoversFor("PREMIUM")).toBe(6);
+    expect(minimumCoversFor("INTERMEDIATE")).toBe(4);
+    expect(minimumCoversFor("ENTRY")).toBe(4);
+  });
+
+  it("refuses four covers in a suite, naming the minimum", () => {
+    expect(() =>
+      resolveAddOnLines([{ slug: "catering-lunch", quantity: 4 }], [LUNCH], {
+        durationHours: 1,
+        roomCapacity: 24,
+        roomCategory: "PREMIUM",
+      })
+    ).toThrowError(/minimum of 6 people/);
+  });
+
+  it("accepts four covers in an entry room", () => {
+    const [line] = resolveAddOnLines([{ slug: "catering-lunch", quantity: 4 }], [LUNCH], {
+      durationHours: 1,
+      roomCapacity: 6,
+      roomCategory: "ENTRY",
+    });
+    expect(line.lineTotal).toBe(13200);
+  });
+
+  it("still refuses more covers than the room seats", () => {
+    expect(() =>
+      resolveAddOnLines([{ slug: "catering-lunch", quantity: 9 }], [LUNCH], {
+        durationHours: 1,
+        roomCapacity: 6,
+        roomCategory: "ENTRY",
+      })
+    ).toThrowError(/seats 6/);
+  });
+
+  it("does not apply to a flat-priced add-on", () => {
+    // One screen is one screen; there is no minimum number of people for it.
+    expect(
+      resolveAddOnLines([{ slug: "av-screen", quantity: 1 }], [SCREEN], {
+        durationHours: 1,
+        roomCapacity: 24,
+        roomCategory: "PREMIUM",
+      })
+    ).toHaveLength(1);
+  });
+
+  it("skips the check when the caller has no category to judge by", () => {
+    expect(
+      resolveAddOnLines([{ slug: "catering-lunch", quantity: 2 }], [LUNCH], {
+        durationHours: 1,
+        roomCapacity: 6,
+      })
+    ).toHaveLength(1);
   });
 });

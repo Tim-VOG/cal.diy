@@ -5,15 +5,16 @@ import type { DurationHours } from "@calcom/features/ne26-rooms/lib/eventSchedul
 import { computeAddOnLine } from "@calcom/features/ne26-rooms/lib/pricing";
 import { buildRoomPhotoList } from "@calcom/features/ne26-rooms/lib/roomImages";
 import type { RoomAvailability } from "@calcom/features/ne26-rooms/services/RoomAvailabilityService";
-import type { VatPreview } from "@calcom/features/ne26-rooms/services/RoomVatPreviewService";
 import { AddOnPriceType } from "@calcom/prisma/enums";
 import { trpc } from "@calcom/trpc/react";
-import { Building, Clock, Euro, Info, Scaling, Users } from "lucide-react";
+import { Clock, Euro, Info, Scaling, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { servicesFor } from "../amenities";
 import { clearSelection, getSelection, saveSelection } from "../selectionStore";
 import RoomGallery from "./RoomGallery";
 import { eventMinuteOfDay } from "@calcom/features/ne26-rooms/lib/deskDay";
+import { minimumCoversFor } from "@calcom/features/ne26-rooms/lib/pricing";
+import { roomIconFor } from "../roomIcon";
 import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import {
   formatAddOnWindow,
@@ -101,10 +102,54 @@ function cellState(isSelected: boolean, isEnabled: boolean): CellState {
   return "disabled";
 }
 
+/**
+ * An add-on's description, with the little formatting the admin needs.
+ *
+ * The caterer's copy is a sentence followed by a list of what is in the box.
+ * Lines beginning with "-" become bullets and everything else stays a
+ * paragraph — enough structure to be readable, without a rich-text editor or
+ * any HTML from the admin reaching the page.
+ */
+function AddOnDescription({ text }: { text: string }): JSX.Element {
+  const blocks: { kind: "p" | "ul"; lines: string[] }[] = [];
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    const bullet = line.startsWith("-") || line.startsWith("•");
+    const content = bullet ? line.replace(/^[-•]\s*/, "") : line;
+    const last = blocks.at(-1);
+    if (last && ((bullet && last.kind === "ul") || (!bullet && last.kind === "p"))) {
+      last.lines.push(content);
+    } else {
+      blocks.push({ kind: bullet ? "ul" : "p", lines: [content] });
+    }
+  }
+  return (
+    <>
+      {blocks.map((block, i) =>
+        block.kind === "ul" ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: blocks are positional
+          <ul key={i} className="mt-1 list-disc space-y-0.5 pl-4">
+            {block.lines.map((l) => (
+              <li key={l}>{l}</li>
+            ))}
+          </ul>
+        ) : (
+          // biome-ignore lint/suspicious/noArrayIndexKey: blocks are positional
+          <p key={i} className={i === 0 ? "" : "mt-1.5"}>
+            {block.lines.join(" ")}
+          </p>
+        )
+      )}
+    </>
+  );
+}
+
 function AddOnList({
   addOns,
   selected,
   roomCapacity,
+  roomCategory,
   slot,
   onToggle,
   onSetQuantity,
@@ -113,6 +158,8 @@ function AddOnList({
   selected: Record<string, number>;
   /** Per-person add-ons cannot exceed the seats in the room. */
   roomCapacity: number;
+  /** Decides the per-person minimum: a suite starts higher than a small room. */
+  roomCategory: string;
   /** The chosen slot, so an add-on served only at certain hours can say so. */
   slot: SlotWindow | null;
   onToggle: (slug: string, checked: boolean) => void;
@@ -132,6 +179,8 @@ function AddOnList({
           // Shown greyed rather than hidden: an exhibitor looking for lunch
           // needs to learn it is served 11:00-14:00, not find it silently gone.
           const offered = !slot || isAddOnOfferedDuring(addOn, slot);
+          const perPerson = addOn.priceType === AddOnPriceType.PER_PERSON;
+          const minimumCovers = perPerson ? minimumCoversFor(roomCategory) : 1;
           const window =
             addOn.availableFromMinute != null && addOn.availableToMinute != null
               ? formatAddOnWindow(addOn.availableFromMinute, addOn.availableToMinute)
@@ -177,7 +226,7 @@ function AddOnList({
                       <button
                         type="button"
                         onClick={() => onSetQuantity(addOn.slug, quantity - 1)}
-                        disabled={quantity <= 1}
+                        disabled={quantity <= minimumCovers}
                         aria-label={`Fewer ${addOn.name}`}
                         className="px-2.5 py-1 text-[#000643] text-lg leading-none disabled:cursor-not-allowed disabled:text-gray-300">
                         −
@@ -204,9 +253,14 @@ function AddOnList({
                 ) : null}
               </div>
               {addOn.description && infoOpen ? (
-                <p className="mt-2 max-w-xs border-gray-100 border-t pt-2 text-gray-600 text-xs leading-relaxed">
-                  {addOn.description}
-                </p>
+                <div className="mt-2 max-w-xs border-gray-100 border-t pt-2 text-gray-600 text-xs leading-relaxed">
+                  <AddOnDescription text={addOn.description} />
+                  {perPerson ? (
+                    <p className="mt-1.5 text-gray-400">
+                      Minimum {minimumCovers} people, up to the {roomCapacity} the room seats.
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           );
@@ -223,189 +277,7 @@ function vatPct(bp: number): string {
 // VAT recap derived from the buyer's saved billing profile: prices are HT, so
 // this adds the VAT and shows the incl.-VAT total actually charged. Without a
 // saved country we can't resolve VAT here, so we point to the billing details.
-function VatRecap({ vat }: { vat: VatPreview }): JSX.Element {
-  if (!vat.hasBuyerCountry) {
-    return (
-      <p className="mt-3 text-gray-400 text-xs">
-        VAT is added at payment.{" "}
-        <a href="/rooms/account" className="underline hover:text-[#000643]">
-          Add your billing details
-        </a>{" "}
-        to preview it.
-      </p>
-    );
-  }
-  return (
-    <div className="mt-2 space-y-2 text-gray-500 text-sm">
-      {vat.zeroRated ? (
-        // Just the figure. The legal wording that justifies it is printed on the
-        // invoice, where it is needed; in a basket it buried the total under
-        // three lines of directive references.
-        <div className="flex justify-between">
-          <span>VAT (0%)</span>
-          <span>{formatPrice(0, vat.currency)}</span>
-        </div>
-      ) : (
-        vat.vatBreakdown.map((v) => (
-          <div key={v.vatRate} className="flex justify-between">
-            <span>VAT {vatPct(v.vatRate)}</span>
-            <span>{formatPrice(v.vat, vat.currency)}</span>
-          </div>
-        ))
-      )}
-      <div className="flex items-baseline justify-between border-gray-100 border-t pt-3 font-bold text-[#000643] text-base">
-        <span>Total</span>
-        <span>{formatPrice(vat.totalTtc, vat.currency)}</span>
-      </div>
-    </div>
-  );
-}
 
-function SelectionSummary({
-  room,
-  selectedDate,
-  selectedStartUtc,
-  selectedDuration,
-  endIso,
-  roomPrice,
-  addOnLines,
-  total,
-  vat,
-  isAuthed,
-  billingComplete,
-  booking,
-  errorMessage,
-  isPending,
-  canBook,
-  dayAlreadyBooked,
-  onSubmit,
-}: {
-  room: Room;
-  selectedDate: string;
-  selectedStartUtc: string | null;
-  selectedDuration: DurationHours | null;
-  endIso: string | null;
-  roomPrice: number | null;
-  addOnLines: CostLine[];
-  total: number | null;
-  vat: VatPreview | undefined;
-  isAuthed: boolean;
-  billingComplete: boolean;
-  booking: BookingResult | undefined;
-  errorMessage: string | null;
-  isPending: boolean;
-  canBook: boolean;
-  /** This exhibitor already has a room on the selected day. */
-  dayAlreadyBooked: boolean;
-  onSubmit: () => void;
-}): JSX.Element {
-  return (
-    <aside className="h-fit rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-      <h2 className="font-semibold text-gray-500 text-xs uppercase tracking-wide">Your selection</h2>
-
-      {booking ? (
-        <div className="mt-3 space-y-2 text-sm">
-          <p className="font-semibold text-[#000643]">Slot held — redirecting to payment…</p>
-          <p className="text-gray-600">Reference {booking.uid.slice(0, 8)}</p>
-          <p className="font-bold text-[#000643] text-lg">
-            {formatPrice(booking.amountTotal, booking.currency)}
-          </p>
-        </div>
-      ) : (
-        <>
-          {selectedStartUtc && selectedDuration && endIso && roomPrice !== null ? (
-            <div className="mt-4 text-sm">
-              <p className="flex items-center gap-2 font-semibold text-[#000643] text-base">
-                <Building className="h-4 w-4 shrink-0" aria-hidden />
-                {room.name}
-              </p>
-              <p className="mt-1.5 text-gray-600">{formatDayLabel(selectedDate)}</p>
-              <p className="mt-1 flex items-center gap-2 text-gray-600">
-                <Clock className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
-                {formatTime(selectedStartUtc)} – {formatTime(endIso)} ({selectedDuration}h)
-              </p>
-
-              {/* Cost breakdown: room + each add-on, then total. */}
-              <div className="mt-5 space-y-2 border-gray-100 border-t pt-4">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Room · {selectedDuration}h</span>
-                  <span>{formatPrice(roomPrice, room.currency)}</span>
-                </div>
-                {addOnLines.map((line) => (
-                  <div key={line.slug} className="flex justify-between">
-                    <span className="text-gray-600">{line.label}</span>
-                    <span>{formatPrice(line.lineTotal, room.currency)}</span>
-                  </div>
-                ))}
-                <div className="flex items-center justify-between border-gray-100 border-t pt-3 text-gray-600">
-                  <span className="flex items-center gap-1.5">
-                    <Euro className="h-4 w-4 shrink-0" aria-hidden />
-                    Excl. VAT
-                  </span>
-                  <span>{total !== null ? formatPrice(total, room.currency) : ""}</span>
-                </div>
-                {isAuthed && vat ? <VatRecap vat={vat} /> : null}
-                {/* Only while the real figure is unknown. Once the card shows the
-                    actual VAT, repeating how it is worked out is noise. */}
-                {!isAuthed || !vat?.hasBuyerCountry ? (
-                  <p className="pt-1 text-gray-400 text-xs">
-                    Prices exclude VAT, which depends on your billing country.
-                  </p>
-                ) : null}
-              </div>
-            </div>
-          ) : (
-            <p className="mt-3 text-gray-500 text-sm">Pick a start time and duration to see the price.</p>
-          )}
-
-          {errorMessage ? (
-            <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-red-700 text-sm">{errorMessage}</p>
-          ) : null}
-
-          {!isAuthed ? (
-            <a
-              href={`/rooms/login?callbackUrl=/rooms/${room.slug}`}
-              className="mt-5 block w-full rounded-lg bg-[#000643] px-4 py-2.5 text-center font-semibold text-sm text-white transition hover:opacity-90">
-              Log in to book
-            </a>
-          ) : !billingComplete ? (
-            <>
-              <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-amber-800 text-sm">
-                Add your billing details first — they appear on your invoice.
-              </p>
-              <a
-                href="/rooms/account"
-                className="mt-3 block w-full rounded-lg bg-[#000643] px-4 py-2.5 text-center font-semibold text-sm text-white transition hover:opacity-90">
-                Complete billing details
-              </a>
-            </>
-          ) : dayAlreadyBooked ? (
-            <>
-              <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-amber-800 text-sm">
-                You already have a meeting room that day. Each exhibitor can book one room per day, whatever
-                the time — pick another day, or cancel the room you have.
-              </p>
-              <a
-                href="/rooms/bookings"
-                className="mt-3 block w-full rounded-lg border border-[#000643] px-4 py-2.5 text-center font-semibold text-[#000643] text-sm transition hover:bg-[#000643]/5">
-                See my bookings
-              </a>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={!canBook}
-              onClick={onSubmit}
-              className="mt-6 w-full rounded-lg bg-[#000643] px-4 py-3 font-semibold text-sm text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
-              {isPending ? "Holding…" : "Continue to payment"}
-            </button>
-          )}
-          <p className="mt-3 text-center text-gray-400 text-xs">Secure payment via Stripe.</p>
-        </>
-      )}
-    </aside>
-  );
-}
 
 export default function RoomBookingClient({
   availability,
@@ -523,6 +395,7 @@ export default function RoomBookingClient({
   }, [addOnSlot?.startMinute, addOnSlot?.endMinute, addOnsBySlug]);
 
   const dayAlreadyBooked = (bookedDays.data?.days ?? []).includes(selectedDate);
+  const RoomIcon = roomIconFor(room.category);
   const canBook =
     Boolean(selectedStartUtc && selectedDuration) && !createBooking.isPending && !dayAlreadyBooked;
 
@@ -556,15 +429,6 @@ export default function RoomBookingClient({
     () => Object.entries(selectedAddOns).map(([slug, quantity]) => ({ slug, quantity })),
     [selectedAddOns]
   );
-  const vatPreview = trpc.viewer.rooms.previewVat.useQuery(
-    {
-      slug: room.slug,
-      durationHours: (selectedDuration ?? 1) as DurationHours,
-      startUtc: selectedStartUtc ?? undefined,
-      addOns: addOnsPayload,
-    },
-    { enabled: isAuthed && Boolean(selectedStartUtc) && selectedDuration != null }
-  );
 
   function pickStart(startUtc: string): void {
     setSelectedStartUtc(startUtc);
@@ -582,7 +446,14 @@ export default function RoomBookingClient({
   function toggleAddOn(slug: string, checked: boolean): void {
     setSelectedAddOns((prev) => {
       const next = { ...prev };
-      if (checked) next[slug] = 1;
+      // Start at the caterer's minimum rather than at 1: one cover is not a
+      // thing that can be ordered, and offering it only to refuse it at payment
+      // would be the same trap as the serving hours.
+      if (checked) {
+        const addOn = addOnsBySlug.get(slug);
+        next[slug] =
+          addOn?.priceType === AddOnPriceType.PER_PERSON ? minimumCoversFor(room.category) : 1;
+      }
       else delete next[slug];
       return next;
     });
@@ -591,7 +462,10 @@ export default function RoomBookingClient({
   function setQuantity(slug: string, quantity: number): void {
     // Clamped here too, not only on the buttons: a restored shortlist can carry
     // a quantity from before the room's capacity was edited down.
-    const capped = Math.min(room.capacity, Math.max(1, quantity));
+    const addOn = addOnsBySlug.get(slug);
+    const floor =
+      addOn?.priceType === AddOnPriceType.PER_PERSON ? minimumCoversFor(room.category) : 1;
+    const capped = Math.min(room.capacity, Math.max(floor, quantity));
     setSelectedAddOns((prev) => ({ ...prev, [slug]: capped }));
   }
 
@@ -616,13 +490,13 @@ export default function RoomBookingClient({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_320px]">
+    <div>
       <div>
         <a href="/rooms" className="text-gray-500 text-sm hover:text-[#000643]">
           ← All rooms
         </a>
         <h1 className="mt-2 flex items-center gap-2 font-bold text-2xl text-[#000643]">
-          <Building className="h-6 w-6 shrink-0" aria-hidden />
+          <RoomIcon className="h-6 w-6 shrink-0" aria-hidden />
           {room.name}
         </h1>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-600 text-sm">
@@ -740,31 +614,50 @@ export default function RoomBookingClient({
           addOns={addOns}
           selected={selectedAddOns}
           roomCapacity={room.capacity}
+          roomCategory={room.category}
           slot={addOnSlot}
           onToggle={toggleAddOn}
           onSetQuantity={setQuantity}
         />
       </div>
 
-      <SelectionSummary
-        room={room}
-        selectedDate={selectedDate}
-        selectedStartUtc={selectedStartUtc}
-        selectedDuration={selectedDuration}
-        endIso={endIso}
-        roomPrice={selectedDuration ? priceForDuration[selectedDuration] : null}
-        addOnLines={addOnLines}
-        total={total}
-        vat={vatPreview.data}
-        isAuthed={isAuthed}
-        billingComplete={billingComplete}
-        booking={createBooking.data}
-        errorMessage={createBooking.error?.message ?? null}
-        isPending={createBooking.isPending}
-        canBook={canBook}
-        dayAlreadyBooked={dayAlreadyBooked}
-        onSubmit={submit}
-      />
+      {/* What is left of the old "Your selection" box: the price, the VAT and
+          the pay button now live in the shortlist panel, which follows the
+          buyer around. Only the two things that stop a booking stay here, and
+          only when they apply. */}
+      {!isAuthed ? (
+        <div className="mt-6 rounded-xl border border-gray-200 bg-white p-5">
+          <p className="text-gray-600 text-sm">Log in to book a meeting room.</p>
+          <a
+            href={`/rooms/login?callbackUrl=/rooms/${room.slug}`}
+            className="mt-3 block w-full rounded-lg bg-[#000643] px-4 py-2.5 text-center font-semibold text-sm text-white transition hover:opacity-90">
+            Log in to book
+          </a>
+        </div>
+      ) : !billingComplete ? (
+        <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-5">
+          <p className="text-amber-800 text-sm">
+            Add your billing details first — they appear on your invoice.
+          </p>
+          <a
+            href="/rooms/account"
+            className="mt-3 block w-full rounded-lg bg-[#000643] px-4 py-2.5 text-center font-semibold text-sm text-white transition hover:opacity-90">
+            Complete billing details
+          </a>
+        </div>
+      ) : dayAlreadyBooked ? (
+        <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-5">
+          <p className="text-amber-800 text-sm">
+            You already have a meeting room that day. Each exhibitor can book one room per day,
+            whatever the time — pick another day, or cancel the room you have.
+          </p>
+          <a
+            href="/rooms/bookings"
+            className="mt-3 block w-full rounded-lg border border-[#000643] px-4 py-2.5 text-center font-semibold text-[#000643] text-sm transition hover:bg-[#000643]/5">
+            See my bookings
+          </a>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -25,6 +25,14 @@ export const SLOT_GRANULARITY_MINUTES = 15;
 /** The event's local timezone. Displayed times and opening hours are in it. */
 export const EVENT_TIME_ZONE = "Europe/Istanbul";
 
+/**
+ * How the zone is written for people, as opposed to for Intl.
+ *
+ * The event's own communications say TRT, and an exhibitor in Izmir reading
+ * "Europe/Istanbul" on their confirmation is being shown a database key.
+ */
+export const EVENT_TIME_ZONE_LABEL = "TRT";
+
 /** Europe/Istanbul is a fixed UTC+3 — no DST to straddle. */
 const EVENT_UTC_OFFSET_HOURS = 3;
 const MS_PER_MINUTE = 60 * 1000;

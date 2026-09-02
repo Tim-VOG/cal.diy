@@ -66,11 +66,16 @@ const addOns: Array<{
   availableToMinute?: number;
 }> = [
   // Catering is billed per cover; Belgian catering VAT often differs from room rental (placeholder 12%).
-  // Served 11:00-14:00 (660-840): a 09:00 booking should not be offered lunch.
-  // The hours are editable in the admin — the caterer's schedule will move.
-  { name: "Catering - Lunch", slug: "catering-lunch", description: "Lunch per person", price: 3500, priceType: AddOnPriceType.PER_PERSON, vatRate: 1200, availableFromMinute: 660, availableToMinute: 840 },
+  // The catering catalogue as the team settled it. Prices are per person, excl.
+  // VAT, in cents. Only lunch has agreed serving hours (11:00-14:00 = 660-840);
+  // breakfast and dessert are left open until the team decides, and every field
+  // here is editable in the admin afterwards.
+  { name: "Breakfast", slug: "catering-breakfast", description: "Start the day with a light breakfast selection:\n- Croissant sandwich with smoked turkey and cheese\n- Dill and cheese pastry\n- Fruit, granola and yogurt cup\nPer person, excl. VAT and beverages. Ordered for everyone in the room.", price: 1900, priceType: AddOnPriceType.PER_PERSON, vatRate: 1200 },
+  { name: "Lunch", slug: "catering-lunch", description: "A light and satisfying lunch selection:\n- Caprese ciabatta with mozzarella, tomato and pesto\n- Grilled chicken wrap\n- Brownie\n- Carrot muffin\nPer person, excl. VAT and beverages. Ordered for everyone in the room.", price: 3300, priceType: AddOnPriceType.PER_PERSON, vatRate: 1200, availableFromMinute: 660, availableToMinute: 840 },
+  { name: "Lunch (Vegetarian & Halal)", slug: "catering-lunch-veg-halal", description: "A vegetarian and halal lunch selection:\n- Grilled vegetable sandwich\n- Wrap with seasonal greens, cherry tomatoes, hummus and falafel\n- Brownie\n- Carrot muffin\nPer person, excl. VAT and beverages. Ordered for everyone in the room.", price: 3300, priceType: AddOnPriceType.PER_PERSON, vatRate: 1200, availableFromMinute: 660, availableToMinute: 840 },
+  { name: "Dessert (Late Afternoon)", slug: "catering-dessert", description: "A sweet afternoon selection:\n- Mini chocolate mousse cup\n- Cinnamon cookie with apple filling\n- Chocolate chip cookie\n- Turkish-style pistachio baklava\nPer person, excl. VAT and beverages. Ordered for everyone in the room.", price: 2000, priceType: AddOnPriceType.PER_PERSON, vatRate: 1200 },
+  { name: "Non-Alcoholic Beverages", slug: "catering-beverages", description: "A selection of chilled non-alcoholic beverages:\n- Soft drinks: Coca-Cola, Coca-Cola Zero, Sprite, Fanta and iced tea\n- Bottled sparkling and mineral waters (0.33 L)\nPer person, excl. VAT. Ordered for everyone in the room. Hot beverages are not available in the meeting rooms.", price: 800, priceType: AddOnPriceType.PER_PERSON, vatRate: 1200 },
   { name: "AV Screen", slug: "av-screen", description: "Large display screen", price: 5000, priceType: AddOnPriceType.FLAT, vatRate: 2100 },
-  { name: "Drinks Service", slug: "drinks-service", description: "Drinks service per hour", price: 4000, priceType: AddOnPriceType.PER_HOUR, vatRate: 2100 },
 ];
 
 async function main(): Promise<void> {

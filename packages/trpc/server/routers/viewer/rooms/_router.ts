@@ -11,7 +11,7 @@ import {
   ZDeleteLegalPageInputSchema,
   ZUpdateLegalPageInputSchema,
 } from "./legalPage.schema";
-import { ZPreviewVatInputSchema } from "./previewVat.schema";
+import { ZPreviewOrderVatInputSchema, ZPreviewVatInputSchema } from "./previewVat.schema";
 import {
   ZDeskCheckInInputSchema,
   ZDeskCreateBookingInputSchema,
@@ -645,6 +645,40 @@ export const roomsRouter = router({
       new Date()
     );
     return { days: Array.from(new Set(starts.map(eventDateOf))).sort() };
+  }),
+
+  /**
+   * The order this exhibitor is holding but has not paid, if any.
+   *
+   * Feeds the countdown in the shortlist panel. It lived on "My bookings",
+   * which is where people go AFTER paying — so the one clock that matters was
+   * on the page nobody visits while it is running.
+   */
+  myPendingOrder: authedProcedure.query(
+    async ({
+      ctx,
+    }): Promise<{ uid: string; holdExpiresAt: string; amountTotal: number; currency: string; rooms: number } | null> => {
+      const { getNe26OrderRepository } = await import(
+        "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
+      );
+      const order = await getNe26OrderRepository().findLiveHoldForUser(ctx.user.id, new Date());
+      if (!order?.holdExpiresAt) return null;
+      return {
+        uid: order.uid,
+        holdExpiresAt: order.holdExpiresAt.toISOString(),
+        amountTotal: order.amountTotal,
+        currency: order.currency,
+        rooms: order._count.bookings,
+      };
+    }
+  ),
+
+  /** The whole shortlist priced together, so one VAT total covers the basket. */
+  previewOrderVat: authedProcedure.input(ZPreviewOrderVatInputSchema).query(async ({ ctx, input }) => {
+    const { getRoomVatPreviewService } = await import(
+      "@calcom/features/ne26-rooms/di/RoomVatPreviewService.container"
+    );
+    return getRoomVatPreviewService().previewOrder({ userId: ctx.user.id, rooms: input.rooms });
   }),
 
   /** The shortlist, paid in one go: several rooms, one payment, one invoice. */
