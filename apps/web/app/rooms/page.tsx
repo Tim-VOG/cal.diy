@@ -43,7 +43,7 @@ function formatPrice(cents: number, currency: string): string {
 type Room = Awaited<ReturnType<ReturnType<typeof getRoomAvailabilityService>["getActiveRooms"]>>[number];
 
 function RoomCard({ room }: { room: Room }): JSX.Element {
-  const TitleIcon = roomIconFor(room.category);
+  const TitleIcon = roomIconFor(room.category, room.iconName);
   return (
     <Link
       href={`/rooms/${room.slug}`}

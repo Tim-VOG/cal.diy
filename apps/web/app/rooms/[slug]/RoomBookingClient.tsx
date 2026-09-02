@@ -390,7 +390,7 @@ export default function RoomBookingClient({
   }, [addOnSlot?.startMinute, addOnSlot?.endMinute, addOnsBySlug]);
 
   const dayAlreadyBooked = (bookedDays.data?.days ?? []).includes(selectedDate);
-  const RoomIcon = roomIconFor(room.category);
+  const RoomIcon = roomIconFor(room.category, room.iconName);
   const canBook =
     Boolean(selectedStartUtc && selectedDuration) && !createBooking.isPending && !dayAlreadyBooked;
 

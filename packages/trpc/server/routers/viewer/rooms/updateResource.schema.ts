@@ -1,3 +1,4 @@
+import { ROOM_ICON_NAMES } from "@calcom/features/ne26-rooms/lib/roomIcons";
 import { z } from "zod";
 
 /**
@@ -28,6 +29,14 @@ export const ZUpdateResourceInputSchema = z.object({
   imageUrl: imagePath.optional(),
   /** Up to 4 extra photos (URLs/paths) for the room detail gallery. */
   galleryImages: z.array(imagePath).max(4).optional(),
+  /**
+   * The glyph for a room with no photograph. Empty string clears it, which puts
+   * the room back on the default for its category.
+   */
+  iconName: z
+    .union([z.enum(ROOM_ICON_NAMES), z.literal("")])
+    .transform((v) => (v === "" ? null : v))
+    .optional(),
   isActive: z.boolean().optional(),
 });
 

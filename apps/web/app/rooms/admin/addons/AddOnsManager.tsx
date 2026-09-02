@@ -165,7 +165,7 @@ export default function AddOnsManager({ addOns }: { addOns: AddOnRow[] }): JSX.E
           third of the screen, so "Pricing", "Price" and "VAT %" wrapped to
           different heights and the caterer's description was a two-line
           window onto a ten-line text. */}
-      <div className="mt-6 space-y-4">
+      <div className="mt-6 grid grid-cols-1 items-start gap-4 2xl:grid-cols-2">
         {draft.map((r) => (
           <div key={r.id} className="rounded-xl border border-gray-200 bg-white p-5">
             <div className="flex items-start justify-between gap-3">

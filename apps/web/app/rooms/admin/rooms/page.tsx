@@ -2,6 +2,7 @@ import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
 import { getResourceRepository } from "@calcom/features/ne26-rooms/di/ResourceRepository.container";
 import { normalizeGalleryImages } from "@calcom/features/ne26-rooms/lib/roomImages";
+import { isRoomIconName } from "@calcom/features/ne26-rooms/lib/roomIcons";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
@@ -41,6 +42,10 @@ export default async function ManageRoomsPage(): Promise<JSX.Element> {
         currency: r.currency,
         imageUrl: r.imageUrl ?? "",
         galleryImages: normalizeGalleryImages(r.galleryImages),
+        // Narrowed on the way in, so a name retired from the catalogue since the
+        // room was saved falls back to the category default rather than
+        // rendering nothing on the page where exhibitors choose.
+        iconName: isRoomIconName(r.iconName) ? r.iconName : "",
         isActive: r.isActive,
       }))}
     />

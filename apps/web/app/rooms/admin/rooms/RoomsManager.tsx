@@ -4,6 +4,8 @@ import type { EventDayDefinition } from "@calcom/features/ne26-rooms/lib/eventSc
 import { trpc } from "@calcom/trpc/react";
 import { CalendarClock, Check, EyeOff, Ruler, Users } from "lucide-react";
 import { useState } from "react";
+import type { RoomIconName } from "@calcom/features/ne26-rooms/lib/roomIcons";
+import { ROOM_ICON_CHOICES, roomIconFor } from "../../roomIcon";
 import EventDaysForm from "./EventDaysForm";
 import ImagePicker from "./ImagePicker";
 
@@ -30,7 +32,67 @@ export interface RoomRow {
   currency: string;
   imageUrl: string;
   galleryImages: string[];
+  /** "" means: use the default for the category. */
+  iconName: RoomIconName | "";
   isActive: boolean;
+}
+
+/**
+ * The glyph shown for a room that has no photograph.
+ *
+ * Chosen rather than derived: the three category defaults were picked from the
+ * price band, which is not what the room is for. Whoever sells the room knows
+ * better, so they pick — and can go back to the default at any time.
+ */
+function IconPicker({
+  value,
+  category,
+  onChange,
+}: {
+  value: RoomIconName | "";
+  category: string;
+  onChange: (name: RoomIconName | "") => void;
+}): JSX.Element {
+  const Fallback = roomIconFor(category, null);
+  return (
+    <div>
+      <span className={label}>Icon (shown when there is no cover photo)</span>
+      <div className="mt-1 grid grid-cols-6 gap-1">
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          title="Default for this category"
+          aria-label="Default for this category"
+          aria-pressed={value === ""}
+          className={`flex aspect-square items-center justify-center rounded-lg border transition ${
+            value === ""
+              ? "border-[#000643] bg-[#000643]/5 text-[#000643]"
+              : "border-gray-200 text-gray-400 hover:border-[#000643]/40 hover:text-[#000643]"
+          }`}>
+          <Fallback className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+        </button>
+        {ROOM_ICON_CHOICES.map(({ name, Icon }) => (
+          <button
+            key={name}
+            type="button"
+            onClick={() => onChange(name)}
+            title={name}
+            aria-label={name}
+            aria-pressed={value === name}
+            className={`flex aspect-square items-center justify-center rounded-lg border transition ${
+              value === name
+                ? "border-[#000643] bg-[#000643]/5 text-[#000643]"
+                : "border-gray-200 text-gray-400 hover:border-[#000643]/40 hover:text-[#000643]"
+            }`}>
+            <Icon className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+          </button>
+        ))}
+      </div>
+      <p className="mt-1 text-gray-400 text-xs">
+        {value === "" ? "Using the default for this category." : `Using ${value}.`}
+      </p>
+    </div>
+  );
 }
 
 const input =
@@ -114,6 +176,13 @@ function RoomRowCard({
                 />
               ))}
             </div>
+          </div>
+          <div className="mt-4">
+            <IconPicker
+              value={r.iconName}
+              category={r.category}
+              onChange={(name) => setField(r.id, "iconName", name)}
+            />
           </div>
         </div>
 
@@ -276,6 +345,7 @@ export default function RoomsManager({
       price3h: row.price3h,
       imageUrl: row.imageUrl,
       galleryImages: row.galleryImages.map((s) => s.trim()).filter(Boolean),
+      iconName: row.iconName,
       isActive: row.isActive,
     });
   }
@@ -345,7 +415,7 @@ export default function RoomsManager({
         ) : (
           <>
             <p className="text-gray-600 text-sm">{CATEGORY_META[tab as Category].blurb}</p>
-            <div className="mt-4 space-y-4">
+            <div className="mt-4 grid grid-cols-1 items-start gap-4 2xl:grid-cols-2">
               {inTab.map((r) => (
                 <RoomRowCard
                   key={r.id}

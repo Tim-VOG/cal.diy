@@ -96,7 +96,7 @@ export default function LegalPagesManager({ pages }: { pages: LegalPageRow[] }):
       </div>
 
       {/* Page editors */}
-      <div className="mt-6 space-y-4">
+      <div className="mt-6 grid grid-cols-1 items-start gap-4 2xl:grid-cols-2">
         {draft.map((r) => (
           <div key={r.id} className="rounded-xl border border-gray-200 bg-white p-5">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

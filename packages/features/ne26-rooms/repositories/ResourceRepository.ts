@@ -15,6 +15,7 @@ const publicSelect = {
   description: true,
   imageUrl: true,
   galleryImages: true,
+  iconName: true,
 } as const;
 
 export class ResourceRepository {
@@ -57,6 +58,7 @@ export class ResourceRepository {
       price3h?: number;
       imageUrl?: string | null;
       galleryImages?: string[];
+      iconName?: string | null;
       isActive?: boolean;
     }
   ) {
