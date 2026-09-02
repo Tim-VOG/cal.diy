@@ -348,6 +348,71 @@ describe("Ne26OrderService.createOrder", () => {
     });
   });
 
+  describe("holding without paying", () => {
+    // The deliberate step between browsing and paying. It must take the rooms
+    // off sale exactly as a checkout does, and obey every rule a sale obeys —
+    // otherwise it is a way to park inventory that could never be bought.
+    it("takes the rooms off sale for the same window a checkout gets", async () => {
+      const before = Date.now();
+      const { order } = await service.createOrder({
+        buyer: buyer(),
+        rooms: [room(SLUG_A, WED, 9)],
+      });
+
+      expect(order.status).toBe(ResourceBookingStatus.PENDING);
+      expect(((order.holdExpiresAt as Date).getTime() - before) / 60000).toBeGreaterThanOrEqual(30);
+      // The slots are really taken: a rival cannot book the same room.
+      const rival = await prisma.user.create({
+        data: { email: `rival2-${STAMP}@test.com`, username: `rival2-${STAMP}`, name: "Rival" },
+        select: { id: true },
+      });
+      try {
+        await expect(
+          service.createOrder({
+            buyer: { userId: rival.id, email: `rival2-${STAMP}@test.com`, name: "Rival" },
+            rooms: [room(SLUG_A, WED, 9)],
+          })
+        ).rejects.toMatchObject({ code: ErrorCode.BookingConflict });
+      } finally {
+        await prisma.ne26Order.deleteMany({ where: { bookerUserId: rival.id } });
+        await prisma.user.delete({ where: { id: rival.id } });
+      }
+    });
+
+    it("still refuses a second room on a day already held", async () => {
+      await service.createOrder({ buyer: buyer(), rooms: [room(SLUG_A, WED, 9)] });
+      await expect(
+        service.createOrder({ buyer: buyer(), rooms: [room(SLUG_B, WED, 11)] })
+      ).rejects.toThrow(/one meeting room per day/i);
+    });
+
+    it("frees the rooms once the hold lapses", async () => {
+      const { order } = await service.createOrder({ buyer: buyer(), rooms: [room(SLUG_A, WED, 9)] });
+      // What the buyer is told: unpaid by then and they go back on sale.
+      const expired = new Date(Date.now() - 60_000);
+      await prisma.ne26Order.update({ where: { uid: order.uid }, data: { holdExpiresAt: expired } });
+      await prisma.resourceBooking.updateMany({
+        where: { orderUid: order.uid },
+        data: { holdExpiresAt: expired },
+      });
+
+      const other = await prisma.user.create({
+        data: { email: `rival3-${STAMP}@test.com`, username: `rival3-${STAMP}`, name: "Rival" },
+        select: { id: true },
+      });
+      try {
+        const { order: taken } = await service.createOrder({
+          buyer: { userId: other.id, email: `rival3-${STAMP}@test.com`, name: "Rival" },
+          rooms: [room(SLUG_A, WED, 9)],
+        });
+        expect(taken.bookings).toHaveLength(1);
+      } finally {
+        await prisma.ne26Order.deleteMany({ where: { bookerUserId: other.id } });
+        await prisma.user.delete({ where: { id: other.id } });
+      }
+    });
+  });
+
   describe("one room per exhibitor per day", () => {
     it("refuses a second room on a day already booked", async () => {
       await service.createOrder({ buyer: buyer(), rooms: [room(SLUG_A, TUE, 14)] });

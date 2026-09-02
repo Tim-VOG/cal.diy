@@ -29,6 +29,58 @@ export interface StartOrderCheckoutInput {
 }
 
 /**
+ * Take the rooms off sale without paying for them yet.
+ *
+ * An exhibitor comparing rooms and picking add-ons had no way to stop somebody
+ * else taking the slot while they worked, and nothing was reserved until they
+ * reached Stripe. This is the deliberate act in between: the rooms are held for
+ * the same window a checkout gets, a clock runs in the shortlist, and they go
+ * back on sale if the payment never happens.
+ *
+ * Deliberately a separate button rather than something that happens as soon as
+ * a slot is clicked: with nine rooms over three days, a visitor comparing five
+ * of them would otherwise freeze five for half an hour just by looking.
+ *
+ * Everything createOrder enforces still applies — opening hours, the one room
+ * per exhibitor per day, the per-account cap on unpaid holds — so this cannot
+ * be used to park inventory that could not have been bought.
+ */
+export async function holdRooms(input: {
+  buyer: { userId: number; email: string; name?: string | null };
+  rooms: OrderRoomSelection[];
+}): Promise<{ uid: string; holdExpiresAt: Date }> {
+  const billingRepo = getNe26BillingProfileRepository();
+  const profile = await billingRepo.findByUserId(input.buyer.userId);
+
+  // The same gate as checkout. A hold that cannot become an invoice is worse
+  // than no hold: the rooms are off sale and the sale still cannot complete.
+  if (!isBillingProfileComplete(profile)) {
+    throw new ErrorWithCode(
+      ErrorCode.BadRequest,
+      "Billing details must be completed before holding a room — they appear on the invoice."
+    );
+  }
+
+  const contactName = [profile?.firstName, profile?.lastName].filter(Boolean).join(" ");
+  const { order } = await new Ne26OrderService().createOrder({
+    buyer: {
+      userId: input.buyer.userId,
+      email: input.buyer.email,
+      name: contactName || input.buyer.name || input.buyer.email,
+    },
+    billing: {
+      country: profile?.country || null,
+      vatNumber: profile?.vatNumber || null,
+      poNumber: profile?.poNumber || null,
+      internalReference: profile?.internalReference || null,
+    },
+    rooms: input.rooms,
+  });
+
+  return { uid: order.uid, holdExpiresAt: order.holdExpiresAt as Date };
+}
+
+/**
  * Hold every room in a basket and hand back one Stripe Checkout URL.
  *
  * One payment for several rooms, the way one payment already covers a room and

@@ -681,6 +681,26 @@ export const roomsRouter = router({
     return getRoomVatPreviewService().previewOrder({ userId: ctx.user.id, rooms: input.rooms });
   }),
 
+  /**
+   * Take the shortlisted rooms off sale for the hold window, without paying.
+   *
+   * The deliberate step between browsing and paying: the exhibitor decides to
+   * reserve, a clock starts in the shortlist, and the rooms come back if the
+   * payment never lands.
+   */
+  holdRooms: authedProcedure.input(ZCreateOrderInputSchema).mutation(async ({ ctx, input }) => {
+    const { holdRooms } = await import("@calcom/features/ne26-rooms/services/startOrderCheckout");
+    return holdRooms({
+      buyer: { userId: ctx.user.id, email: ctx.user.email, name: ctx.user.name },
+      rooms: input.rooms.map((r) => ({
+        slug: r.slug,
+        startUtc: new Date(r.startUtc),
+        durationHours: r.durationHours,
+        addOns: r.addOns,
+      })),
+    });
+  }),
+
   /** The shortlist, paid in one go: several rooms, one payment, one invoice. */
   createOrder: authedProcedure.input(ZCreateOrderInputSchema).mutation(async ({ ctx, input }) => {
     const { startOrderCheckout } = await import(

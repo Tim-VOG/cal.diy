@@ -126,12 +126,24 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
       if (data.checkoutUrl) window.location.href = data.checkoutUrl;
     },
   });
+  // Paying an existing hold resumes THAT order rather than creating a second
+  // one: what is held is what is paid for, even if the shortlist has moved on.
+  const resume = trpc.viewer.rooms.resumeOrder.useMutation({
+    onSuccess: (data) => {
+      if (data.checkoutUrl) window.location.href = data.checkoutUrl;
+    },
+  });
+  const takeHold = trpc.viewer.rooms.holdRooms.useMutation({
+    onSuccess: () => {
+      void pending.refetch();
+    },
+  });
 
   if (hidden) return null;
-  const hold = pending.data;
-  if (!selections?.length && !hold) return null;
+  const heldOrder = pending.data;
+  if (!selections?.length && !heldOrder) return null;
 
-  const currency = selections?.[0]?.currency ?? hold?.currency ?? "EUR";
+  const currency = selections?.[0]?.currency ?? heldOrder?.currency ?? "EUR";
   const sameCurrency = (selections ?? []).every((s) => s.currency === currency);
 
   function forget(slug: string): void {
@@ -148,27 +160,39 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
     if (alreadyBooked.has(day) || seenDays.has(day)) clashing.add(s.slug);
     seenDays.add(day);
   }
-  const canPay = payable.length > 0 && sameCurrency && clashing.size === 0 && !pay.isPending;
+  const canPay = payable.length > 0 && sameCurrency && clashing.size === 0;
+  const basketPayload = payable.map((s) => ({
+    slug: s.slug,
+    startUtc: s.startUtc as string,
+    durationHours: s.durationHours as 1 | 2 | 3,
+    addOns: Object.entries(s.addOns).map(([slug, quantity]) => ({ slug, quantity })),
+  }));
   const freeDays = eventDays.filter((d) => !alreadyBooked.has(d) && !seenDays.has(d));
   const subtotal = (selections ?? []).reduce((sum, s) => sum + s.total, 0);
 
   const body = (
     <>
-      {hold ? (
+      {heldOrder ? (
         <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
           <p className="flex items-center gap-1.5 text-amber-900 text-xs">
             <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            <Countdown expiresAt={hold.holdExpiresAt} />
+            <Countdown expiresAt={heldOrder.holdExpiresAt} />
           </p>
           <p className="mt-0.5 text-amber-800 text-xs">
-            {hold.rooms === 1 ? "1 room is held" : `${hold.rooms} rooms are held`} for{" "}
-            {money(hold.amountTotal, hold.currency)} excl. VAT.
+            {heldOrder.rooms === 1 ? "1 room is held" : `${heldOrder.rooms} rooms are held`} for{" "}
+            {money(heldOrder.amountTotal, heldOrder.currency)} excl. VAT.
           </p>
-          <Link
-            href="/rooms/bookings"
-            className="mt-1.5 inline-block font-semibold text-amber-900 text-xs underline">
-            Finish the payment
-          </Link>
+          <button
+            type="button"
+            disabled={resume.isPending}
+            onClick={() => resume.mutate({ uid: heldOrder.uid })}
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#000643] px-3 py-2 font-semibold text-sm text-white transition hover:opacity-90 disabled:opacity-40">
+            <CreditCard className="h-4 w-4 shrink-0" aria-hidden />
+            {resume.isPending ? "Opening payment…" : "Pay for the rooms you are holding"}
+          </button>
+          {resume.error ? (
+            <p className="mt-1.5 text-red-700 text-xs">{resume.error.message}</p>
+          ) : null}
         </div>
       ) : null}
 
@@ -255,23 +279,39 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
             </p>
           ) : null}
 
+          {/* Two deliberate acts, not one. Holding takes the rooms off sale
+              while the exhibitor finishes deciding; paying is what keeps them.
+              Nothing is held merely by clicking a time — with nine rooms over
+              three days, a visitor comparing five of them would otherwise
+              freeze five for half an hour just by looking. */}
+          {!heldOrder ? (
+            <button
+              type="button"
+              disabled={!canPay || takeHold.isPending}
+              onClick={() => takeHold.mutate({ rooms: basketPayload })}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-[#000643] px-4 py-2.5 font-semibold text-[#000643] text-sm transition hover:bg-[#000643]/5 disabled:opacity-40">
+              <Clock className="h-4 w-4 shrink-0" aria-hidden />
+              {takeHold.isPending
+                ? "Holding…"
+                : payable.length === 1
+                  ? "Hold this room"
+                  : `Hold these ${payable.length} rooms`}
+            </button>
+          ) : null}
+          {takeHold.error ? (
+            <p className="mt-2 rounded-lg bg-red-50 px-2.5 py-2 text-red-700 text-xs">
+              {takeHold.error.message}
+            </p>
+          ) : null}
+
           <button
             type="button"
-            disabled={!canPay}
-            onClick={() =>
-              pay.mutate({
-                rooms: payable.map((s) => ({
-                  slug: s.slug,
-                  startUtc: s.startUtc as string,
-                  durationHours: s.durationHours as 1 | 2 | 3,
-                  addOns: Object.entries(s.addOns).map(([slug, quantity]) => ({ slug, quantity })),
-                })),
-              })
-            }
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-[#000643] px-4 py-2.5 font-semibold text-sm text-white transition hover:opacity-90 disabled:opacity-40">
+            disabled={!canPay || pay.isPending}
+            onClick={() => pay.mutate({ rooms: basketPayload })}
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#000643] px-4 py-2.5 font-semibold text-sm text-white transition hover:opacity-90 disabled:opacity-40">
             <CreditCard className="h-4 w-4 shrink-0" aria-hidden />
             {pay.isPending
-              ? "Holding…"
+              ? "Opening payment…"
               : payable.length === 1
                 ? "Pay for this room"
                 : `Pay for all ${payable.length} rooms`}
@@ -295,8 +335,10 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
             </p>
           ) : null}
 
-          <p className="mt-2 text-center text-gray-400 text-xs leading-snug">
-            Nothing is held until you reach the payment page.
+          <p className="mt-2 text-gray-400 text-xs leading-snug">
+            {heldOrder
+              ? "Your rooms are reserved until the clock above runs out. If the payment has not gone through by then, they go back on sale."
+              : "Holding takes these rooms off sale for 35 minutes so you can finish deciding. If you have not paid by then, they go back on sale."}
           </p>
           {pay.error ? (
             <p className="mt-2 rounded-lg bg-red-50 px-2.5 py-2 text-red-700 text-xs">
