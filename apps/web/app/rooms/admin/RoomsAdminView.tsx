@@ -165,12 +165,23 @@ export default function RoomsAdminView({
   });
 
   function onIssueCreditNote(row: AdminBookingRow): void {
+    // A credit note is issued against the ORDER, not the room. This sent the
+    // booking uid, so the service found nothing, returned false, and said
+    // nothing — an admin refunded the card in Stripe believing the credit note
+    // had gone out, and the buyer never received one.
+    if (!row.orderUid) return;
+    // And it cancels the WHOLE order: saying "the booking" understated the
+    // damage on a three-room order.
+    const scope =
+      row.orderRoomCount > 1
+        ? `all ${row.orderRoomCount} rooms on this order`
+        : `${row.roomName}`;
     const ok = window.confirm(
-      `Issue a credit note for ${row.bookerName} (${row.roomName})? This cancels the booking, frees the slot, and emails the booker. Refund the payment in Stripe separately.`
+      `Issue a credit note for ${row.bookerName}? This cancels ${scope}, frees the slots, and emails the booker. Refund the payment in Stripe separately.`
     );
     if (!ok) return;
     setPendingUid(row.uid);
-    creditNote.mutate({ uid: row.uid });
+    creditNote.mutate({ uid: row.orderUid });
   }
 
   function renderCreditNoteCell(r: AdminBookingRow): JSX.Element {
@@ -190,7 +201,8 @@ export default function RoomsAdminView({
         <button
           type="button"
           onClick={() => onIssueCreditNote(r)}
-          disabled={pendingUid === r.uid}
+          title={r.orderUid ? undefined : "This booking predates orders and has no credit note path."}
+          disabled={pendingUid === r.uid || !r.orderUid}
           className="rounded-md border border-red-200 px-2 py-1 font-medium text-red-600 text-xs transition hover:border-red-400 disabled:opacity-50">
           {pendingUid === r.uid ? "Issuing…" : "Credit note"}
         </button>
