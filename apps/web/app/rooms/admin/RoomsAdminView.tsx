@@ -25,6 +25,9 @@ export interface AdminBookingRow {
   stripePaymentId: string | null;
   orderRoomCount: number;
   orderUid: string | null;
+  /** When the order was placed, and when it was paid — different questions. */
+  orderedAt: string;
+  paidAt: string | null;
   invoiceNumber: string | null;
   creditNoteNumber: string | null;
   addOns: { name: string; quantity: number; lineTotal: number }[];
@@ -45,6 +48,17 @@ function fmtDate(iso: string): string {
     weekday: "short",
     day: "numeric",
     month: "short",
+  }).format(new Date(iso));
+}
+/** "1 Sep, 20:15" — a moment, as opposed to the slot's day and time. */
+function fmtDateTime(iso: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: TZ,
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
   }).format(new Date(iso));
 }
 function fmtTime(iso: string): string {
@@ -82,6 +96,8 @@ function toCsv(rows: AdminBookingRow[]): string {
     "Status",
     "Booker name",
     "Booker email",
+    "Ordered at",
+    "Paid at",
     "Amount",
     "Currency",
     "Add-ons",
@@ -109,6 +125,8 @@ function toCsv(rows: AdminBookingRow[]): string {
       r.status,
       r.bookerName,
       r.bookerEmail,
+      fmtDateTime(r.orderedAt),
+      r.paidAt ? fmtDateTime(r.paidAt) : "",
       (r.amountTotal / 100).toFixed(2),
       r.currency,
       r.addOns.map((a) => `${a.name} x${a.quantity} (${(a.lineTotal / 100).toFixed(2)})`).join("; "),
@@ -327,6 +345,8 @@ export default function RoomsAdminView({
                 <th className="px-3 py-2">When (Istanbul)</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2">Booker</th>
+                <th className="px-3 py-2">Ordered</th>
+                <th className="px-3 py-2">Paid</th>
                 <th className="px-3 py-2">Add-ons</th>
                 <th className="px-3 py-2 text-right">Amount</th>
                 <th className="px-3 py-2">Invoice</th>
@@ -364,6 +384,12 @@ export default function RoomsAdminView({
                     <td className="px-3 py-2">
                       <div>{r.bookerName}</div>
                       <div className="text-gray-400 text-xs">{r.bookerEmail}</div>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-gray-500 text-xs">
+                      {fmtDateTime(r.orderedAt)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-gray-500 text-xs">
+                      {r.paidAt ? fmtDateTime(r.paidAt) : "—"}
                     </td>
                     <td className="px-3 py-2 text-gray-600">{addOnsLabel(r) || "—"}</td>
                     <td className="px-3 py-2 text-right font-medium">

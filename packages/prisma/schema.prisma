@@ -3207,6 +3207,10 @@ model Ne26Order {
   // checked before sending, so a cron that runs every five minutes over a
   // fifteen-minute window cannot mail the same buyer three times.
   holdReminderSentAt      DateTime?
+  // NE26: when the payment was confirmed. createdAt says when the order was
+  // placed, which is a different question and the one the desk asks second.
+  // Null while unpaid; set once, by whichever confirmation ran first.
+  paidAt                  DateTime?
   stripePaymentId         String?               @unique
   invoiceNumber           String?               @unique
   invoicePdfUrl           String?

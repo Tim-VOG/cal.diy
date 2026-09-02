@@ -636,6 +636,14 @@ export default function RoomBookingClient({
           </span>
         </div>
 
+        {/* The admin's own words about this room. It was stored, used for the
+            page's meta description, and shown to nobody — so anything typed
+            there simply disappeared. whitespace-pre-line keeps the paragraphs
+            as they were typed. */}
+        {room.description?.trim() ? (
+          <p className="mt-3 whitespace-pre-line text-gray-600 text-sm">{room.description}</p>
+        ) : null}
+
         {/* Included in the price. Suites carry an extra line — that difference is
             what justifies their premium over a same-capacity meeting room, so it
             has to be visible where the buyer compares them. */}

@@ -3,7 +3,6 @@
 import type { EventDayDefinition } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { trpc } from "@calcom/trpc/react";
 import { CalendarClock, Check, EyeOff, Ruler, Users } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import EventDaysForm from "./EventDaysForm";
 import ImagePicker from "./ImagePicker";
@@ -61,6 +60,177 @@ function discountPct(hourly: number, total: number, hours: number): number | nul
 
 type Tab = "schedule" | Category;
 
+/**
+ * One room's editor.
+ *
+ * Declared at module scope on purpose. Nested inside RoomsManager it was a new
+ * component type on every render, so React unmounted and remounted the whole
+ * card on every keystroke and every save — losing the scroll position, losing
+ * focus, and remounting the image pickers. What looked like "the page jumps to
+ * the top" was the card being rebuilt from scratch.
+ */
+function RoomRowCard({
+  r,
+  savingId,
+  savedId,
+  setField,
+  setGalleryImage,
+  save,
+  currency,
+}: {
+  r: RoomRow;
+  savingId: number | null;
+  savedId: number | null;
+  setField: (id: number, field: keyof RoomRow, value: number | boolean | string) => void;
+  setGalleryImage: (id: number, index: number, value: string) => void;
+  save: (row: RoomRow) => void;
+  currency: string;
+}): JSX.Element {
+  const d2 = discountPct(r.price1h, r.price2h, 2);
+  const d3 = discountPct(r.price1h, r.price3h, 3);
+
+  return (
+    <div
+      className={`rounded-xl border border-gray-200 p-5 transition ${
+        r.isActive ? "bg-white" : "bg-gray-50/70"
+      }`}>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[260px_1fr]">
+        <div>
+          <ImagePicker
+            label="Cover photo"
+            value={r.imageUrl}
+            onChange={(url) => setField(r.id, "imageUrl", url)}
+          />
+          <div className="mt-4">
+            <span className={label}>Gallery</span>
+            <div className="mt-1 grid grid-cols-2 gap-2">
+              {[0, 1, 2, 3].map((i) => (
+                <ImagePicker
+                  key={i}
+                  label={`Photo ${i + 1}`}
+                  aspect="aspect-[3/2]"
+                  value={r.galleryImages[i] ?? ""}
+                  onChange={(url) => setGalleryImage(r.id, i, url)}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <input
+              type="text"
+              aria-label="Room name"
+              className={`${input} mt-0 max-w-sm flex-1 font-semibold text-[#000643] text-base`}
+              value={r.name}
+              onChange={(e) => setField(r.id, "name", e.target.value)}
+            />
+            <label className="flex shrink-0 items-center gap-1.5 pt-2 text-gray-600 text-xs">
+              <input
+                type="checkbox"
+                checked={r.isActive}
+                onChange={(e) => setField(r.id, "isActive", e.target.checked)}
+                className="h-4 w-4 accent-[#000643]"
+              />
+              {r.isActive ? (
+                "On sale"
+              ) : (
+                <span className="flex items-center gap-1">
+                  <EyeOff className="h-3 w-3 shrink-0" aria-hidden />
+                  Hidden
+                </span>
+              )}
+            </label>
+          </div>
+
+          <div className="mt-4 grid max-w-xs grid-cols-2 gap-3">
+            <label>
+              <span className={`${label} flex items-center gap-1`}>
+                <Users className="h-3 w-3 shrink-0" aria-hidden />
+                Capacity
+              </span>
+              <input
+                type="number"
+                min={0}
+                className={input}
+                value={r.capacity}
+                onChange={(e) => setField(r.id, "capacity", Math.max(0, Number(e.target.value)))}
+              />
+            </label>
+            <label>
+              <span className={`${label} flex items-center gap-1`}>
+                <Ruler className="h-3 w-3 shrink-0" aria-hidden />
+                m²
+              </span>
+              <input
+                type="number"
+                min={0}
+                className={input}
+                value={r.surface}
+                onChange={(e) => setField(r.id, "surface", Math.max(0, Number(e.target.value)))}
+              />
+            </label>
+          </div>
+
+          <div className="mt-4 grid max-w-lg grid-cols-3 gap-3">
+            {(
+              [
+                ["price1h", "1h", null],
+                ["price2h", "2h", d2],
+                ["price3h", "3h", d3],
+              ] as const
+            ).map(([key, text, pct]) => (
+              <label key={key}>
+                <span className={label}>
+                  {text} ({currency})
+                  {pct ? <span className="ml-1 font-medium text-green-700">−{pct}%</span> : null}
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  className={input}
+                  value={toUnits(r[key])}
+                  onChange={(e) => setField(r.id, key, toCents(Math.max(0, Number(e.target.value))))}
+                />
+              </label>
+            ))}
+          </div>
+          <p className="mt-1 text-gray-400 text-xs">
+            Prices excl. VAT. The discount buyers see is worked out from them, not set separately.
+          </p>
+
+          <label className="mt-4 block">
+            <span className={label}>Description</span>
+            <textarea
+              rows={3}
+              className={input}
+              value={r.description}
+              onChange={(e) => setField(r.id, "description", e.target.value)}
+            />
+          </label>
+
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => save(r)}
+              disabled={savingId === r.id}
+              className="rounded-lg bg-[#000643] px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90 disabled:opacity-40">
+              {savingId === r.id ? "Saving…" : "Save room"}
+            </button>
+            {savedId === r.id ? (
+              <span className="flex items-center gap-1 text-green-600 text-sm">
+                <Check className="h-4 w-4" aria-hidden />
+                Saved
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function RoomsManager({
   rooms,
   bufferMinutes,
@@ -70,7 +240,6 @@ export default function RoomsManager({
   bufferMinutes: number;
   eventDays: EventDayDefinition[];
 }): JSX.Element {
-  const router = useRouter();
   const [draft, setDraft] = useState<RoomRow[]>(rooms);
   const [savingId, setSavingId] = useState<number | null>(null);
   const [savedId, setSavedId] = useState<number | null>(null);
@@ -82,7 +251,9 @@ export default function RoomsManager({
     onSettled: () => setSavingId(null),
     onSuccess: (_data, variables) => {
       setSavedId(variables.id);
-      router.refresh();
+      // Deliberately no router.refresh(): the draft already holds exactly what
+      // was just saved, and refreshing re-rendered the server tree underneath
+      // the admin, moving the page while they were still working down it.
     },
   });
 
@@ -130,151 +301,6 @@ export default function RoomsManager({
    * were thumbnails — neither of which is what you need when checking a room
    * against the price grid.
    */
-  function RoomRowCard({ r }: { r: RoomRow }): JSX.Element {
-    const d2 = discountPct(r.price1h, r.price2h, 2);
-    const d3 = discountPct(r.price1h, r.price3h, 3);
-
-    return (
-      <div
-        className={`rounded-xl border border-gray-200 p-5 transition ${
-          r.isActive ? "bg-white" : "bg-gray-50/70"
-        }`}>
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[260px_1fr]">
-          <div>
-            <ImagePicker
-              label="Cover photo"
-              value={r.imageUrl}
-              onChange={(url) => setField(r.id, "imageUrl", url)}
-            />
-            <div className="mt-4">
-              <span className={label}>Gallery</span>
-              <div className="mt-1 grid grid-cols-2 gap-2">
-                {[0, 1, 2, 3].map((i) => (
-                  <ImagePicker
-                    key={i}
-                    label={`Photo ${i + 1}`}
-                    aspect="aspect-[3/2]"
-                    value={r.galleryImages[i] ?? ""}
-                    onChange={(url) => setGalleryImage(r.id, i, url)}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <input
-                type="text"
-                aria-label="Room name"
-                className={`${input} mt-0 max-w-sm flex-1 font-semibold text-[#000643] text-base`}
-                value={r.name}
-                onChange={(e) => setField(r.id, "name", e.target.value)}
-              />
-              <label className="flex shrink-0 items-center gap-1.5 pt-2 text-gray-600 text-xs">
-                <input
-                  type="checkbox"
-                  checked={r.isActive}
-                  onChange={(e) => setField(r.id, "isActive", e.target.checked)}
-                  className="h-4 w-4 accent-[#000643]"
-                />
-                {r.isActive ? (
-                  "On sale"
-                ) : (
-                  <span className="flex items-center gap-1">
-                    <EyeOff className="h-3 w-3 shrink-0" aria-hidden />
-                    Hidden
-                  </span>
-                )}
-              </label>
-            </div>
-
-            <div className="mt-4 grid max-w-xs grid-cols-2 gap-3">
-              <label>
-                <span className={`${label} flex items-center gap-1`}>
-                  <Users className="h-3 w-3 shrink-0" aria-hidden />
-                  Capacity
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  className={input}
-                  value={r.capacity}
-                  onChange={(e) => setField(r.id, "capacity", Math.max(0, Number(e.target.value)))}
-                />
-              </label>
-              <label>
-                <span className={`${label} flex items-center gap-1`}>
-                  <Ruler className="h-3 w-3 shrink-0" aria-hidden />
-                  m²
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  className={input}
-                  value={r.surface}
-                  onChange={(e) => setField(r.id, "surface", Math.max(0, Number(e.target.value)))}
-                />
-              </label>
-            </div>
-
-            <div className="mt-4 grid max-w-lg grid-cols-3 gap-3">
-              {(
-                [
-                  ["price1h", "1h", null],
-                  ["price2h", "2h", d2],
-                  ["price3h", "3h", d3],
-                ] as const
-              ).map(([key, text, pct]) => (
-                <label key={key}>
-                  <span className={label}>
-                    {text} ({currency})
-                    {pct ? <span className="ml-1 font-medium text-green-700">−{pct}%</span> : null}
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    className={input}
-                    value={toUnits(r[key])}
-                    onChange={(e) => setField(r.id, key, toCents(Math.max(0, Number(e.target.value))))}
-                  />
-                </label>
-              ))}
-            </div>
-            <p className="mt-1 text-gray-400 text-xs">
-              Prices excl. VAT. The discount buyers see is worked out from them, not set separately.
-            </p>
-
-            <label className="mt-4 block">
-              <span className={label}>Description</span>
-              <textarea
-                rows={3}
-                className={input}
-                value={r.description}
-                onChange={(e) => setField(r.id, "description", e.target.value)}
-              />
-            </label>
-
-            <div className="mt-4 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => save(r)}
-                disabled={savingId === r.id}
-                className="rounded-lg bg-[#000643] px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90 disabled:opacity-40">
-                {savingId === r.id ? "Saving…" : "Save room"}
-              </button>
-              {savedId === r.id ? (
-                <span className="flex items-center gap-1 text-green-600 text-sm">
-                  <Check className="h-4 w-4" aria-hidden />
-                  Saved
-                </span>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   const tabs: { key: Tab; label: string; count?: number }[] = [
     { key: "schedule", label: "Schedule" },
@@ -321,7 +347,16 @@ export default function RoomsManager({
             <p className="text-gray-600 text-sm">{CATEGORY_META[tab as Category].blurb}</p>
             <div className="mt-4 space-y-4">
               {inTab.map((r) => (
-                <RoomRowCard key={r.id} r={r} />
+                <RoomRowCard
+                  key={r.id}
+                  r={r}
+                  savingId={savingId}
+                  savedId={savedId}
+                  setField={setField}
+                  setGalleryImage={setGalleryImage}
+                  save={save}
+                  currency={currency}
+                />
               ))}
             </div>
           </>

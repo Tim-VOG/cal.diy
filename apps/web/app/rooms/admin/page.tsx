@@ -1,5 +1,6 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { getInvoiceSettingsRepository } from "@calcom/features/ne26-rooms/di/InvoiceSettingsRepository.container";
+import { getNe26OrderRepository } from "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container";
 import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
 import { getResourceBookingRepository } from "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container";
 import { getResourceRepository } from "@calcom/features/ne26-rooms/di/ResourceRepository.container";
@@ -8,6 +9,7 @@ import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import ConfigHealth from "./ConfigHealth";
+import OrphanOrders from "./OrphanOrders";
 import RoomsAdminView from "./RoomsAdminView";
 import { requireNotDeskMode } from "./requireNotDeskMode";
 
@@ -25,11 +27,13 @@ export default async function RoomsAdminPage(): Promise<JSX.Element> {
 
   // Drop abandoned, unpaid bookings whose hold expired before listing.
   await getResourceBookingRepository().deleteExpiredHolds(new Date());
-  const [bookings, allRooms, roomSettings, settings] = await Promise.all([
+  const [bookings, allRooms, roomSettings, settings, orphanOrders] = await Promise.all([
     getResourceBookingRepository().findAllWithDetails(),
     getResourceRepository().findAllForAdmin(),
     getNe26RoomSettingsRepository().get(),
     getInvoiceSettingsRepository().get(),
+    // An order whose rooms are gone appears nowhere in a list of rooms.
+    getNe26OrderRepository().findOrdersWithoutRooms(),
   ]);
   const roomNames = allRooms.filter((r) => r.isActive).map((r) => r.name);
   const rows = bookings.map((b) => ({
@@ -51,6 +55,8 @@ export default async function RoomsAdminPage(): Promise<JSX.Element> {
     // showing a dash next to a document that was issued and emailed.
     orderUid: b.order?.uid ?? null,
     orderRoomCount: b.order?._count.bookings ?? 1,
+    orderedAt: (b.order?.createdAt ?? b.createdAt).toISOString(),
+    paidAt: b.order?.paidAt?.toISOString() ?? null,
     invoiceNumber: b.order?.invoiceNumber ?? b.invoiceNumber,
     creditNoteNumber: b.order?.creditNoteNumber ?? b.creditNoteNumber,
     addOns: b.addOns.map((a) => ({ name: a.addOn.name, quantity: a.quantity, lineTotal: a.lineTotal })),
@@ -60,6 +66,13 @@ export default async function RoomsAdminPage(): Promise<JSX.Element> {
     <>
       <ConfigHealth
         settings={{ notifyEmails: settings.notifyEmails, contactEmail: settings.contactEmail }}
+      />
+      <OrphanOrders
+        rows={orphanOrders.map((o) => ({
+          ...o,
+          holdExpiresAt: o.holdExpiresAt?.toISOString() ?? null,
+          createdAt: o.createdAt.toISOString(),
+        }))}
       />
       <RoomsAdminView
         rows={rows}

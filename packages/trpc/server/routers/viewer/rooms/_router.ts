@@ -432,8 +432,10 @@ export const roomsRouter = router({
     return { issued };
   }),
 
-  // Admin-only: confirm a PENDING ORDER paid outside Stripe (e.g. bank
-  // transfer), then issue its invoice (best-effort).
+  // Admin-only: mark a PENDING order paid without a Stripe payment, then issue
+  // its invoice (best-effort). Sales go through Stripe by card; this is the
+  // manual escape hatch for the case where the money is known to have arrived
+  // but the confirmation never ran — it charges nothing itself.
   //
   // The uid is the order's, not a room's: one payment can cover several rooms,
   // and confirming half of what was settled would leave the rest to expire.

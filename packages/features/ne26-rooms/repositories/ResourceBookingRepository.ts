@@ -580,6 +580,10 @@ export class ResourceBookingRepository {
             creditNoteNumber: true,
             stripePaymentId: true,
             amountTotal: true,
+            // When the order was placed and when it was paid: the desk reconciles
+            // against Stripe by date, and neither date exists on a booking row.
+            createdAt: true,
+            paidAt: true,
             // How many rooms this one payment covers, so the admin list can warn
             // that an action here reaches further than the row it was clicked on.
             _count: { select: { bookings: true } },

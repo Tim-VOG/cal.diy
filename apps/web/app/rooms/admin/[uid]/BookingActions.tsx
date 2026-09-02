@@ -49,14 +49,14 @@ export default function BookingActions({
               onClick={() => {
                 if (
                   window.confirm(
-                    `Confirm the order for ${rooms} as paid (e.g. bank transfer)? One invoice will be issued for the whole order.`
+                    `Mark the order for ${rooms} as paid without going through Stripe? One invoice will be issued for the whole order. Only do this if you have confirmed the money another way — nothing is charged here.`
                   )
                 ) {
                   confirmManually.mutate({ uid: orderUid });
                 }
               }}
               className={`${btnBase} bg-[#000643] text-white hover:opacity-90`}>
-              {confirmManually.isPending ? "Confirming…" : "Confirm (paid offline)"}
+              {confirmManually.isPending ? "Confirming…" : "Mark as paid manually"}
             </button>
             <button
               type="button"

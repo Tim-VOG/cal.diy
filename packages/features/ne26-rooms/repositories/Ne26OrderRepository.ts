@@ -173,6 +173,7 @@ export class Ne26OrderRepository {
         currency: true,
         holdExpiresAt: true,
         stripePaymentId: true,
+        paidAt: true,
         invoiceNumber: true,
         invoicePdfUrl: true,
         creditNoteNumber: true,
@@ -218,7 +219,12 @@ export class Ne26OrderRepository {
     return this.prismaClient.$transaction(async (tx) => {
       const result = await tx.ne26Order.updateMany({
         where: { uid, status: ResourceBookingStatus.PENDING },
-        data: { status: ResourceBookingStatus.CONFIRMED, stripePaymentId, holdExpiresAt: null },
+        data: {
+          status: ResourceBookingStatus.CONFIRMED,
+          stripePaymentId,
+          paidAt: new Date(),
+          holdExpiresAt: null,
+        },
       });
       if (result.count === 0) return false;
       // The payment id is deliberately NOT copied onto the rooms: it is unique
@@ -400,6 +406,34 @@ export class Ne26OrderRepository {
       data: { holdReminderSentAt: at },
     });
     return result.count > 0;
+  }
+
+  /**
+   * Orders with no rooms attached — money with nothing to show for it.
+   *
+   * A payment that was captured but never confirmed leaves its rooms PENDING;
+   * once the hold lapses they are deleted, and because the admin lists ROOMS the
+   * order itself becomes invisible. It still exists, and it may be paid. These
+   * are surfaced at the top of the dashboard rather than left to be found by
+   * someone querying the database.
+   */
+  findOrdersWithoutRooms() {
+    return this.prismaClient.ne26Order.findMany({
+      where: { bookings: { none: {} } },
+      orderBy: { createdAt: "desc" },
+      select: {
+        uid: true,
+        status: true,
+        bookerName: true,
+        bookerEmail: true,
+        amountTotal: true,
+        currency: true,
+        stripePaymentId: true,
+        invoiceNumber: true,
+        holdExpiresAt: true,
+        createdAt: true,
+      },
+    });
   }
 
   /** How many orders this buyer is holding without having paid. */
