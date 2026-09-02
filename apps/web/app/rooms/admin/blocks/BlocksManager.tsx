@@ -86,7 +86,8 @@ export default function BlocksManager({
         it can&apos;t be booked. It&apos;s rejected if it overlaps an existing booking.
       </p>
 
-      <div className="mt-5 rounded-xl border border-gray-200 bg-white p-5">
+      <div className="mt-5 grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(320px,26rem)_1fr]">
+      <div className="rounded-xl border border-gray-200 bg-white p-5">
         <h2 className="font-semibold text-gray-500 text-xs uppercase tracking-wide">New block</h2>
         <div className="mt-3 flex flex-wrap items-end gap-3">
           <label className="text-sm">
@@ -136,7 +137,7 @@ export default function BlocksManager({
         {create.error ? <p className="mt-2 text-red-600 text-sm">{create.error.message}</p> : null}
       </div>
 
-      <div className="mt-5 overflow-x-auto rounded-xl border border-gray-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
         <table className="w-full text-left text-sm">
           <thead className="border-gray-100 border-b bg-gray-50 text-gray-500 text-xs uppercase">
             <tr>
@@ -176,6 +177,7 @@ export default function BlocksManager({
             )}
           </tbody>
         </table>
+      </div>
       </div>
     </div>
   );

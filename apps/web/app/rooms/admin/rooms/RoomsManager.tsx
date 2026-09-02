@@ -5,7 +5,7 @@ import { trpc } from "@calcom/trpc/react";
 import { CalendarClock, Check, EyeOff, Ruler, Users } from "lucide-react";
 import { useState } from "react";
 import type { RoomIconName } from "@calcom/features/ne26-rooms/lib/roomIcons";
-import { ROOM_ICON_CHOICES, roomIconFor } from "../../roomIcon";
+import { ROOM_ICON_CHOICE_GROUPS, roomIconFor } from "../../roomIcon";
 import EventDaysForm from "./EventDaysForm";
 import ImagePicker from "./ImagePicker";
 
@@ -43,6 +43,10 @@ export interface RoomRow {
  * Chosen rather than derived: the three category defaults were picked from the
  * price band, which is not what the room is for. Whoever sells the room knows
  * better, so they pick — and can go back to the default at any time.
+ *
+ * Collapsed until asked for. The catalogue runs to a hundred-odd glyphs, and
+ * laying them all out inside a card that is now one of three across would bury
+ * the prices under three screens of icons.
  */
 function IconPicker({
   value,
@@ -53,44 +57,63 @@ function IconPicker({
   category: string;
   onChange: (name: RoomIconName | "") => void;
 }): JSX.Element {
-  const Fallback = roomIconFor(category, null);
+  const [open, setOpen] = useState(false);
+  const Current = roomIconFor(category, value || null);
+  const cell =
+    "flex aspect-square items-center justify-center rounded-lg border transition";
+  const chosen = "border-[#000643] bg-[#000643]/5 text-[#000643]";
+  const unchosen = "border-gray-200 text-gray-400 hover:border-[#000643]/40 hover:text-[#000643]";
+
   return (
     <div>
       <span className={label}>Icon (shown when there is no cover photo)</span>
-      <div className="mt-1 grid grid-cols-6 gap-1">
-        <button
-          type="button"
-          onClick={() => onChange("")}
-          title="Default for this category"
-          aria-label="Default for this category"
-          aria-pressed={value === ""}
-          className={`flex aspect-square items-center justify-center rounded-lg border transition ${
-            value === ""
-              ? "border-[#000643] bg-[#000643]/5 text-[#000643]"
-              : "border-gray-200 text-gray-400 hover:border-[#000643]/40 hover:text-[#000643]"
-          }`}>
-          <Fallback className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-        </button>
-        {ROOM_ICON_CHOICES.map(({ name, Icon }) => (
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="mt-1 flex w-full items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-left transition hover:border-[#000643]/40">
+        <Current className="h-5 w-5 shrink-0 text-[#000643]" strokeWidth={1.75} aria-hidden />
+        <span className="min-w-0 flex-1 truncate text-gray-600 text-xs">
+          {value === "" ? "Default for this category" : value}
+        </span>
+        <span className="shrink-0 font-medium text-[#000643] text-xs">
+          {open ? "Close" : "Change"}
+        </span>
+      </button>
+
+      {open ? (
+        <div className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-gray-200 p-2">
           <button
-            key={name}
             type="button"
-            onClick={() => onChange(name)}
-            title={name}
-            aria-label={name}
-            aria-pressed={value === name}
-            className={`flex aspect-square items-center justify-center rounded-lg border transition ${
-              value === name
-                ? "border-[#000643] bg-[#000643]/5 text-[#000643]"
-                : "border-gray-200 text-gray-400 hover:border-[#000643]/40 hover:text-[#000643]"
+            onClick={() => onChange("")}
+            className={`mb-2 flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-xs transition ${
+              value === "" ? chosen : unchosen
             }`}>
-            <Icon className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+            <Current className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden />
+            Default for this category
           </button>
-        ))}
-      </div>
-      <p className="mt-1 text-gray-400 text-xs">
-        {value === "" ? "Using the default for this category." : `Using ${value}.`}
-      </p>
+          {ROOM_ICON_CHOICE_GROUPS.map((group) => (
+            <div key={group.label} className="mb-2 last:mb-0">
+              <p className="mb-1 font-medium text-gray-400 text-xs uppercase tracking-wide">
+                {group.label}
+              </p>
+              <div className="grid grid-cols-6 gap-1 @md:grid-cols-8">
+                {group.icons.map(({ name, Icon }) => (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => onChange(name)}
+                    title={name}
+                    aria-label={name}
+                    aria-pressed={value === name}
+                    className={`${cell} ${value === name ? chosen : unchosen}`}>
+                    <Icon className="h-4.5 w-4.5" strokeWidth={1.75} aria-hidden />
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -153,10 +176,13 @@ function RoomRowCard({
 
   return (
     <div
-      className={`rounded-xl border border-gray-200 p-5 transition ${
+      className={`@container rounded-xl border border-gray-200 p-5 transition ${
         r.isActive ? "bg-white" : "bg-gray-50/70"
       }`}>
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[260px_1fr]">
+      {/* Photos beside the fields only while the card is wide enough for both.
+          The breakpoint is the CARD's width, not the screen's, so a card in a
+          third of the display stacks instead of squeezing. */}
+      <div className="grid grid-cols-1 gap-5 @3xl:grid-cols-[220px_1fr] @3xl:gap-6">
         <div>
           <ImagePicker
             label="Cover photo"
@@ -242,7 +268,7 @@ function RoomRowCard({
             </label>
           </div>
 
-          <div className="mt-4 grid max-w-lg grid-cols-3 gap-3">
+          <div className="mt-4 grid max-w-lg grid-cols-1 gap-3 @xs:grid-cols-3">
             {(
               [
                 ["price1h", "1h", null],
@@ -415,7 +441,7 @@ export default function RoomsManager({
         ) : (
           <>
             <p className="text-gray-600 text-sm">{CATEGORY_META[tab as Category].blurb}</p>
-            <div className="mt-4 grid grid-cols-1 items-start gap-4 2xl:grid-cols-2">
+            <div className="mt-4 grid grid-cols-1 items-start gap-4 xl:grid-cols-2 min-[1800px]:grid-cols-3">
               {inTab.map((r) => (
                 <RoomRowCard
                   key={r.id}

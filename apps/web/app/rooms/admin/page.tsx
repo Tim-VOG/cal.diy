@@ -65,16 +65,21 @@ export default async function RoomsAdminPage(): Promise<JSX.Element> {
 
   return (
     <>
-      <ConfigHealth
-        settings={{ notifyEmails: settings.notifyEmails, contactEmail: settings.contactEmail }}
-      />
-      <OrphanOrders
-        rows={orphanOrders.map((o) => ({
-          ...o,
-          holdExpiresAt: o.holdExpiresAt?.toISOString() ?? null,
-          createdAt: o.createdAt.toISOString(),
-        }))}
-      />
+      {/* Two narrow status panels, side by side. Stacked full-width they pushed
+          the bookings table — the thing this page exists for — below the fold on
+          every screen. The table itself keeps the width: it is a table. */}
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+        <ConfigHealth
+          settings={{ notifyEmails: settings.notifyEmails, contactEmail: settings.contactEmail }}
+        />
+        <OrphanOrders
+          rows={orphanOrders.map((o) => ({
+            ...o,
+            holdExpiresAt: o.holdExpiresAt?.toISOString() ?? null,
+            createdAt: o.createdAt.toISOString(),
+          }))}
+        />
+      </div>
       <RoomsAdminView
         rows={rows}
         roomNames={roomNames}

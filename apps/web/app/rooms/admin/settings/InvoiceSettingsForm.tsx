@@ -58,7 +58,7 @@ export default function InvoiceSettingsForm({ initial }: { initial: InvoiceSetti
   const mutation = trpc.viewer.rooms.updateInvoiceSettings.useMutation();
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="@container max-w-2xl">
       <Link href="/rooms/admin" className="text-gray-500 text-sm hover:text-[#000643]">
         ← Back to admin
       </Link>
@@ -68,7 +68,7 @@ export default function InvoiceSettingsForm({ initial }: { initial: InvoiceSetti
       </p>
 
       <form
-        className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2"
+        className="mt-6 grid grid-cols-1 gap-4 @lg:grid-cols-2"
         onSubmit={(e) => {
           e.preventDefault();
           mutation.mutate(form);
@@ -166,7 +166,7 @@ export default function InvoiceSettingsForm({ initial }: { initial: InvoiceSetti
             Printed as three columns at the bottom of invoices and credit notes. Use line breaks to lay each
             block out across multiple rows.
           </p>
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="mt-3 grid grid-cols-1 gap-3 @lg:grid-cols-3">
             {FOOTER_COLUMNS.map((col) => (
               <label key={col.key}>
                 <span className="font-medium text-gray-700 text-sm">{col.label}</span>

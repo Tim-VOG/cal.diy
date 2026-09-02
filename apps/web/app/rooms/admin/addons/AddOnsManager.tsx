@@ -160,14 +160,17 @@ export default function AddOnsManager({ addOns }: { addOns: AddOnRow[] }): JSX.E
         </button>
       </div>
 
-      {/* Add-on cards */}
-      {/* One per row rather than three across: the fields were squeezed into a
-          third of the screen, so "Pricing", "Price" and "VAT %" wrapped to
-          different heights and the caterer's description was a two-line
-          window onto a ten-line text. */}
-      <div className="mt-6 grid grid-cols-1 items-start gap-4 2xl:grid-cols-2">
+      {/* Add-on cards, several across on a wide screen.
+          They were one per row because putting three across squeezed the
+          fields: "Pricing", "Price" and "VAT %" wrapped to different heights
+          and the caterer's description became a two-line window onto a ten-line
+          text. The cause was that the inner grid sized itself against the
+          VIEWPORT, so a card in a third of the screen still tried to lay out
+          five columns. Each card is now a container and its fields answer to
+          the card's own width, so narrowing a card genuinely rearranges it. */}
+      <div className="mt-6 grid grid-cols-1 items-start gap-4 xl:grid-cols-2 2xl:grid-cols-3">
         {draft.map((r) => (
-          <div key={r.id} className="rounded-xl border border-gray-200 bg-white p-5">
+          <div key={r.id} className="@container rounded-xl border border-gray-200 bg-white p-5">
             <div className="flex items-start justify-between gap-3">
               <input
                 type="text"
@@ -186,7 +189,7 @@ export default function AddOnsManager({ addOns }: { addOns: AddOnRow[] }): JSX.E
               </label>
             </div>
 
-            <div className="mt-3 grid grid-cols-2 items-end gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="mt-3 grid grid-cols-1 items-end gap-3 @xs:grid-cols-2 @lg:grid-cols-3 @3xl:grid-cols-5">
               <label>
                 <span className={label}>Pricing</span>
                 <select

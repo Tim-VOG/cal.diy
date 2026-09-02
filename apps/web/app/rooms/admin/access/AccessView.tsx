@@ -58,7 +58,7 @@ export default function AccessView(): JSX.Element {
   const error = grant.error?.message ?? revoke.error?.message ?? null;
 
   return (
-    <div className="space-y-8">
+    <div className="grid grid-cols-1 items-start gap-8 xl:grid-cols-[minmax(320px,28rem)_1fr]">
       <DeskModeCard />
 
       <section>

@@ -26,7 +26,7 @@ export default async function SettingsPage(): Promise<JSX.Element> {
   ]);
 
   return (
-    <div>
+    <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
       <InvoiceSettingsForm initial={invoiceSettings} />
       <LandingContentForm
         initialTitle={roomSettings.landingTitle ?? ""}
