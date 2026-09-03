@@ -2,7 +2,7 @@
 
 import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { trpc } from "@calcom/trpc/react";
-import { Clock, CreditCard, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Clock, CreditCard, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -158,6 +158,57 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
   });
   // Giving up a hold has to be as easy as taking one. Without it the only exit
   // was to wait out the clock, with the rooms unbookable by anyone meanwhile.
+  /**
+   * On a phone the shortlist is a sheet, closed until it is wanted.
+   *
+   * Open, it filled most of a 402px screen: two rooms with their add-ons, the
+   * VAT breakdown, two buttons and three lines of explanation stood between
+   * the exhibitor and the rooms they were still choosing between. Closed, it
+   * is one bar saying how many rooms and how much.
+   */
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const seenSlugs = useRef<string[] | null>(null);
+  // Opening a room page rewrites its own selection as the page restores it,
+  // which churns the store several times in the first moment. Counting any of
+  // that as "the exhibitor added a room" opened the sheet on every page load.
+  // Nothing auto-opens until the dust settles.
+  const settled = useRef(false);
+  useEffect(() => {
+    const id = setTimeout(() => {
+      settled.current = true;
+    }, 1200);
+    return () => clearTimeout(id);
+  }, []);
+  useEffect(() => {
+    if (selections === null) return;
+    const slugs = selections.map((s) => s.slug);
+    const before = seenSlugs.current;
+    // A room that was not there before — an addition, not a re-save. The moment
+    // the shortlist gains something is exactly the moment it is worth showing.
+    if (settled.current && before !== null && slugs.some((slug) => !before.includes(slug))) {
+      setSheetOpen(true);
+    }
+    seenSlugs.current = slugs;
+  }, [selections]);
+
+  // Room at the bottom of the page for the closed bar, so the last line of the
+  // footer is not permanently underneath it. Phones only: on a wide screen the
+  // panel is parked to the right and covers nothing.
+  const showsSheet = !hidden && ((selections?.length ?? 0) > 0 || Boolean(pending.data));
+  useEffect(() => {
+    if (!showsSheet) return;
+    const narrow = globalThis.matchMedia?.("(max-width: 1279px)");
+    const apply = () => {
+      document.body.style.paddingBottom = narrow?.matches ? "4.75rem" : "";
+    };
+    apply();
+    narrow?.addEventListener("change", apply);
+    return () => {
+      narrow?.removeEventListener("change", apply);
+      document.body.style.paddingBottom = "";
+    };
+  }, [showsSheet]);
+
   // What to do when the clock runs out. The rooms are back on sale, so the
   // shortlist that was holding them is no longer a basket anyone can pay for.
   const [lapsed, setLapsed] = useState(false);
@@ -214,6 +265,30 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
   }));
   const freeDays = eventDays.filter((d) => !alreadyBooked.has(d) && !seenDays.has(d));
   const subtotal = (selections ?? []).reduce((sum, s) => sum + s.total, 0);
+
+  /**
+   * The server's quote, but only when it covers the whole basket.
+   *
+   * previewOrderVat reports how many rooms it managed to price. When it prices
+   * fewer than were sent — a slot that has since gone, an add-on withdrawn — it
+   * still returns totals, for the rooms it could price. Those totals were being
+   * shown as THE total: a basket it could price none of displayed "Total €0.00"
+   * directly beneath two rooms listed at €646 and €534, with the Pay button
+   * live underneath. Falling back to the prices the rooms were saved at is both
+   * honest and closer to what will be charged.
+   */
+  const quoted = vat.data && vat.data.pricedRooms === payable.length ? vat.data : null;
+  const totalHt = quoted ? quoted.totalHt : subtotal;
+  const totalTtc = quoted ? quoted.totalTtc : subtotal;
+
+  // What the closed bar says: how many rooms, and what they come to.
+  const sheetBadge = payable.length || heldOrder?.rooms || 0;
+  const sheetSummary =
+    payable.length > 0
+      ? `${payable.length} room${payable.length > 1 ? "s" : ""} · ${money(totalTtc, currency)}`
+      : heldOrder
+        ? `${heldOrder.rooms} room${heldOrder.rooms > 1 ? "s" : ""} held`
+        : "Your shortlist";
 
   const body = (
     <>
@@ -331,21 +406,21 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
           <dl className="mt-2 space-y-1 border-[#000643]/10 border-t pt-2 text-sm">
             <div className="flex justify-between text-gray-600">
               <dt>Excl. VAT</dt>
-              <dd className="tabular-nums">{money(vat.data?.totalHt ?? subtotal, currency)}</dd>
+              <dd className="tabular-nums">{money(totalHt, currency)}</dd>
             </div>
-            {vat.data && vat.data.totalVat > 0 ? (
+            {quoted && quoted.totalVat > 0 ? (
               <div className="flex justify-between text-gray-500 text-xs">
                 <dt>VAT</dt>
-                <dd className="tabular-nums">{money(vat.data.totalVat, currency)}</dd>
+                <dd className="tabular-nums">{money(quoted.totalVat, currency)}</dd>
               </div>
             ) : null}
-            {vat.data?.zeroRated && vat.data.mention ? (
-              <p className="text-gray-400 text-xs leading-snug">{vat.data.mention}</p>
+            {quoted?.zeroRated && quoted.mention ? (
+              <p className="text-gray-400 text-xs leading-snug">{quoted.mention}</p>
             ) : null}
             <div className="flex justify-between border-[#000643]/10 border-t pt-1 font-semibold text-[#000643]">
               <dt>Total</dt>
               <dd className="tabular-nums">
-                {money(vat.data?.totalTtc ?? subtotal, currency)}
+                {money(totalTtc, currency)}
               </dd>
             </div>
           </dl>
@@ -443,10 +518,49 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
         </div>
       </aside>
 
-      {/* Narrower screens: pinned to the bottom, same content, nothing folded. */}
-      <div className="sticky bottom-0 z-40 border-[#000643]/15 border-t bg-white/95 shadow-[0_-4px_16px_rgba(0,6,67,0.08)] backdrop-blur xl:hidden">
-        <div className="mx-auto max-h-[60vh] w-full max-w-6xl overflow-y-auto px-4 py-3 sm:px-6">
-          {body}
+      {/* Narrower screens: a sheet pinned to the viewport, closed by default.
+          It was `sticky`, which meant it stopped being pinned the moment the
+          page ran out — so scrolling to the bottom carried it down into the
+          footer instead of leaving it where it belongs. `fixed` keeps it put,
+          and the body reserves the closed bar's height so the footer's last
+          line is still reachable underneath it. */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-[#000643]/15 border-t bg-white/95 shadow-[0_-4px_16px_rgba(0,6,67,0.08)] backdrop-blur xl:hidden">
+        <div className="mx-auto w-full max-w-6xl">
+          <button
+            type="button"
+            onClick={() => setSheetOpen((v) => !v)}
+            aria-expanded={sheetOpen}
+            className="flex w-full items-center gap-3 px-4 py-3 text-left sm:px-6">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#000643] font-semibold text-sm text-white">
+              {sheetBadge}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-semibold text-[#000643] text-sm">
+                {sheetSummary}
+              </span>
+              {/* The clock is the one thing that must never be folded away. When
+                  the sheet is open the amber box carries it, so it is rendered
+                  here only while it is closed — one countdown, never two. */}
+              <span className="block truncate text-gray-500 text-xs">
+                {!sheetOpen && heldOrder ? (
+                  <Countdown expiresAt={heldOrder.holdExpiresAt} onExpired={onHoldExpired} />
+                ) : (
+                  "Tap to review and pay"
+                )}
+              </span>
+            </span>
+            {sheetOpen ? (
+              <ChevronDown className="h-5 w-5 shrink-0 text-[#000643]" aria-hidden />
+            ) : (
+              <ChevronUp className="h-5 w-5 shrink-0 text-[#000643]" aria-hidden />
+            )}
+          </button>
+
+          {sheetOpen ? (
+            <div className="max-h-[65vh] overflow-y-auto border-[#000643]/10 border-t px-4 pt-3 pb-4 sm:px-6">
+              {body}
+            </div>
+          ) : null}
         </div>
       </div>
     </>

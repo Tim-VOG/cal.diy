@@ -28,7 +28,12 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
     : [];
 
   return (
-    <div className="flex min-h-screen flex-col bg-gray-50 text-black">
+    // overflow-x-clip is a backstop, not the fix: anything that overflows is a
+    // bug to be found and corrected. But a phone that can be dragged sideways
+    // off its own page is bad enough that it should not be one regression away.
+    // `clip` rather than `hidden` — hidden would make this a scroll container
+    // and break the sticky panel inside it.
+    <div className="flex min-h-screen flex-col overflow-x-clip bg-gray-50 text-black">
       {/* Two rows rather than one. Seven controls crammed onto a single line
           left the links touching each other, and the event dates competing with
           navigation for the same space. Identity and context on top, the things
@@ -74,19 +79,26 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
           </div>
         </div>
 
+        {/* Three tabs across on a phone, full labels from `sm`.
+            At their full length these three ran 26px past a 402px screen, and
+            the row had no way to scroll — so the whole PAGE could be dragged
+            sideways instead, which is not a gesture anyone makes on a phone on
+            purpose. Shorter words and an even three-way split fit without
+            asking the reader to scroll anything. */}
         {isLoggedIn ? (
           <nav className="border-white/10 border-t">
-            <div className="mx-auto flex max-w-6xl gap-1 px-2 sm:px-4">
+            <div className="mx-auto grid max-w-6xl grid-cols-3 px-1 sm:flex sm:gap-1 sm:px-4">
               {[
-                { href: "/rooms", label: "Book a meeting room" },
-                { href: "/rooms/bookings", label: "My bookings" },
-                { href: "/rooms/account", label: "Billing details" },
+                { href: "/rooms", label: "Book a meeting room", short: "Book" },
+                { href: "/rooms/bookings", label: "My bookings", short: "Bookings" },
+                { href: "/rooms/account", label: "Billing details", short: "Billing" },
               ].map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="whitespace-nowrap px-4 py-3 font-medium text-sm text-white/75 transition hover:text-white">
-                  {item.label}
+                  className="px-2 py-3 text-center font-medium text-sm text-white/75 transition hover:text-white sm:whitespace-nowrap sm:px-4 sm:text-left">
+                  <span className="sm:hidden">{item.short}</span>
+                  <span className="hidden sm:inline">{item.label}</span>
                 </Link>
               ))}
             </div>
