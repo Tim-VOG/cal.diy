@@ -2,7 +2,7 @@
 
 import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { trpc } from "@calcom/trpc/react";
-import { ChevronDown, ChevronUp, Clock, CreditCard, Plus, Trash2 } from "lucide-react";
+import { ChevronUp, Clock, CreditCard, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -325,7 +325,7 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
             type="button"
             disabled={resume.isPending}
             onClick={() => resume.mutate({ uid: heldOrder.uid })}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#000643] px-3 py-2 font-semibold text-sm text-white transition hover:opacity-90 disabled:opacity-40">
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#000643] px-3 py-2 font-semibold text-sm text-white transition duration-200 hover:opacity-90 active:scale-[0.985] disabled:opacity-40 motion-reduce:transform-none">
             <CreditCard className="h-4 w-4 shrink-0" aria-hidden />
             {resume.isPending ? "Opening payment…" : "Pay for the rooms you are holding"}
           </button>
@@ -364,7 +364,7 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
                     type="button"
                     onClick={() => forget(s.slug)}
                     aria-label={`Remove ${s.roomName}`}
-                    className="shrink-0 rounded p-1 text-gray-300 transition hover:bg-[#000643]/5 hover:text-[#000643]">
+                    className="shrink-0 rounded p-1 text-gray-300 transition duration-200 hover:scale-110 hover:bg-red-50 hover:text-red-600 active:scale-95 motion-reduce:transform-none">
                     <Trash2 className="h-3.5 w-3.5" aria-hidden />
                   </button>
                 </div>
@@ -442,7 +442,7 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
               type="button"
               disabled={!canPay || takeHold.isPending}
               onClick={() => takeHold.mutate({ rooms: basketPayload })}
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-[#000643] px-4 py-2.5 font-semibold text-[#000643] text-sm transition hover:bg-[#000643]/5 disabled:opacity-40">
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-[#000643] px-4 py-2.5 font-semibold text-[#000643] text-sm transition duration-200 hover:bg-[#000643]/5 active:scale-[0.985] disabled:opacity-40 motion-reduce:transform-none">
               <Clock className="h-4 w-4 shrink-0" aria-hidden />
               {takeHold.isPending
                 ? "Holding…"
@@ -461,7 +461,7 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
             type="button"
             disabled={!canPay || pay.isPending}
             onClick={() => pay.mutate({ rooms: basketPayload })}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#000643] px-4 py-2.5 font-semibold text-sm text-white transition hover:opacity-90 disabled:opacity-40">
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#000643] px-4 py-2.5 font-semibold text-sm text-white transition duration-200 hover:opacity-90 active:scale-[0.985] disabled:opacity-40 motion-reduce:transform-none">
             <CreditCard className="h-4 w-4 shrink-0" aria-hidden />
             {pay.isPending
               ? "Opening payment…"
@@ -473,7 +473,7 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
           {freeDays.length > 0 ? (
             <Link
               href="/rooms"
-              className="mt-2 flex items-center justify-center gap-1.5 rounded-lg border border-[#000643]/25 border-dashed px-3 py-2 text-center font-medium text-[#000643] text-xs transition hover:bg-[#000643]/5">
+              className="mt-2 flex items-center justify-center gap-1.5 rounded-lg border border-[#000643]/25 border-dashed px-3 py-2 text-center font-medium text-[#000643] text-xs transition duration-200 hover:border-[#000643]/50 hover:bg-[#000643]/5 active:scale-[0.985] motion-reduce:transform-none">
               <Plus className="h-3.5 w-3.5 shrink-0" aria-hidden />
               Add a booking for another day
             </Link>
@@ -530,7 +530,7 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
             type="button"
             onClick={() => setSheetOpen((v) => !v)}
             aria-expanded={sheetOpen}
-            className="flex w-full items-center gap-3 px-4 py-3 text-left sm:px-6">
+            className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-200 hover:bg-[#000643]/[0.03] active:bg-[#000643]/[0.06] motion-reduce:transition-none sm:px-6">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#000643] font-semibold text-sm text-white">
               {sheetBadge}
             </span>
@@ -549,18 +549,38 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
                 )}
               </span>
             </span>
-            {sheetOpen ? (
-              <ChevronDown className="h-5 w-5 shrink-0 text-[#000643]" aria-hidden />
-            ) : (
-              <ChevronUp className="h-5 w-5 shrink-0 text-[#000643]" aria-hidden />
-            )}
+            {/* One chevron that turns, rather than two that swap: the rotation
+                is what tells you the bar and the sheet are the same thing. */}
+            <ChevronUp
+              className={`h-5 w-5 shrink-0 text-[#000643] transition-transform duration-300 ease-out motion-reduce:transition-none ${
+                sheetOpen ? "rotate-180" : ""
+              }`}
+              aria-hidden
+            />
           </button>
 
-          {sheetOpen ? (
-            <div className="max-h-[65vh] overflow-y-auto border-[#000643]/10 border-t px-4 pt-3 pb-4 sm:px-6">
-              {body}
+          {/* Rows of 0fr → 1fr, because a height of `auto` cannot be animated.
+              The contents stay mounted so the sheet can slide rather than blink;
+              the outer track clips them while it is closed. */}
+          <div
+            className={`grid transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none ${
+              sheetOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+            }`}>
+            <div className="overflow-hidden">
+              <div
+                // The contents stay in the DOM so the sheet can slide rather
+                // than blink. `invisible` is what keeps them out of the way
+                // while it is closed — without it the Pay button is still
+                // tabbable behind a shut sheet. visibility transitions as a
+                // discrete step held to the end, so the fade still reads.
+                className={`max-h-[65vh] overflow-y-auto border-[#000643]/10 border-t px-4 pt-3 pb-4 transition-[opacity,visibility] duration-200 motion-reduce:transition-none sm:px-6 ${
+                  sheetOpen ? "visible opacity-100" : "invisible opacity-0"
+                }`}
+                aria-hidden={!sheetOpen}>
+                {body}
+              </div>
             </div>
-          ) : null}
+          </div>
         </div>
       </div>
     </>

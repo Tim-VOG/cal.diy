@@ -90,10 +90,14 @@ function addOnSuffix(priceType: AddOnPriceType, quantity: number): string {
 }
 
 type CellState = "selected" | "available" | "disabled";
-const CELL_BASE = "rounded-lg border px-4 py-2 text-sm font-medium transition";
+const CELL_BASE =
+  "rounded-lg border px-4 py-2 text-sm font-medium transition duration-200 ease-out motion-reduce:transform-none motion-reduce:transition-none";
 const CELL_CLASS: Record<CellState, string> = {
-  selected: "border-[#000643] bg-[#000643] text-white",
-  available: "border-gray-200 bg-white text-black hover:border-[#000643]",
+  // The chosen one sits slightly proud of the row, so which day and which
+  // duration are selected reads at a glance rather than by colour alone.
+  selected: "border-[#000643] bg-[#000643] text-white shadow-md scale-[1.03]",
+  available:
+    "border-gray-200 bg-white text-black hover:border-[#000643] hover:shadow-sm active:scale-95",
   disabled: "cursor-not-allowed border-gray-100 bg-gray-100 text-gray-300",
 };
 function cellState(isSelected: boolean, isEnabled: boolean): CellState {
@@ -216,7 +220,7 @@ function AddOnList({
                         onClick={() => onSetQuantity(addOn.slug, quantity - 1)}
                         disabled={quantity <= minimumCovers}
                         aria-label={`Fewer ${addOn.name}`}
-                        className="px-2.5 py-1 text-[#000643] text-lg leading-none disabled:cursor-not-allowed disabled:text-gray-300">
+                        className="rounded-l-lg px-2.5 py-1 text-[#000643] text-lg leading-none transition duration-150 hover:bg-[#000643]/5 active:scale-90 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent motion-reduce:transform-none motion-reduce:transition-none">
                         −
                       </button>
                       <span className="w-8 text-center font-medium text-sm tabular-nums">{quantity}</span>
@@ -225,7 +229,7 @@ function AddOnList({
                         onClick={() => onSetQuantity(addOn.slug, Math.min(roomCapacity, quantity + 1))}
                         disabled={quantity >= roomCapacity}
                         aria-label={`More ${addOn.name}`}
-                        className="px-2.5 py-1 text-[#000643] text-lg leading-none disabled:cursor-not-allowed disabled:text-gray-300">
+                        className="rounded-r-lg px-2.5 py-1 text-[#000643] text-lg leading-none transition duration-150 hover:bg-[#000643]/5 active:scale-90 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent motion-reduce:transform-none motion-reduce:transition-none">
                         +
                       </button>
                     </div>
@@ -633,7 +637,7 @@ export default function RoomBookingClient({
           <p className="text-gray-600 text-sm">Log in to book a meeting room.</p>
           <a
             href={`/rooms/login?callbackUrl=/rooms/${room.slug}`}
-            className="mt-3 block w-full rounded-lg bg-[#000643] px-4 py-2.5 text-center font-semibold text-sm text-white transition hover:opacity-90">
+            className="mt-3 block w-full rounded-lg bg-[#000643] px-4 py-2.5 text-center font-semibold text-sm text-white transition duration-200 hover:opacity-90 active:scale-[0.985] motion-reduce:transform-none">
             Log in to book
           </a>
         </div>
@@ -644,7 +648,7 @@ export default function RoomBookingClient({
           </p>
           <a
             href="/rooms/account"
-            className="mt-3 block w-full rounded-lg bg-[#000643] px-4 py-2.5 text-center font-semibold text-sm text-white transition hover:opacity-90">
+            className="mt-3 block w-full rounded-lg bg-[#000643] px-4 py-2.5 text-center font-semibold text-sm text-white transition duration-200 hover:opacity-90 active:scale-[0.985] motion-reduce:transform-none">
             Complete billing details
           </a>
         </div>
@@ -656,7 +660,7 @@ export default function RoomBookingClient({
           </p>
           <a
             href="/rooms/bookings"
-            className="mt-3 block w-full rounded-lg border border-[#000643] px-4 py-2.5 text-center font-semibold text-[#000643] text-sm transition hover:bg-[#000643]/5">
+            className="mt-3 block w-full rounded-lg border border-[#000643] px-4 py-2.5 text-center font-semibold text-[#000643] text-sm transition duration-200 hover:bg-[#000643]/5 active:scale-[0.985] motion-reduce:transform-none">
             See my bookings
           </a>
         </div>

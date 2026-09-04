@@ -47,14 +47,22 @@ function RoomCard({ room }: { room: Room }): JSX.Element {
   return (
     <Link
       href={`/rooms/${room.slug}`}
-      className="group flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition hover:border-[#000643] hover:shadow-md">
+      className="group flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition duration-300 ease-out hover:-translate-y-1 hover:border-[#000643] hover:shadow-lg active:translate-y-0 active:shadow-md motion-reduce:transform-none motion-reduce:transition-none">
       <div className="relative h-40 w-full bg-[#000643]/5">
         {room.imageUrl ? (
           // biome-ignore lint/performance/noImgElement: admin-provided URL/path, next/image adds no value here
-          <img src={room.imageUrl} alt={room.name} className="h-full w-full object-cover" />
+          <img
+            src={room.imageUrl}
+            alt={room.name}
+            className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105 motion-reduce:transform-none motion-reduce:transition-none"
+          />
         ) : (
           <div className="flex h-full items-center justify-center text-[#000643]/45">
-            <TitleIcon className="h-12 w-12" strokeWidth={1.75} aria-hidden />
+            <TitleIcon
+              className="h-12 w-12 transition-transform duration-500 ease-out group-hover:scale-110 motion-reduce:transform-none motion-reduce:transition-none"
+              strokeWidth={1.75}
+              aria-hidden
+            />
           </div>
         )}
         <span className="absolute top-3 left-3 rounded-full bg-white/90 px-2.5 py-0.5 font-medium text-[#000643] text-xs shadow-sm">
