@@ -739,6 +739,33 @@ describe("Ne26OrderService.createOrder", () => {
     });
   });
 
+  describe("one exhibitor's rooms are not another's", () => {
+    it("does not count somebody else's booking against an account", async () => {
+      // Two `OR` keys in one Prisma filter are the same key twice: the second
+      // replaces the first. The identity clause lost, so the day rule saw
+      // every exhibitor's rooms as this one's — one booking closed that day to
+      // all nine rooms and everybody else. The walk-in path never showed it,
+      // because with no account the identity clause has no OR of its own.
+      const rival = { userId: null, email: `stranger-${STAMP}@test.com`, name: "Stranger" };
+      const { order } = await service.createOrder({ buyer: rival, rooms: [room(SLUG_A, TUE, 14)] });
+      await orders.confirmPaid(order.uid, null);
+
+      await expect(
+        service.createOrder({ buyer: buyer(), rooms: [room(SLUG_B, TUE, 15)] })
+      ).resolves.toMatchObject({ order: { status: ResourceBookingStatus.PENDING } });
+    });
+
+    it("still stops the same account taking two rooms that day", async () => {
+      // The narrowing must not go so far that the rule stops working.
+      const { order } = await service.createOrder({ buyer: buyer(), rooms: [room(SLUG_A, TUE, 14)] });
+      await orders.confirmPaid(order.uid, null);
+
+      await expect(
+        service.createOrder({ buyer: buyer(), rooms: [room(SLUG_B, TUE, 15)] })
+      ).rejects.toThrow(/one meeting room per day/i);
+    });
+  });
+
   describe("two baskets arriving at the same moment", () => {
     it("still leaves the exhibitor one room that day", async () => {
       // The rule was read before the write that it protects, so both requests

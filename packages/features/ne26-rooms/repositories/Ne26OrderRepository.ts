@@ -572,16 +572,26 @@ export class Ne26OrderRepository {
     // counter on the same day, because neither query could see the other. The
     // email is what identifies an exhibitor, and the account is an additional
     // way of finding them, so both are searched.
+    //
+    // Both clauses go under AND, and that is not a stylistic choice: two `OR`
+    // keys in one filter object are the same key twice, so the second silently
+    // replaced the first. The identity clause was the one that lost, and the
+    // query returned EVERY exhibitor's bookings — one booking closed that day
+    // to all nine rooms and every other exhibitor.
     const identity = booker.userId
       ? { OR: [{ bookerUserId: booker.userId }, { bookerEmail: booker.email }] }
       : { bookerEmail: booker.email };
     const rows = await client.resourceBooking.findMany({
       where: {
-        ...identity,
         isBlock: false,
-        OR: [
-          { status: ResourceBookingStatus.CONFIRMED },
-          { status: ResourceBookingStatus.PENDING, holdExpiresAt: { gt: now } },
+        AND: [
+          identity,
+          {
+            OR: [
+              { status: ResourceBookingStatus.CONFIRMED },
+              { status: ResourceBookingStatus.PENDING, holdExpiresAt: { gt: now } },
+            ],
+          },
         ],
       },
       select: { startTime: true, orderUid: true, status: true },
