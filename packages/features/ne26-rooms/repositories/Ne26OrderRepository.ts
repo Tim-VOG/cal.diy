@@ -457,9 +457,10 @@ export class Ne26OrderRepository {
     uid: string,
     invoiceNumber: string,
     invoicePdfUrl: string,
-    vat: { roomVatRate: number; zeroRated: boolean; mention: string | null }
+    vat: { roomVatRate: number; zeroRated: boolean; mention: string | null },
+    client: { ne26Order: PrismaClient["ne26Order"] } = this.prismaClient
   ): Promise<void> {
-    await this.prismaClient.ne26Order.update({
+    await client.ne26Order.update({
       where: { uid },
       data: {
         invoiceNumber,
@@ -469,6 +470,50 @@ export class Ne26OrderRepository {
         vatMention: vat.mention,
       },
     });
+  }
+
+  /**
+   * Hand out the next document number and do the work that uses it, together.
+   *
+   * The number came from a Postgres sequence, and nextval cannot be rolled
+   * back: it is consumed even when the transaction that asked for it fails. So
+   * every failed PDF render tore a permanent hole in a series that is supposed
+   * to be unbroken, and the only remedy was to explain the hole to an
+   * accountant afterwards.
+   *
+   * A counter row is incremented inside the same transaction that renders and
+   * records the document. If anything in `work` throws, the increment goes back
+   * with it and the number is handed to the next document instead. The row lock
+   * also serialises issuance — at a few hundred documents over three days that
+   * costs nothing, and it is what makes the series safe under a replayed
+   * webhook arriving beside a manual one.
+   *
+   * The timeout is generous because rendering a PDF happens inside.
+   */
+  async issueWithNumber<T>(
+    series: "invoice" | "credit-note",
+    year: number,
+    work: (documentNumber: string, tx: TransactionClient) => Promise<T>
+  ): Promise<T> {
+    return this.prismaClient.$transaction(
+      async (tx) => {
+        const rows = await tx.$queryRaw<{ lastNumber: number }[]>`
+          INSERT INTO "Ne26DocumentCounter" ("series", "lastNumber", "updatedAt")
+          VALUES (${series}, 1, CURRENT_TIMESTAMP)
+          ON CONFLICT ("series") DO UPDATE
+            SET "lastNumber" = "Ne26DocumentCounter"."lastNumber" + 1,
+                "updatedAt" = CURRENT_TIMESTAMP
+          RETURNING "lastNumber"`;
+        const next = rows[0].lastNumber;
+        // The two series have different shapes and always have had:
+        // NE26-2026-0007 for an invoice, NE26-CN-2026-0007 for a credit note.
+        // They are unique columns, so getting this wrong collides with a
+        // document that already exists.
+        const prefix = series === "credit-note" ? `NE26-CN-${year}` : `NE26-${year}`;
+        return work(`${prefix}-${String(next).padStart(4, "0")}`, tx);
+      },
+      { timeout: 60_000, maxWait: 20_000 }
+    );
   }
 
   /**
@@ -483,9 +528,14 @@ export class Ne26OrderRepository {
   async creditNoteAndCancel(
     uid: string,
     creditNoteNumber: string,
-    creditNotePdfUrl: string
+    creditNotePdfUrl: string,
+    // Supplied when this runs inside issueWithNumber's transaction, so the
+    // number, the cancellation and the freed rooms commit or fail together.
+    // Prisma has no nested interactive transactions, so it must be passed in
+    // rather than opened again here.
+    outer?: TransactionClient
   ): Promise<number> {
-    return this.prismaClient.$transaction(async (tx) => {
+    const run = async (tx: TransactionClient) => {
       const result = await tx.ne26Order.updateMany({
         where: {
           uid,
@@ -498,7 +548,8 @@ export class Ne26OrderRepository {
       if (result.count === 0) return 0;
       await tx.resourceBooking.deleteMany({ where: { orderUid: uid } });
       return result.count;
-    });
+    };
+    return outer ? run(outer) : this.prismaClient.$transaction(run);
   }
 
   /**

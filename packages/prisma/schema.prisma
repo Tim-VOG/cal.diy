@@ -3185,6 +3185,21 @@ model Ne26AuditLog {
 // document and the VAT treatment belong here rather than on any single room —
 // and the Stripe payment id is unique HERE, which is what stops one payment
 // being processed twice.
+/// NE26: gapless numbering for invoices and credit notes.
+///
+/// A Postgres sequence cannot be rolled back — nextval consumes a number even
+/// when the transaction that asked for it fails — so every failed PDF render
+/// left a permanent hole in a legally sequential series. A counter row is
+/// incremented inside the same transaction that renders and stores the
+/// document, so a failure returns the number to the pool. The row lock also
+/// serialises issuance, which at a few hundred documents costs nothing.
+model Ne26DocumentCounter {
+  /// "invoice" or "credit-note".
+  series     String   @id
+  lastNumber Int      @default(0)
+  updatedAt  DateTime @updatedAt
+}
+
 model Ne26Order {
   uid                     String                @id @default(uuid())
   bookings                ResourceBooking[]

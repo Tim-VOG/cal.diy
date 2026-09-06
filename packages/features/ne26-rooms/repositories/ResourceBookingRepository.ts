@@ -692,12 +692,6 @@ export class ResourceBookingRepository {
   }
 
   /** Allocate the next gap-tolerant invoice number, e.g. NE26-2026-0001. */
-  async allocateInvoiceNumber(year = new Date().getUTCFullYear()): Promise<string> {
-    const rows = await this.prismaClient.$queryRaw<
-      { n: number }[]
-    >`SELECT nextval('ne26_invoice_seq')::int AS n`;
-    return `NE26-${year}-${String(rows[0].n).padStart(4, "0")}`;
-  }
 
   /**
    * Persist the invoice AND the VAT treatment it was rendered with. Freezing the
@@ -722,12 +716,6 @@ export class ResourceBookingRepository {
     });
   }
 
-  async allocateCreditNoteNumber(year = new Date().getUTCFullYear()): Promise<string> {
-    const rows = await this.prismaClient.$queryRaw<
-      { n: number }[]
-    >`SELECT nextval('ne26_credit_note_seq')::int AS n`;
-    return `NE26-CN-${year}-${String(rows[0].n).padStart(4, "0")}`;
-  }
 
   /** Resolve a booking uid from the Stripe payment intent (for refund webhooks). */
   async findUidByStripePaymentId(stripePaymentId: string): Promise<string | null> {

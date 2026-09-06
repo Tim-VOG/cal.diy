@@ -283,3 +283,50 @@ describe("InvoiceService.issueInvoice", () => {
     });
   });
 });
+
+describe("document numbers are handed out without gaps", () => {
+  async function counter(series: string): Promise<number> {
+    const rows = await prisma.$queryRaw<{ lastNumber: number }[]>`
+      SELECT "lastNumber" FROM "Ne26DocumentCounter" WHERE "series" = ${series}`;
+    return rows[0]?.lastNumber ?? 0;
+  }
+
+  it("gives the number back when the document is not produced", async () => {
+    // The old allocator drew from a Postgres sequence, which cannot be rolled
+    // back: a PDF that failed to render still spent its number, and a legally
+    // sequential series was left with a hole nobody could explain.
+    const before = await counter("invoice");
+
+    await expect(
+      orders.issueWithNumber("invoice", 2026, async () => {
+        throw new Error("the renderer fell over");
+      })
+    ).rejects.toThrow(/renderer/);
+
+    expect(await counter("invoice")).toBe(before);
+  });
+
+  it("hands the same number to the next document that succeeds", async () => {
+    const before = await counter("invoice");
+
+    await orders
+      .issueWithNumber("invoice", 2026, async () => {
+        throw new Error("the renderer fell over");
+      })
+      .catch(() => undefined);
+
+    const issued = await orders.issueWithNumber("invoice", 2026, async (n) => n);
+    expect(issued).toBe(`NE26-2026-${String(before + 1).padStart(4, "0")}`);
+    expect(await counter("invoice")).toBe(before + 1);
+  });
+
+  it("keeps the two series apart, each in its own shape", async () => {
+    // NE26-2026-0007 and NE26-CN-2026-0007 are different documents. Both
+    // columns are unique, so reusing the wrong shape collides with one that
+    // already exists.
+    const invoice = await orders.issueWithNumber("invoice", 2026, async (n) => n);
+    const creditNote = await orders.issueWithNumber("credit-note", 2026, async (n) => n);
+    expect(invoice).toMatch(/^NE26-2026-\d{4}$/);
+    expect(creditNote).toMatch(/^NE26-CN-2026-\d{4}$/);
+  });
+});

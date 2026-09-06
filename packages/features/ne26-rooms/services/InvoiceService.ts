@@ -12,6 +12,13 @@ import type { Ne26BillingProfileRepository } from "../repositories/Ne26BillingPr
 import type { Ne26OrderRepository } from "../repositories/Ne26OrderRepository";
 import type { ResourceBookingRepository } from "../repositories/ResourceBookingRepository";
 
+/**
+ * Thrown to roll the credit-note transaction back when the order turns out to
+ * have been credited already — a second refund webhook, or an admin who
+ * clicked twice. It never escapes the service.
+ */
+class AlreadyCredited extends Error {}
+
 export interface IInvoiceServiceDeps {
   ne26OrderRepository: Ne26OrderRepository;
   /** Only for the invoice / credit-note number sequences. */
@@ -125,39 +132,51 @@ export class InvoiceService {
     // Year comes from the issue date, not a literal: a document raised in
     // January 2027 was being stamped 2026.
     const issueDate = new Date();
-    const invoiceNumber = await this.deps.resourceBookingRepository.allocateInvoiceNumber(
-      issueDate.getUTCFullYear()
-    );
     const billTo = await this.resolveBillTo(order);
     const first = order.bookings[0];
-    const pdf = await renderInvoicePdf(
-      model,
-      {
-        invoiceNumber,
-        issueDate,
-        // An order with no Stripe payment id was settled offline (bank transfer).
-        paidViaStripe: Boolean(order.stripePaymentId),
-        bookerName: order.bookerName,
-        bookerEmail: order.bookerEmail,
-        poNumber: order.bookerPoNumber,
-        internalReference: order.bookerInternalReference,
-        billTo,
-        roomName: this.roomLabel(order),
-        startUtc: first?.startTime ?? issueDate,
-        endUtc: first?.endTime ?? issueDate,
-      },
-      issuer
+
+    // The number, the PDF and the record of it are one operation. Drawn from a
+    // sequence beforehand, a number was spent whether or not a document ever
+    // carried it, and a failed render left a permanent hole in the series.
+    const { invoiceNumber, pdf } = await this.deps.ne26OrderRepository.issueWithNumber(
+      "invoice",
+      issueDate.getUTCFullYear(),
+      async (invoiceNumber, tx) => {
+        const pdf = await renderInvoicePdf(
+          model,
+          {
+            invoiceNumber,
+            issueDate,
+            // An order with no Stripe payment id was settled offline (bank transfer).
+            paidViaStripe: Boolean(order.stripePaymentId),
+            bookerName: order.bookerName,
+            bookerEmail: order.bookerEmail,
+            poNumber: order.bookerPoNumber,
+            internalReference: order.bookerInternalReference,
+            billTo,
+            roomName: this.roomLabel(order),
+            startUtc: first?.startTime ?? issueDate,
+            endUtc: first?.endTime ?? issueDate,
+          },
+          issuer
+        );
+
+        await saveInvoicePdf(uid, pdf);
+        // Recorded inside the same transaction as the number, so the two can
+        // never disagree. A failed email afterwards is logged by the caller and
+        // resent from the stored PDF — never re-issued, which would spend a
+        // second number.
+        await this.deps.ne26OrderRepository.setInvoice(
+          uid,
+          invoiceNumber,
+          `/rooms/invoice/${uid}`,
+          { roomVatRate, zeroRated: vat.zeroRated, mention: vat.mention },
+          tx
+        );
+        return { invoiceNumber, pdf };
+      }
     );
 
-    await saveInvoicePdf(uid, pdf);
-    // Persist before emailing: the invoice now exists (the idempotency anchor);
-    // a failed email is logged by the caller and can be resent without
-    // re-issuing, which would burn a second sequential number.
-    await this.deps.ne26OrderRepository.setInvoice(uid, invoiceNumber, `/rooms/invoice/${uid}`, {
-      roomVatRate,
-      zeroRated: vat.zeroRated,
-      mention: vat.mention,
-    });
     await sendInvoiceEmail({
       to: order.bookerEmail,
       bookerName: order.bookerName,
@@ -232,39 +251,54 @@ export class InvoiceService {
     );
 
     const issueDate = new Date();
-    const creditNoteNumber = await this.deps.resourceBookingRepository.allocateCreditNoteNumber(
-      issueDate.getUTCFullYear()
-    );
-    // Anchor first: the number is claimed in the same statement that cancels the
-    // order, so only one of two concurrent refund events proceeds.
-    const count = await this.deps.ne26OrderRepository.creditNoteAndCancel(
-      uid,
-      creditNoteNumber,
-      `/rooms/credit-note/${uid}`
-    );
-    if (count === 0) return false;
-
     const billTo = await this.resolveBillTo(order);
     const first = order.bookings[0];
-    const pdf = await renderInvoicePdf(
-      model,
-      {
-        invoiceNumber: creditNoteNumber,
-        relatedInvoiceNumber: order.invoiceNumber,
-        kind: "credit_note",
-        issueDate,
-        bookerName: order.bookerName,
-        bookerEmail: order.bookerEmail,
-        poNumber: order.bookerPoNumber,
-        internalReference: order.bookerInternalReference,
-        billTo,
-        roomName: this.roomLabel(order),
-        startUtc: first?.startTime ?? issueDate,
-        endUtc: first?.endTime ?? issueDate,
-      },
-      issuer
-    );
-    await saveInvoicePdf(uid, pdf, "credit_note");
+    // Captured here because the guard above narrowed it; TypeScript does not
+    // carry that narrowing into the callback below.
+    const relatedInvoiceNumber = order.invoiceNumber;
+
+    // Same shape as the invoice: number, cancellation, PDF and record commit
+    // together or not at all. An order credited by a concurrent refund throws
+    // AlreadyCredited, which rolls the number back rather than spending it on a
+    // document that was never produced.
+    const issued = await this.deps.ne26OrderRepository
+      .issueWithNumber("credit-note", issueDate.getUTCFullYear(), async (creditNoteNumber, tx) => {
+        const count = await this.deps.ne26OrderRepository.creditNoteAndCancel(
+          uid,
+          creditNoteNumber,
+          `/rooms/credit-note/${uid}`,
+          tx
+        );
+        if (count === 0) throw new AlreadyCredited();
+
+        const pdf = await renderInvoicePdf(
+          model,
+          {
+            invoiceNumber: creditNoteNumber,
+            relatedInvoiceNumber,
+            kind: "credit_note",
+            issueDate,
+            bookerName: order.bookerName,
+            bookerEmail: order.bookerEmail,
+            poNumber: order.bookerPoNumber,
+            internalReference: order.bookerInternalReference,
+            billTo,
+            roomName: this.roomLabel(order),
+            startUtc: first?.startTime ?? issueDate,
+            endUtc: first?.endTime ?? issueDate,
+          },
+          issuer
+        );
+        await saveInvoicePdf(uid, pdf, "credit_note");
+        return { creditNoteNumber, pdf };
+      })
+      .catch((e) => {
+        if (e instanceof AlreadyCredited) return null;
+        throw e;
+      });
+    if (!issued) return false;
+    const { creditNoteNumber, pdf } = issued;
+
     await sendInvoiceEmail({
       to: order.bookerEmail,
       bookerName: order.bookerName,
