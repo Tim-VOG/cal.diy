@@ -4,6 +4,7 @@ import { remindExpiringHolds } from "@calcom/features/ne26-rooms/services/HoldRe
 import { WEBAPP_URL } from "@calcom/lib/constants";
 import logger from "@calcom/lib/logger";
 import { defaultResponderForAppDir } from "app/api/defaultResponderForAppDir";
+import { timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
@@ -16,12 +17,27 @@ const log = logger.getSubLogger({ prefix: ["[ne26-hold-reminders]"] });
  * each reminder is claimed in the database before it is sent, so a slow run
  * cannot make the next one mail the same buyer again.
  *
- * Authenticated with CRON_API_KEY like Cal's other cron routes — this sends mail
- * on our behalf, so it must not be open to the internet.
+ * Authenticated with CRON_API_KEY — this sends mail on our behalf, so it must
+ * not be open to the internet.
+ *
+ * The key is read from the Authorization header ONLY. It used to be accepted
+ * as `?apiKey=` too, which put a live secret into every proxy access log, every
+ * server log line and every browser history that ever touched the URL. A query
+ * string is not a place to carry a credential.
  */
+function isAuthorised(req: NextRequest): boolean {
+  const expected = process.env.CRON_API_KEY;
+  const supplied = req.headers.get("authorization");
+  if (!expected || !supplied) return false;
+  const a = Buffer.from(expected);
+  const b = Buffer.from(supplied);
+  // Compared in constant time, and only when the lengths already match —
+  // timingSafeEqual throws on a length mismatch, which would itself leak it.
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 async function postHandler(req: NextRequest): Promise<Response> {
-  const apiKey = req.headers.get("authorization") || req.nextUrl.searchParams.get("apiKey");
-  if (!process.env.CRON_API_KEY || process.env.CRON_API_KEY !== apiKey) {
+  if (!isAuthorised(req)) {
     return NextResponse.json({ message: "Not authenticated" }, { status: 401 });
   }
 
