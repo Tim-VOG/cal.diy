@@ -108,6 +108,13 @@ export default defineConfig({
     include: getTestInclude(),
     exclude: getTestExclude(),
     pool: "forks",
+    // Integration suites share one database, and several of them write the same
+    // singleton settings row — opening hours and the cleaning buffer — so that
+    // slot counts are predictable. Run in parallel, one suite changes the buffer
+    // while another is mid-assertion, and a dozen tests fail for reasons that
+    // have nothing to do with the code; anybody who saw that would go hunting a
+    // bug that does not exist. Unit tests share nothing and keep their workers.
+    fileParallelism: !isIntegrationMode,
     server: {
       deps: {
         inline: [/@calcom\/.*/],
