@@ -406,20 +406,50 @@ export class Ne26OrderRepository {
       city?: string | null;
     }
   ): Promise<void> {
-    await this.prismaClient.ne26Order.updateMany({
-      where: { uid, status: ResourceBookingStatus.PENDING },
-      // A blank field from Checkout must never overwrite what the billing
-      // profile already told us: it would change the VAT on the invoice.
-      data: {
-        ...(data.country?.trim() ? { bookerCountry: data.country } : {}),
-        ...(data.vatNumber?.trim() ? { bookerVatNumber: data.vatNumber } : {}),
-        ...(data.name?.trim() ? { bookerName: data.name } : {}),
-        ...(data.legalName?.trim() ? { bookerLegalName: data.legalName } : {}),
-        ...(data.addressLine1?.trim() ? { bookerAddressLine1: data.addressLine1 } : {}),
-        ...(data.addressLine2?.trim() ? { bookerAddressLine2: data.addressLine2 } : {}),
-        ...(data.postalCode?.trim() ? { bookerPostalCode: data.postalCode } : {}),
-        ...(data.city?.trim() ? { bookerCity: data.city } : {}),
-      },
+    await this.prismaClient.$transaction(async (tx) => {
+      // The address block on the invoice: what the buyer confirmed at payment
+      // beats what they saved months earlier, and a blank field never wins.
+      // None of these change a single amount.
+      await tx.ne26Order.updateMany({
+        where: { uid, status: ResourceBookingStatus.PENDING },
+        data: {
+          ...(data.name?.trim() ? { bookerName: data.name } : {}),
+          ...(data.legalName?.trim() ? { bookerLegalName: data.legalName } : {}),
+          ...(data.addressLine1?.trim() ? { bookerAddressLine1: data.addressLine1 } : {}),
+          ...(data.addressLine2?.trim() ? { bookerAddressLine2: data.addressLine2 } : {}),
+          ...(data.postalCode?.trim() ? { bookerPostalCode: data.postalCode } : {}),
+          ...(data.city?.trim() ? { bookerCity: data.city } : {}),
+        },
+      });
+
+      // The country and the VAT number are different in kind: they decided the
+      // VAT, and the VAT decided the amount already charged to the card. They
+      // are filled ONLY when the order has none — a counter sale, where the
+      // desk collected nothing and Checkout is the only source there will ever
+      // be. Overwriting them meant an exhibitor could be charged 21% and
+      // invoiced zero-rated, because the price was computed from the profile
+      // and the document from whatever Stripe returned.
+      //
+      // A buyer whose card sits in another country is not re-rated here. If the
+      // country really was wrong, the answer is a credit note and a fresh
+      // invoice, not a silent re-rating of a payment already taken.
+      const missing = { OR: [{ bookerCountry: null }, { bookerCountry: "" }] };
+      if (data.country?.trim()) {
+        await tx.ne26Order.updateMany({
+          where: { uid, status: ResourceBookingStatus.PENDING, ...missing },
+          data: { bookerCountry: data.country },
+        });
+      }
+      if (data.vatNumber?.trim()) {
+        await tx.ne26Order.updateMany({
+          where: {
+            uid,
+            status: ResourceBookingStatus.PENDING,
+            OR: [{ bookerVatNumber: null }, { bookerVatNumber: "" }],
+          },
+          data: { bookerVatNumber: data.vatNumber },
+        });
+      }
     });
   }
 
