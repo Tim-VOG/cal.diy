@@ -173,6 +173,56 @@ async function notifySale(orderUid: string, session: Stripe.Checkout.Session): P
   );
 }
 
+/**
+ * Say what actually happened when a payment could not be confirmed.
+ *
+ * Four situations reach this point and they need four different answers — one
+ * of which is silence.
+ */
+async function reportUnconfirmed(
+  orderUid: string,
+  stripePaymentId: string | null,
+  session: Stripe.Checkout.Session
+): Promise<void> {
+  const { getNe26OrderRepository } = await import(
+    "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
+  );
+  const order = await getNe26OrderRepository().findByUid(orderUid);
+  const amount = money(session.amount_total, session.currency);
+  const trail = `Captured ${amount} for order ${orderUid}\nPayment intent: ${stripePaymentId}\nCheckout session: ${session.id}`;
+
+  // A replay of a delivery we already acted on. The sale is fine and the
+  // invoice went out; the team must not hear about it again.
+  if (order?.status === "CONFIRMED" && order.stripePaymentId === stripePaymentId) {
+    log.info(`Ignoring a replayed confirmation for order ${orderUid}.`);
+    return;
+  }
+
+  // Confirmed, but settled by a DIFFERENT payment. Two payments exist for one
+  // order and one of them has to be given back.
+  if (order?.status === "CONFIRMED") {
+    const detail = `${trail}\n\nThis order was already paid by ${order.stripePaymentId}. Two payments exist for one order — refund this one in Stripe.`;
+    log.error(`DOUBLE PAYMENT: ${detail.replace(/\n+/g, " ")}`);
+    await notifyTeam("Two payments for one order", detail);
+    return;
+  }
+
+  // Still awaiting payment, but holding nothing: the rooms went back on sale
+  // before the payment landed and may already belong to somebody else.
+  // Refusing to confirm is what keeps this out of the books; a human still
+  // owes the buyer their money back.
+  if (order && order.bookings.length === 0) {
+    const detail = `${trail}\n\nThe order still exists but holds no rooms — they went back on sale before the payment landed, and may have been sold to someone else. Nothing was booked. Refund this payment in Stripe and tell the buyer.`;
+    log.error(`PAID WITH NO ROOMS: ${detail.replace(/\n+/g, " ")}`);
+    await notifyTeam("Payment captured but the rooms were gone", detail);
+    return;
+  }
+
+  const detail = `${trail}\n\nNo matching order — it was cleared before the payment landed. Reconcile or refund this payment in Stripe.`;
+  log.error(`UNRECONCILED PAYMENT: ${detail.replace(/\n+/g, " ")}`);
+  await notifyTeam("Payment captured with no matching order", detail);
+}
+
 // Stripe webhook for NE26 room payments. A settled payment flips the held
 // PENDING booking to CONFIRMED and invoices it; a failed or expired one releases
 // the hold. Its own signing secret keeps it independent from Cal's other Stripe
@@ -234,12 +284,14 @@ export async function POST(req: Request): Promise<Response> {
         }
         await notifySale(orderUid, session);
       } else {
-        // Money is captured but no PENDING order matched: already handled, or its
-        // hold lapsed and was cleared before the payment landed. Nothing
-        // downstream retries, so a human has to reconcile or refund it.
-        const detail = `Captured ${money(session.amount_total, session.currency)} for order ${orderUid}\nPayment intent: ${stripePaymentId}\nCheckout session: ${session.id}\n\nNo pending order matched — it was already handled, or its hold lapsed and was cleared before the payment landed. Reconcile or refund this payment in Stripe.`;
-        log.error(`UNRECONCILED PAYMENT: ${detail.replace(/\n+/g, " ")}`);
-        await notifyTeam("Payment captured with no matching order", detail);
+        // Nothing was confirmed. That single "false" used to mean one thing to
+        // this branch — money with no order — and the team was told to
+        // reconcile or refund. But Stripe guarantees at-least-once delivery and
+        // retries a slow endpoint, so the commonest reason by far is that WE
+        // already confirmed this very payment on an earlier delivery. Mailing
+        // "reconcile or refund" about a perfectly good sale is how a real
+        // booking gets refunded by mistake.
+        await reportUnconfirmed(orderUid, stripePaymentId, session);
       }
     }
 
