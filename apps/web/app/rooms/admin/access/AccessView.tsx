@@ -64,9 +64,9 @@ export default function AccessView(): JSX.Element {
       <section>
         <h2 className="font-semibold text-[#000643] text-lg">Who has access</h2>
         <p className="mt-1 text-gray-600 text-sm">
-          Administrators can do everything, including pricing, refunds and access itself. A hostess works
-          the welcome desk: today&apos;s schedule, checking exhibitors in, and starting a booking for
-          someone at the counter. She never sees settings, pricing or refunds, and never handles a card.
+          Administrators can do everything, including pricing, refunds and access itself. A hostess works the
+          welcome desk: today&apos;s schedule, checking exhibitors in, and starting a booking for someone at
+          the counter. She never sees settings, pricing or refunds, and never handles a card.
         </p>
 
         <form
@@ -108,9 +108,7 @@ export default function AccessView(): JSX.Element {
           The person needs an account already — ask them to sign up first, then grant the role here.
         </p>
 
-        {error ? (
-          <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-red-700 text-sm">{error}</p>
-        ) : null}
+        {error ? <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-red-700 text-sm">{error}</p> : null}
 
         <div className="mt-5 overflow-x-auto">
           <table className="w-full min-w-[560px] text-sm">
@@ -123,46 +121,87 @@ export default function AccessView(): JSX.Element {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {members.map((member) => (
-                <tr key={member.userId}>
-                  <td className="py-3">
-                    <span className="block font-medium text-[#000643]">{member.name || member.email}</span>
-                    {member.name ? (
-                      <span className="block text-gray-500 text-xs">{member.email}</span>
-                    ) : null}
-                  </td>
-                  <td className="py-3">
-                    <span className="flex flex-wrap gap-1.5">
-                      {member.calRole === "ADMIN" ? <RoleBadge role="ADMIN" /> : null}
-                      {member.staffRole === "HOSTESS" ? <RoleBadge role="HOSTESS" /> : null}
-                    </span>
-                  </td>
-                  <td className="py-3 text-gray-500">
-                    {member.grantedAt ? when(String(member.grantedAt)) : "—"}
-                  </td>
-                  <td className="py-3 text-right">
-                    <span className="inline-flex gap-1">
-                      {member.calRole === "ADMIN" ? (
-                        <button
-                          type="button"
-                          onClick={() => revoke.mutate({ userId: member.userId, role: "ADMIN" })}
-                          className="rounded-md px-2 py-1 text-gray-500 text-xs transition hover:bg-red-50 hover:text-red-700">
-                          Admin
-                        </button>
+              {members.map((member) => {
+                // The server refuses to remove the last administrator. Knowing
+                // that here means the button can say so instead of letting
+                // someone click and read an error.
+                const lastAdmin =
+                  member.calRole === "ADMIN" && members.filter((m) => m.calRole === "ADMIN").length <= 1;
+                return (
+                  <tr key={member.userId}>
+                    <td className="py-3">
+                      <span className="block font-medium text-[#000643]">{member.name || member.email}</span>
+                      {member.name ? (
+                        <span className="block text-gray-500 text-xs">{member.email}</span>
                       ) : null}
-                      {member.staffRole === "HOSTESS" ? (
-                        <button
-                          type="button"
-                          onClick={() => revoke.mutate({ userId: member.userId, role: "HOSTESS" })}
-                          aria-label={`Remove hostess access from ${member.email}`}
-                          className="rounded-md px-2 py-1 text-gray-500 transition hover:bg-red-50 hover:text-red-700">
-                          <Trash2 className="h-4 w-4" aria-hidden />
-                        </button>
-                      ) : null}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="py-3">
+                      <span className="flex flex-wrap gap-1.5">
+                        {member.calRole === "ADMIN" ? <RoleBadge role="ADMIN" /> : null}
+                        {member.staffRole === "HOSTESS" ? <RoleBadge role="HOSTESS" /> : null}
+                      </span>
+                    </td>
+                    <td className="py-3 text-gray-500">
+                      {member.grantedAt ? when(String(member.grantedAt)) : "—"}
+                    </td>
+                    <td className="py-3 text-right">
+                      <span className="inline-flex items-center justify-end gap-1.5">
+                        {member.calRole === "ADMIN" ? (
+                          <span className="inline-flex flex-col items-end">
+                            <button
+                              type="button"
+                              disabled={revoke.isPending || lastAdmin}
+                              onClick={() => {
+                                const who = member.name || member.email;
+                                // Named, and told what it costs. The button used
+                                // to say "Admin" and act on the first click: one
+                                // slip mid-event took pricing, refunds and access
+                                // management away from someone — possibly from
+                                // yourself — with no way back in through the app.
+                                if (
+                                  !window.confirm(
+                                    `Revoke administrator access from ${who}?\n\nThey lose settings, pricing, refunds and the ability to grant access. Only another administrator can give it back.`
+                                  )
+                                ) {
+                                  return;
+                                }
+                                revoke.mutate({ userId: member.userId, role: "ADMIN" });
+                              }}
+                              className="rounded-md border border-red-200 px-2 py-1 font-medium text-red-600 text-xs transition hover:border-red-400 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400 disabled:hover:bg-transparent">
+                              Revoke admin
+                            </button>
+                            {lastAdmin ? (
+                              <span className="mt-1 text-gray-400 text-xs">
+                                Last administrator — grant admin to someone else first
+                              </span>
+                            ) : null}
+                          </span>
+                        ) : null}
+                        {member.staffRole === "HOSTESS" ? (
+                          <button
+                            type="button"
+                            disabled={revoke.isPending}
+                            onClick={() => {
+                              const who = member.name || member.email;
+                              if (
+                                !window.confirm(
+                                  `Remove hostess access from ${who}?\n\nThey lose the welcome desk: today's schedule, checking exhibitors in, and starting a booking at the counter.`
+                                )
+                              ) {
+                                return;
+                              }
+                              revoke.mutate({ userId: member.userId, role: "HOSTESS" });
+                            }}
+                            aria-label={`Remove hostess access from ${member.email}`}
+                            className="rounded-md px-2 py-1 text-gray-500 transition hover:bg-red-50 hover:text-red-700 disabled:opacity-50">
+                            <Trash2 className="h-4 w-4" aria-hidden />
+                          </button>
+                        ) : null}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
               {!members.length && !staff.isPending ? (
                 <tr>
                   <td colSpan={4} className="py-6 text-center text-gray-500">
@@ -178,8 +217,8 @@ export default function AccessView(): JSX.Element {
       <section>
         <h2 className="font-semibold text-[#000643] text-lg">Activity</h2>
         <p className="mt-1 text-gray-600 text-sm">
-          What staff have done, most recent first. The welcome desk runs on a shared tablet, so this is
-          the record of the action rather than of the account.
+          What staff have done, most recent first. The welcome desk runs on a shared tablet, so this is the
+          record of the action rather than of the account.
         </p>
 
         <ul className="mt-4 divide-y divide-gray-100">
