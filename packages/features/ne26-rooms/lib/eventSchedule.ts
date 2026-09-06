@@ -88,10 +88,14 @@ export function normalizeEventDays(value: unknown): EventDayDefinition[] {
 }
 
 function localMinuteToUtcDate(date: string, localTotalMinutes: number): Date {
+  // Built by arithmetic on a real instant rather than by pasting numbers into a
+  // string. A day opening before 03:00 local is earlier in UTC than the date it
+  // belongs to, and the string form produced "2026-11-17T-1:00" — an Invalid
+  // Date that silently matched nothing, so the slot simply did not exist and
+  // the booking was refused as "outside the event opening hours".
+  const [y, m, d] = date.split("-").map(Number);
   const utcTotalMinutes = localTotalMinutes - EVENT_UTC_OFFSET_HOURS * 60;
-  const hh = String(Math.floor(utcTotalMinutes / 60)).padStart(2, "0");
-  const mm = String(utcTotalMinutes % 60).padStart(2, "0");
-  return new Date(`${date}T${hh}:${mm}:00.000Z`);
+  return new Date(Date.UTC(y, m - 1, d, 0, utcTotalMinutes, 0, 0));
 }
 
 export interface EventDaySchedule {

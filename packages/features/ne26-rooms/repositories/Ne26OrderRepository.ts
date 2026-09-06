@@ -27,15 +27,34 @@ export interface CreateOrderInput {
   holdExpiresAt: Date;
   rooms: OrderRoomInput[];
   /**
-   * Live holds of this same buyer that this order replaces.
+   * Decides, INSIDE the create transaction and under this buyer's lock, which
+   * of their live holds this order replaces — and refuses the order outright
+   * if the commercial rules say it may not exist.
    *
-   * Released inside the create transaction rather than before it: an exhibitor
-   * editing the basket they are holding asks for the SAME room at the SAME
-   * slot, so the old rows have to go before the new ones can be written — and
-   * if the write then fails, the rollback has to give them their hold back.
+   * It runs here rather than before the transaction because a rule that is
+   * read outside the write it protects is not enforced at all: two baskets
+   * arriving together both read "no conflict" and both committed, and one
+   * exhibitor ended up holding two rooms on the same day.
+   *
+   * The uids it returns are released before any slot is written: an exhibitor
+   * editing the basket they hold asks for the SAME room at the SAME slot, so
+   * the old rows must go first — and if the write then fails, the rollback
+   * gives them their hold back.
    */
-  supersedeOrderUids?: string[];
+  planUnderLock?: (tx: TransactionClient) => Promise<string[]>;
 }
+
+/** The subset of the client available inside `$transaction`. */
+export type TransactionClient = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
+
+/**
+ * Thrown inside a transaction purely to roll it back, and never escapes.
+ *
+ * Both confirming and extending an order have to be all-or-nothing: writing the
+ * order row and finding no rooms to write beside it is not a partial success,
+ * it is a state we must refuse to record.
+ */
+class NoRoomsToConfirm extends Error {}
 
 export class Ne26OrderRepository {
   constructor(private prismaClient: PrismaClient) {}
@@ -53,13 +72,25 @@ export class Ne26OrderRepository {
     const now = new Date();
     try {
       return await this.prismaClient.$transaction(async (tx) => {
+        // One exhibitor's orders are created one at a time. The slot index
+        // already stops two people taking one room; this stops one person
+        // taking two rooms on one day by sending both baskets at once. Keyed
+        // on the buyer, so it never delays anybody else, and released when the
+        // transaction ends whichever way it goes.
+        const lockKey = `ne26:buyer:${input.bookerUserId ?? input.bookerEmail.toLowerCase()}`;
+        // $executeRaw, not $queryRaw: the lock function returns void, which
+        // Prisma cannot deserialise as a result column.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+
+        const supersedeOrderUids = input.planUnderLock ? await input.planUnderLock(tx) : [];
+
         // Scoped to PENDING and to this same buyer whatever the caller passed:
         // a uid is not a permission, and releasing somebody else's hold — or a
         // paid order — would sell a room out from under them.
-        if (input.supersedeOrderUids?.length) {
+        if (supersedeOrderUids.length) {
           await tx.ne26Order.deleteMany({
             where: {
-              uid: { in: input.supersedeOrderUids },
+              uid: { in: supersedeOrderUids },
               status: ResourceBookingStatus.PENDING,
               ...(input.bookerUserId === null
                 ? { bookerUserId: null, bookerEmail: input.bookerEmail }
@@ -241,6 +272,15 @@ export class Ne26OrderRepository {
    * "just confirmed" from "already handled".
    */
   async confirmPaid(uid: string, stripePaymentId: string | null): Promise<boolean> {
+    try {
+      return await this.confirmPaidOrThrow(uid, stripePaymentId);
+    } catch (e) {
+      if (e instanceof NoRoomsToConfirm) return false;
+      throw e;
+    }
+  }
+
+  private confirmPaidOrThrow(uid: string, stripePaymentId: string | null): Promise<boolean> {
     return this.prismaClient.$transaction(async (tx) => {
       const result = await tx.ne26Order.updateMany({
         where: { uid, status: ResourceBookingStatus.PENDING },
@@ -257,10 +297,17 @@ export class Ne26OrderRepository {
       // constraint and the whole confirmation would roll back — a paid order
       // left PENDING. The payment belongs to the order, which is where it is
       // stored and where the refund path resolves it from.
-      await tx.resourceBooking.updateMany({
+      const rooms = await tx.resourceBooking.updateMany({
         where: { orderUid: uid, status: ResourceBookingStatus.PENDING },
         data: { status: ResourceBookingStatus.CONFIRMED, holdExpiresAt: null },
       });
+      // No rooms left to confirm. Success was decided on the order row alone,
+      // so a payment landing after the rooms had been reclaimed was recorded
+      // as a sale: order CONFIRMED, nothing booked, an invoice rendered at
+      // zero, and no alert because the order itself existed. Rolling back
+      // leaves the order PENDING and returns false, which is what makes the
+      // caller raise the "money captured, nothing held" alarm.
+      if (rooms.count === 0) throw new NoRoomsToConfirm();
       return true;
     });
   }
@@ -275,21 +322,37 @@ export class Ne26OrderRepository {
    * `lt: until` makes this monotonic — a concurrent call can only ever move the
    * expiry forward, never cut a hold short.
    */
-  async extendHold(uid: string, until: Date): Promise<boolean> {
+  async extendHold(uid: string, until: Date, now: Date = new Date()): Promise<boolean> {
+    try {
+      return await this.extendHoldOrThrow(uid, until, now);
+    } catch (e) {
+      if (e instanceof NoRoomsToConfirm) return false;
+      throw e;
+    }
+  }
+
+  private extendHoldOrThrow(uid: string, until: Date, now: Date): Promise<boolean> {
     return this.prismaClient.$transaction(async (tx) => {
+      // `gt: now` is the difference between extending a hold and resurrecting
+      // one. Without it, a lapsed order whose rooms had already been resold
+      // came back as a live hold owning nothing — and could then be paid for.
       const result = await tx.ne26Order.updateMany({
         where: {
           uid,
           status: ResourceBookingStatus.PENDING,
-          holdExpiresAt: { not: null, lt: until },
+          holdExpiresAt: { gt: now, lt: until },
         },
         data: { holdExpiresAt: until },
       });
       if (result.count === 0) return false;
-      await tx.resourceBooking.updateMany({
+      const rooms = await tx.resourceBooking.updateMany({
         where: { orderUid: uid, status: ResourceBookingStatus.PENDING },
         data: { holdExpiresAt: until },
       });
+      // An order still inside its window but holding nothing has already lost
+      // its rooms to the reclaim path. Extending it would only prolong the
+      // fiction; the buyer must be told to book again.
+      if (rooms.count === 0) throw new NoRoomsToConfirm();
       return true;
     });
   }
@@ -303,9 +366,12 @@ export class Ne26OrderRepository {
   }
 
   /** Open Checkout sessions for these orders, read BEFORE the orders are deleted. */
-  async findStripeSessionIds(uids: string[]): Promise<string[]> {
+  async findStripeSessionIds(
+    uids: string[],
+    client: { ne26Order: PrismaClient["ne26Order"] } = this.prismaClient
+  ): Promise<string[]> {
     if (uids.length === 0) return [];
-    const rows = await this.prismaClient.ne26Order.findMany({
+    const rows = await client.ne26Order.findMany({
       where: { uid: { in: uids }, stripeSessionId: { not: null } },
       select: { stripeSessionId: true },
     });
@@ -416,16 +482,19 @@ export class Ne26OrderRepository {
    */
   async findOccupiedDaysForUser(
     booker: { userId: number | null; email: string },
-    now: Date
+    now: Date,
+    client: { resourceBooking: PrismaClient["resourceBooking"] } = this.prismaClient
   ): Promise<{ startTime: Date; orderUid: string | null; paid: boolean }[]> {
-    // Matched on the account when there is one, and on the email otherwise: the
-    // rule is one room per EXHIBITOR, and a walk-in sold two rooms on the same
-    // day at the counter breaks it just as surely as an account holder would.
-    // The email is what the desk collects, so it is what identifies them.
+    // One EXHIBITOR, however they reached us. Matching the account when there
+    // was one and the email otherwise made those two sets disjoint: the same
+    // person could take a room from their phone AND buy a second at the
+    // counter on the same day, because neither query could see the other. The
+    // email is what identifies an exhibitor, and the account is an additional
+    // way of finding them, so both are searched.
     const identity = booker.userId
-      ? { bookerUserId: booker.userId }
-      : { bookerUserId: null, bookerEmail: booker.email };
-    const rows = await this.prismaClient.resourceBooking.findMany({
+      ? { OR: [{ bookerUserId: booker.userId }, { bookerEmail: booker.email }] }
+      : { bookerEmail: booker.email };
+    const rows = await client.resourceBooking.findMany({
       where: {
         ...identity,
         isBlock: false,
@@ -556,9 +625,27 @@ export class Ne26OrderRepository {
   }
 
   /** How many orders this buyer is holding without having paid. */
-  countActiveHolds(bookerUserId: number | null, now: Date): Promise<number> {
-    return this.prismaClient.ne26Order.count({
-      where: { bookerUserId, status: ResourceBookingStatus.PENDING, holdExpiresAt: { gt: now } },
+  countActiveHolds(
+    booker: { userId: number | null; email: string },
+    now: Date,
+    client: { ne26Order: PrismaClient["ne26Order"] } = this.prismaClient
+  ): Promise<number> {
+    // Counted per exhibitor, account or counter, for the same reason the day
+    // rule is: an account holder who also buys at the desk was getting two
+    // separate budgets of unpaid holds.
+    //
+    // The counter previously shared ONE pool of holds between every walk-in,
+    // so six abandoned checkouts by six different people stopped the desk
+    // selling to a seventh. A cap is meant to stop one buyer parking
+    // inventory, not to stop the queue moving.
+    return client.ne26Order.count({
+      where: {
+        ...(booker.userId
+          ? { OR: [{ bookerUserId: booker.userId }, { bookerEmail: booker.email }] }
+          : { bookerEmail: booker.email }),
+        status: ResourceBookingStatus.PENDING,
+        holdExpiresAt: { gt: now },
+      },
     });
   }
 }

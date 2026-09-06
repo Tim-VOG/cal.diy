@@ -21,8 +21,17 @@ export function computeAddOnLine(
 ): AddOnLine {
   switch (priceType) {
     case AddOnPriceType.PER_PERSON: {
-      const quantity = Math.max(1, Math.floor(requestedQuantity));
-      return { quantity, lineTotal: unitPrice * quantity };
+      // Refused rather than repaired. Flooring and clamping turned "-5" into a
+      // charge for one cover and "4.9" into four, and NaN slipped past every
+      // later guard — `NaN > capacity` and `NaN < minimum` are both false — to
+      // reach Prisma as a validation error the buyer saw as a 500.
+      if (!Number.isFinite(requestedQuantity) || !Number.isInteger(requestedQuantity)) {
+        throw new ErrorWithCode(ErrorCode.BadRequest, "How many people is not a whole number.");
+      }
+      if (requestedQuantity < 1) {
+        throw new ErrorWithCode(ErrorCode.BadRequest, "How many people must be at least one.");
+      }
+      return { quantity: requestedQuantity, lineTotal: unitPrice * requestedQuantity };
     }
     case AddOnPriceType.PER_HOUR:
       return { quantity: durationHours, lineTotal: unitPrice * durationHours };

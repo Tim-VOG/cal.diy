@@ -23,8 +23,21 @@ describe("computeAddOnLine", () => {
     });
   });
 
-  it("PER_PERSON floors to at least 1", () => {
-    expect(computeAddOnLine(AddOnPriceType.PER_PERSON, 3500, 0, 1)).toEqual({ quantity: 1, lineTotal: 3500 });
+  it("PER_PERSON refuses a quantity that is not a whole positive number", () => {
+    // These used to be quietly repaired: 0 and -5 became a charge for one
+    // cover, 4.9 became four, and NaN passed every later guard — `NaN > seats`
+    // and `NaN < minimum` are both false — to surface as a 500 from the
+    // database. Refusing says what is wrong while the buyer can still fix it.
+    for (const bad of [0, -5, 4.9, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => computeAddOnLine(AddOnPriceType.PER_PERSON, 3500, bad, 1)).toThrow();
+    }
+  });
+
+  it("PER_PERSON prices a whole number of covers", () => {
+    expect(computeAddOnLine(AddOnPriceType.PER_PERSON, 3500, 1, 1)).toEqual({
+      quantity: 1,
+      lineTotal: 3500,
+    });
   });
 
   it("PER_HOUR multiplies by the booking duration", () => {

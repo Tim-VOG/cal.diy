@@ -691,6 +691,120 @@ describe("Ne26OrderService.createOrder", () => {
     });
   });
 
+  describe("an order that has lost its rooms", () => {
+    // The reclaim path deletes the bookings of a lapsed hold to free the slots.
+    // Everything below is about what must NOT then happen to the order they
+    // belonged to: it must not be sellable, payable, or extendable.
+    async function stripRooms(uid: string) {
+      await prisma.resourceBooking.deleteMany({ where: { orderUid: uid } });
+    }
+
+    it("is never recorded as paid", async () => {
+      const { order } = await service.createOrder({ buyer: buyer(), rooms: [room(SLUG_A, TUE, 14)] });
+      await stripRooms(order.uid);
+
+      // Success used to be decided on the order row alone: the payment was
+      // accepted, the order went CONFIRMED holding nothing, and the invoice
+      // rendered at zero with no alert.
+      expect(await orders.confirmPaid(order.uid, "pi_test_no_rooms")).toBe(false);
+
+      const after = await prisma.ne26Order.findUniqueOrThrow({
+        where: { uid: order.uid },
+        select: { status: true, paidAt: true, stripePaymentId: true },
+      });
+      expect(after.status).toBe(ResourceBookingStatus.PENDING);
+      expect(after.paidAt).toBeNull();
+      expect(after.stripePaymentId).toBeNull();
+    });
+
+    it("cannot have its hold extended", async () => {
+      const { order } = await service.createOrder({ buyer: buyer(), rooms: [room(SLUG_A, TUE, 14)] });
+      await stripRooms(order.uid);
+
+      expect(await orders.extendHold(order.uid, new Date(Date.now() + 45 * 60_000))).toBe(false);
+    });
+
+    it("does not come back to life once the hold has lapsed", async () => {
+      const { order } = await service.createOrder({ buyer: buyer(), rooms: [room(SLUG_A, TUE, 14)] });
+      const gone = new Date(Date.now() - 60_000);
+      await prisma.ne26Order.update({ where: { uid: order.uid }, data: { holdExpiresAt: gone } });
+      await prisma.resourceBooking.updateMany({
+        where: { orderUid: order.uid },
+        data: { holdExpiresAt: gone },
+      });
+
+      // Extending a lapsed hold turned an abandoned order back into a live one
+      // — after its rooms had already been resold to somebody else.
+      expect(await orders.extendHold(order.uid, new Date(Date.now() + 30 * 60_000))).toBe(false);
+    });
+  });
+
+  describe("two baskets arriving at the same moment", () => {
+    it("still leaves the exhibitor one room that day", async () => {
+      // The rule was read before the write that it protects, so both requests
+      // saw "no conflict" and both committed. It is re-read inside the
+      // transaction now, under a lock on this buyer.
+      await Promise.allSettled([
+        service.createOrder({ buyer: buyer(), rooms: [room(SLUG_A, TUE, 14)] }),
+        service.createOrder({ buyer: buyer(), rooms: [room(SLUG_B, TUE, 15)] }),
+      ]);
+
+      // Either outcome is legitimate — the second basket may be refused, or it
+      // may replace the first exactly as a deliberate revision would. What may
+      // never happen is both surviving, which is what the race produced before
+      // the rule moved inside the transaction.
+      const liveOrders = await prisma.ne26Order.count({
+        where: {
+          bookerEmail: buyer().email,
+          status: ResourceBookingStatus.PENDING,
+          holdExpiresAt: { gt: new Date() },
+        },
+      });
+      expect(liveOrders).toBe(1);
+
+      const heldThatDay = await prisma.resourceBooking.count({
+        where: {
+          bookerEmail: buyer().email,
+          status: ResourceBookingStatus.PENDING,
+          startTime: {
+            gte: new Date(`${TUE}T00:00:00.000+03:00`),
+            lt: new Date(`${TUE}T24:00:00.000+03:00`),
+          },
+        },
+      });
+      expect(heldThatDay).toBe(1);
+    });
+
+    it("lets different exhibitors through in parallel", async () => {
+      // The lock is per buyer, so it must never queue one exhibitor behind
+      // another.
+      const a = { userId: null, email: `par-a-${STAMP}@test.com`, name: "A" };
+      const b = { userId: null, email: `par-b-${STAMP}@test.com`, name: "B" };
+      const results = await Promise.allSettled([
+        service.createOrder({ buyer: a, rooms: [room(SLUG_A, WED, 9)] }),
+        service.createOrder({ buyer: b, rooms: [room(SLUG_B, WED, 9)] }),
+      ]);
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(2);
+    });
+  });
+
+  describe("one exhibitor, two ways in", () => {
+    it("counts an account booking and a counter sale as the same person", async () => {
+      // The account and the counter were matched on different columns, so the
+      // two sets never intersected: the same exhibitor could take a room from
+      // their phone and buy a second at the desk on the same day.
+      const { order } = await service.createOrder({ buyer: buyer(), rooms: [room(SLUG_A, TUE, 14)] });
+      await orders.confirmPaid(order.uid, null);
+
+      await expect(
+        service.createOrder({
+          buyer: { userId: null, email: buyer().email, name: "Same person at the desk" },
+          rooms: [room(SLUG_B, TUE, 15)],
+        })
+      ).rejects.toThrow(/one meeting room per day/i);
+    });
+  });
+
   describe("unpaid hold cap at the counter", () => {
     // A counter sale has no account, so the per-account cap cannot see it. Each
     // hold takes a room off sale, so a desk that keeps starting checkouts it
@@ -705,9 +819,39 @@ describe("Ne26OrderService.createOrder", () => {
       });
     }
 
-    it("refuses a seventh counter order waiting for payment", async () => {
+    it("does not let one walk-in's abandoned checkout block the next customer", async () => {
+      // The cap used to be a single pool shared by every walk-in, so six people
+      // who each started a checkout and wandered off stopped the desk selling
+      // to a seventh. A cap is meant to stop one buyer parking inventory, not
+      // to stop the queue moving — it is counted per exhibitor now.
       for (const hour of [9, 10, 11, 12, 13, 14]) await counterOrder(hour);
-      await expect(counterOrder(15)).rejects.toMatchObject({ code: ErrorCode.BadRequest });
+
+      await expect(counterOrder(15)).resolves.toMatchObject({
+        order: { status: ResourceBookingStatus.PENDING },
+      });
+    });
+
+    it("still holds one walk-in to one room a day, whatever the desk does", async () => {
+      // What actually bounds a single buyer at the counter: the day rule,
+      // matched on the email the desk collects.
+      const sameCustomer = { userId: null, email: `regular-${STAMP}@test.com`, name: "Regular" };
+      await service.createOrder({ buyer: sameCustomer, rooms: [room(SLUG_A, WED, 9)] });
+
+      await expect(
+        service.createOrder({ buyer: sameCustomer, rooms: [room(SLUG_B, WED, 11)] })
+      ).resolves.toMatchObject({ order: { status: ResourceBookingStatus.PENDING } });
+
+      const live = await prisma.resourceBooking.count({
+        where: {
+          bookerEmail: sameCustomer.email,
+          status: ResourceBookingStatus.PENDING,
+          startTime: {
+            gte: new Date(`${WED}T00:00:00.000+03:00`),
+            lt: new Date(`${WED}T24:00:00.000+03:00`),
+          },
+        },
+      });
+      expect(live).toBe(1);
     });
 
     it("does not count a counter sale that has been paid", async () => {

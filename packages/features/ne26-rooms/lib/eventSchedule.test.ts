@@ -61,3 +61,19 @@ describe("buildEventSchedule", () => {
     expect(openMs.has(new Date("2026-11-19T14:00:00.000Z").getTime())).toBe(true);
   });
 });
+
+describe("a day that opens before the event's UTC offset", () => {
+  it("borrows into the previous date instead of producing an invalid time", () => {
+    // Istanbul is UTC+3, so 00:00 local is 21:00 UTC the day before. The slot
+    // marks were built by pasting numbers into a string, which produced
+    // "2026-11-17T-3:00" — an Invalid Date that matched nothing, so every
+    // booking in such a window was refused as "outside the event opening
+    // hours" with nothing to explain it.
+    const [day] = buildEventSchedule([{ date: "2026-11-17", openHour: 0, closeHour: 6 }]);
+    expect(day.openSlotStartsUtc.length).toBeGreaterThan(0);
+    for (const slot of day.openSlotStartsUtc) {
+      expect(Number.isNaN(slot.getTime())).toBe(false);
+    }
+    expect(day.openSlotStartsUtc[0].toISOString()).toBe("2026-11-16T21:00:00.000Z");
+  });
+});

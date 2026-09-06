@@ -35,6 +35,10 @@ export const ZDeskCreateBookingInputSchema = z.object({
   slug: z.string().min(1),
   startUtc: z.string().datetime(),
   durationHours: z.union([z.literal(1), z.literal(2), z.literal(3)]),
-  addOns: z.array(z.object({ slug: z.string().min(1), quantity: z.number().int().min(1) })).optional(),
+  // Bounded like every other entry point: an unbounded quantity lets a crafted
+  // request build an order total large enough to overflow a currency amount.
+  addOns: z
+    .array(z.object({ slug: z.string().min(1), quantity: z.number().int().min(1).max(500) }))
+    .optional(),
 });
 export type TDeskCreateBookingInputSchema = z.infer<typeof ZDeskCreateBookingInputSchema>;
