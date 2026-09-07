@@ -2,13 +2,14 @@ import process from "node:process";
 import { getResourceBookingService } from "@calcom/features/ne26-rooms/di/ResourceBookingService.container";
 import { getStripeCheckoutService } from "@calcom/features/ne26-rooms/di/StripeCheckoutService.container";
 import {
+  ne26OrderUidFromPaymentIntent,
   checkoutOutcome,
   isFullRefund,
   ne26OrderUid,
   paymentIdOf,
 } from "@calcom/features/ne26-rooms/lib/stripeEvents";
 import {
-  type FailureReason,
+  type ReleaseReason,
   failureNotification,
   formatMoney,
   saleNotification,
@@ -79,7 +80,7 @@ function money(minorUnits: number | null | undefined, currency: string | null | 
  */
 async function notifyReleased(
   order: NonNullable<Awaited<ReturnType<Ne26OrderRepositoryLike["findByUid"]>>>,
-  reason: FailureReason,
+  reason: ReleaseReason,
   stripeUrl: string | null
 ): Promise<void> {
   const rooms = order.bookings.map((b) => ({
@@ -310,6 +311,59 @@ export async function POST(req: Request): Promise<Response> {
         const reason =
           event.type === "checkout.session.async_payment_failed" ? "payment_failed" : "session_expired";
         await notifyReleased(doomed, reason, stripeUrlFor(paymentIdOf(session)));
+      }
+    }
+  }
+
+  // A declined card. Stripe raises this for every failed attempt, including
+  // inside Checkout — it is the event WooCommerce and friends listen to, and
+  // the only one that fires for an immediate payment method. The session stays
+  // open and the hold stands, so this is a lead to chase rather than a loss to
+  // record: the buyer is still on the payment page and can try another card.
+  if (event.type === "payment_intent.payment_failed") {
+    const intent = event.data.object as Stripe.PaymentIntent;
+    const orderUid = ne26OrderUidFromPaymentIntent(intent);
+    if (orderUid) {
+      const { getNe26OrderRepository } = await import(
+        "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
+      );
+      const orders = getNe26OrderRepository();
+      const order = await orders.findByUid(orderUid);
+      // Only while it is still unpaid and still holding something: a decline
+      // followed by a successful retry must not reach anyone.
+      if (order && order.status === "PENDING" && order.bookings.length > 0) {
+        // Once per order. Three cards tried is one problem, not three mails.
+        if (await orders.claimPaymentFailedNotice(orderUid, new Date())) {
+          const { failureNotification } = await import("@calcom/features/ne26-rooms/lib/teamNotification");
+          const { holdExpiryLabel } = await import(
+            "@calcom/features/ne26-rooms/services/HoldReminderService"
+          );
+          const { subject, body } = failureNotification({
+            orderUid,
+            reason: "payment_attempt_failed",
+            rooms: order.bookings.map((b) => ({
+              roomName: b.resource.name,
+              startUtc: b.startTime,
+              endUtc: b.endTime,
+              durationMinutes: b.durationMinutes,
+              addOns: b.addOns.map((a) => ({
+                name: a.addOn.name,
+                quantity: a.quantity,
+                lineTotal: a.lineTotal,
+              })),
+            })),
+            bookerName: order.bookerName,
+            bookerEmail: order.bookerEmail,
+            amountHt: order.amountTotal,
+            currency: order.currency,
+            holdUntilLabel: order.holdExpiresAt ? holdExpiryLabel(order.holdExpiresAt) : null,
+            declineMessage: intent.last_payment_error?.message ?? null,
+            stripeUrl: stripeUrlFor(intent.id),
+            adminUrl: `${WEBAPP_URL}/rooms/admin`,
+          });
+          log.warn(`Payment declined for order ${orderUid}: ${intent.last_payment_error?.code ?? "?"}`);
+          await notifyTeam(subject, body);
+        }
       }
     }
   }

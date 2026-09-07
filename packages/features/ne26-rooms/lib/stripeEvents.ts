@@ -29,6 +29,21 @@ export function ne26OrderUid(session: Stripe.Checkout.Session): string | null {
   return session.metadata?.orderUid ?? session.metadata?.bookingUid ?? null;
 }
 
+/**
+ * The order uid carried by a PaymentIntent of ours, or null if it is not ours.
+ *
+ * Checkout copies our metadata onto the PaymentIntent it creates
+ * (payment_intent_data.metadata), which is what lets a declined card be tied
+ * back to an order at all: payment_intent.payment_failed hands us a
+ * PaymentIntent, never the session.
+ */
+export function ne26OrderUidFromPaymentIntent(intent: {
+  metadata?: Record<string, string> | null;
+}): string | null {
+  if (intent.metadata?.source !== "ne26-rooms") return null;
+  return intent.metadata?.orderUid ?? intent.metadata?.bookingUid ?? null;
+}
+
 /** The payment intent to record (falls back to the session id). */
 export function paymentIdOf(session: Stripe.Checkout.Session): string {
   return typeof session.payment_intent === "string"

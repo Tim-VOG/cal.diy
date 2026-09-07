@@ -59,6 +59,7 @@ export interface StartOrderCheckoutInput {
 export async function holdRooms(input: {
   buyer: { userId: number; email: string; name?: string | null };
   rooms: OrderRoomSelection[];
+  webappUrl: string;
 }): Promise<{ uid: string; holdExpiresAt: Date }> {
   const billingRepo = getNe26BillingProfileRepository();
   const profile = await billingRepo.findByUserId(input.buyer.userId);
@@ -86,6 +87,15 @@ export async function holdRooms(input: {
       internalReference: profile?.internalReference || null,
     },
     rooms: input.rooms,
+  });
+
+  // The same note the payment path sends. Holding and paying both take rooms
+  // off sale on a clock, so both deserve a written trace: an exhibitor who
+  // holds a room and closes the tab had nothing but the countdown on a page
+  // they had left.
+  await notifyHoldTaken(order, `${input.webappUrl}/rooms/bookings`).catch(() => {
+    // Best-effort. The rooms are held either way, and the fifteen-minute
+    // reminder will still reach them.
   });
 
   return { uid: order.uid, holdExpiresAt: order.holdExpiresAt as Date };

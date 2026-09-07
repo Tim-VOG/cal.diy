@@ -3233,6 +3233,9 @@ model Ne26Order {
   // NE26: the Stripe Checkout session currently open for this order, so it can
   // be expired when the order is superseded or released. A session left live
   // over a deleted order captures money against nothing.
+  // NE26: when the team was told a payment attempt for this order failed. Set
+  // once, so a buyer trying three cards produces one follow-up, not three.
+  paymentFailedNotifiedAt DateTime?
   stripeSessionId         String?
   stripePaymentId         String?               @unique
   invoiceNumber           String?               @unique

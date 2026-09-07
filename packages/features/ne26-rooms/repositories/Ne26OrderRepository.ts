@@ -228,6 +228,7 @@ export class Ne26OrderRepository {
         currency: true,
         holdExpiresAt: true,
         stripeSessionId: true,
+        paymentFailedNotifiedAt: true,
         stripePaymentId: true,
         paidAt: true,
         invoiceNumber: true,
@@ -355,6 +356,22 @@ export class Ne26OrderRepository {
       if (rooms.count === 0) throw new NoRoomsToConfirm();
       return true;
     });
+  }
+
+  /**
+   * Claim the right to tell the team that a payment attempt on this order
+   * failed. True once per order, false ever after.
+   *
+   * Stripe raises payment_intent.payment_failed on every declined attempt, and
+   * a buyer working through three cards would otherwise send the desk three
+   * identical follow-ups for one problem.
+   */
+  async claimPaymentFailedNotice(uid: string, at: Date): Promise<boolean> {
+    const result = await this.prismaClient.ne26Order.updateMany({
+      where: { uid, paymentFailedNotifiedAt: null },
+      data: { paymentFailedNotifiedAt: at },
+    });
+    return result.count > 0;
   }
 
   /** Remember which Checkout session is open, so it can be expired later. */

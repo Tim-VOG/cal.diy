@@ -703,6 +703,7 @@ export const roomsRouter = router({
    */
   holdRooms: authedProcedure.input(ZCreateOrderInputSchema).mutation(async ({ ctx, input }) => {
     const { holdRooms } = await import("@calcom/features/ne26-rooms/services/startOrderCheckout");
+    const { WEBAPP_URL } = await import("@calcom/lib/constants");
     return holdRooms({
       buyer: { userId: ctx.user.id, email: ctx.user.email, name: ctx.user.name },
       rooms: input.rooms.map((r) => ({
@@ -711,6 +712,7 @@ export const roomsRouter = router({
         durationHours: r.durationHours,
         addOns: r.addOns,
       })),
+      webappUrl: WEBAPP_URL,
     });
   }),
 

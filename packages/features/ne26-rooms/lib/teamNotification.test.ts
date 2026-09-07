@@ -215,3 +215,56 @@ describe("failureNotification", () => {
     expect(body).not.toContain("null");
   });
 });
+
+describe("a card that was declined, not a sale that was lost", () => {
+  const DECLINED = {
+    orderUid: BASE.orderUid,
+    reason: "payment_attempt_failed" as const,
+    rooms: BASE.rooms,
+    bookerName: "Jane Exhibitor",
+    bookerEmail: "jane@example.com",
+    amountHt: 72000,
+    currency: "EUR",
+    adminUrl: BASE.adminUrl,
+    holdUntilLabel: "14:35 TRT",
+    declineMessage: "Your card was declined.",
+  };
+
+  it("does not tell the desk the rooms are back on sale", () => {
+    // They are not. The session is still open, the hold stands, and the buyer
+    // is on the payment page trying another card. Sending the desk after a
+    // sale that is still live is worse than sending nothing.
+    const { body } = failureNotification(DECLINED);
+    expect(body).not.toContain("back on sale");
+    expect(body).toContain("still held");
+    expect(body).toContain("14:35 TRT");
+  });
+
+  it("says what the bank said, so the desk can advise", () => {
+    expect(failureNotification(DECLINED).body).toContain("Your card was declined.");
+  });
+
+  it("calls the money at stake, not lost", () => {
+    const { body } = failureNotification(DECLINED);
+    expect(body).toContain("At stake");
+    expect(body).not.toContain("Lost (excl. VAT)");
+  });
+
+  it("is titled differently from an expired checkout", () => {
+    expect(failureNotification(DECLINED).subject).toMatch(/^Payment declined/);
+    expect(failureNotification({ ...DECLINED, reason: "session_expired" }).subject).toMatch(
+      /^Checkout expired/
+    );
+  });
+
+  it("still reads without a hold time or a bank message", () => {
+    const { body } = failureNotification({
+      ...DECLINED,
+      holdUntilLabel: null,
+      declineMessage: null,
+    });
+    expect(body).toContain("still held");
+    expect(body).not.toContain("null");
+    expect(body).not.toContain("undefined");
+  });
+});

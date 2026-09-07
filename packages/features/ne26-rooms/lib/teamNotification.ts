@@ -110,8 +110,24 @@ export function saleNotification(input: SaleNotificationInput): { subject: strin
   return { subject, body: lines.join("\n") };
 }
 
-/** Why an order never got paid. Drives the wording, so it cannot be mistaken. */
-export type FailureReason = "payment_failed" | "session_expired";
+/**
+ * Why an order never got paid. Drives the wording, so it cannot be mistaken.
+ *
+ * The distinction that matters to whoever reads the mail is whether the rooms
+ * are gone. A declined card is not the end of anything — the hold stands and
+ * the buyer is still on the payment page — so telling the desk the rooms are
+ * "back on sale" would send them chasing a sale that is still live.
+ */
+export type FailureReason = "payment_attempt_failed" | ReleaseReason;
+
+/**
+ * The subset that means the rooms are actually gone.
+ *
+ * Kept separate because it is what the BUYER may be told: "your room was not
+ * booked" must never go out over a declined card, when their hold is still
+ * standing and they are one retry away from paying.
+ */
+export type ReleaseReason = "payment_failed" | "session_expired";
 
 export interface FailureNotificationInput {
   orderUid: string;
@@ -124,6 +140,10 @@ export interface FailureNotificationInput {
   currency: string;
   stripeUrl?: string | null;
   adminUrl: string;
+  /** For an attempt that failed: how long the rooms are still held. */
+  holdUntilLabel?: string | null;
+  /** What the bank said, when Stripe told us. */
+  declineMessage?: string | null;
 }
 
 /**
@@ -141,18 +161,28 @@ export function failureNotification(input: FailureNotificationInput): {
   const buyer = input.bookerName?.trim() || "An exhibitor";
   const rooms = input.rooms;
   const what =
-    rooms.length === 1
-      ? `${rooms[0].roomName}, ${rooms[0].durationMinutes / 60}h`
-      : `${rooms.length} rooms`;
-  const headline = input.reason === "payment_failed" ? "Payment failed" : "Checkout expired";
+    rooms.length === 1 ? `${rooms[0].roomName}, ${rooms[0].durationMinutes / 60}h` : `${rooms.length} rooms`;
+  const headline =
+    input.reason === "payment_attempt_failed"
+      ? "Payment declined"
+      : input.reason === "payment_failed"
+        ? "Payment failed"
+        : "Checkout expired";
   const subject = `${headline} — ${what} (${formatMoney(input.amountHt, input.currency)})`;
 
-  const lines: string[] = [
-    input.reason === "payment_failed"
-      ? "A payment was attempted and declined. The rooms below are back on sale."
-      : "A checkout was started and never completed. The rooms below are back on sale.",
-    "",
-  ];
+  const opening =
+    input.reason === "payment_attempt_failed"
+      ? `A card was declined. Nothing is lost yet: the rooms below are still held${
+          input.holdUntilLabel ? ` until ${input.holdUntilLabel}` : ""
+        } and the buyer can still pay. Worth a call if they do not.`
+      : input.reason === "payment_failed"
+        ? "A payment was attempted and declined. The rooms below are back on sale."
+        : "A checkout was started and never completed. The rooms below are back on sale.";
+
+  const lines: string[] = [opening, ""];
+  if (input.declineMessage) {
+    lines.push(field("Bank said", input.declineMessage), "");
+  }
   for (const room of rooms) {
     lines.push(`${room.roomName} — ${room.durationMinutes / 60}h`);
     lines.push(`  ${formatSlotRange(room.startUtc, room.endUtc)}`);
@@ -164,7 +194,12 @@ export function failureNotification(input: FailureNotificationInput): {
   }
 
   lines.push(field("Buyer", input.bookerEmail ? `${buyer} <${input.bookerEmail}>` : buyer));
-  lines.push(field("Lost (excl. VAT)", formatMoney(input.amountHt, input.currency)));
+  lines.push(
+    field(
+      input.reason === "payment_attempt_failed" ? "At stake (excl. VAT)" : "Lost (excl. VAT)",
+      formatMoney(input.amountHt, input.currency)
+    )
+  );
   lines.push("", field("Order", input.orderUid), "", input.adminUrl);
   if (input.stripeUrl) lines.push(input.stripeUrl);
 
