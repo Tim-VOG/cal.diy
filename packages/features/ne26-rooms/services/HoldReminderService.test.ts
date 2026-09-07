@@ -38,9 +38,13 @@ function deps(due: ReturnType<typeof order>[], claim = true) {
 }
 
 describe("holdExpiryLabel", () => {
-  it("reads as an event-local wall clock", () => {
-    // 09:35 UTC is 12:35 in Izmir, which is the time the buyer sees on the site.
-    expect(holdExpiryLabel(new Date("2026-11-18T09:35:00.000Z"))).toBe("12:35");
+  it("names the zone it is telling the time in", () => {
+    // 09:35 UTC is 12:35 in Izmir. Unlabelled, that read as 12:35 to a buyer in
+    // Brussels whose hold actually lapsed at 10:35 their time — an hour of
+    // false confidence on a countdown with money at the end of it. This is the
+    // one clock in the product that runs today rather than at the event, so it
+    // has to say which clock it is.
+    expect(holdExpiryLabel(new Date("2026-11-18T09:35:00.000Z"))).toBe("12:35 TRT");
   });
 });
 
@@ -87,7 +91,7 @@ describe("remindExpiringHolds", () => {
       to: "jane@example.com",
       roomName: "Suite 1",
       minutesLeft: 12,
-      expiresAtLabel: "12:12",
+      expiresAtLabel: "12:12 TRT",
       kind: "expiring",
       payUrl: "https://rooms.vo-eu.be/rooms/bookings",
     });

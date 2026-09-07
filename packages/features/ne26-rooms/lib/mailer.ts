@@ -130,17 +130,21 @@ export async function sendHoldReminderEmail(input: {
   const url = escapeHtml(input.payUrl);
   const isExpiring = input.kind === "expiring";
 
+  // Both messages lead with the DURATION, which cannot be misread from any
+  // timezone, and keep the wall-clock time as a labelled second reference. The
+  // hold-taken mail used to carry the absolute time alone, so a buyer outside
+  // Türkiye read a deadline an hour or two later than the one they had.
   const subject = isExpiring
     ? `${input.minutesLeft} minutes left to pay for ${input.roomName}`
-    : `We are holding ${input.roomName} for you until ${input.expiresAtLabel}`;
+    : `We are holding ${input.roomName} for you for the next ${input.minutesLeft} minutes`;
   const opening = isExpiring
-    ? `Your hold on ${input.roomName} (${input.slotLabel}) lapses at ${input.expiresAtLabel} — about ${input.minutesLeft} minutes from now. After that the room goes back on sale and anyone can take it.`
-    : `We are holding ${input.roomName} (${input.slotLabel}) for you until ${input.expiresAtLabel}. Nothing has been charged yet, and the room is not booked until the payment goes through.`;
+    ? `Your hold on ${input.roomName} (${input.slotLabel}) lapses in about ${input.minutesLeft} minutes, at ${input.expiresAtLabel}. After that the room goes back on sale and anyone can take it.`
+    : `We are holding ${input.roomName} (${input.slotLabel}) for you for the next ${input.minutesLeft} minutes, until ${input.expiresAtLabel}. Nothing has been charged yet, and the room is not booked until the payment goes through.`;
 
   const text = `Hi ${input.bookerName},\n\n${opening}\n\nFinish the payment here:\n${input.payUrl}\n\nNATO Edge 26 — Meeting Rooms`;
   const htmlOpening = isExpiring
-    ? `Your hold on <strong>${room}</strong> (${slot}) lapses at <strong>${until}</strong> — about ${input.minutesLeft} minutes from now. After that the room goes back on sale and anyone can take it.`
-    : `We are holding <strong>${room}</strong> (${slot}) for you until <strong>${until}</strong>. Nothing has been charged yet, and the room is not booked until the payment goes through.`;
+    ? `Your hold on <strong>${room}</strong> (${slot}) lapses in about <strong>${input.minutesLeft} minutes</strong>, at ${until}. After that the room goes back on sale and anyone can take it.`
+    : `We are holding <strong>${room}</strong> (${slot}) for you for the next <strong>${input.minutesLeft} minutes</strong>, until ${until}. Nothing has been charged yet, and the room is not booked until the payment goes through.`;
   const html = `<p>Hi ${name},</p><p>${htmlOpening}</p><p><a href="${url}">Finish the payment here</a>.</p><p>NATO Edge 26 — Meeting Rooms</p>`;
 
   await transport.sendMail({

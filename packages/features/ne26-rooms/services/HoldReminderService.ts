@@ -1,4 +1,4 @@
-import { EVENT_TIME_ZONE } from "../lib/eventSchedule";
+import { EVENT_TIME_ZONE, EVENT_TIME_ZONE_LABEL } from "../lib/eventSchedule";
 import { formatSlotRange } from "../lib/teamNotification";
 
 /**
@@ -10,12 +10,19 @@ export const REMINDER_LEAD_MINUTES = 15;
 
 /** Event-local wall clock, e.g. "14:35" — the hold lapses at a time, not a date. */
 export function holdExpiryLabel(at: Date): string {
-  return new Intl.DateTimeFormat("en-GB", {
+  // Named, always. This is the one clock in the product that is NOT an event
+  // time: it runs today, wherever the buyer happens to be, months before
+  // anybody travels to Izmir. Rendered in the event's zone and left unlabelled,
+  // "until 22:33" read as 22:33 to a buyer in Brussels whose hold actually
+  // lapsed at 21:33 — an hour of false confidence in September, two in
+  // November, on a countdown with money at the end of it.
+  const time = new Intl.DateTimeFormat("en-GB", {
     timeZone: EVENT_TIME_ZONE,
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
   }).format(at);
+  return `${time} ${EVENT_TIME_ZONE_LABEL}`;
 }
 
 /** Rounded up: "0 minutes left" on a hold that still has forty seconds is a lie. */
