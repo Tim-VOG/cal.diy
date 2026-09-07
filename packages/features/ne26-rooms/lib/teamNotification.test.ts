@@ -384,3 +384,34 @@ describe("the decline, explained", () => {
     expect(body).not.toContain("DO NOT REPEAT");
   });
 });
+
+describe("the opening and the next step must not contradict each other", () => {
+  const FAIL = {
+    orderUid: BASE.orderUid,
+    reason: "payment_attempt_failed" as const,
+    rooms: BASE.rooms,
+    amountHt: 72000,
+    currency: "EUR",
+    adminUrl: BASE.adminUrl,
+    holdUntilLabel: "14:35 TRT",
+  };
+
+  it("does not invite a call on a card blocked as stolen", () => {
+    const { body } = failureNotification({
+      ...FAIL,
+      decline: {
+        reason: "The card was blocked as lost, stolen or fraudulent.",
+        nextStep: "Do not chase the sale.",
+        tellBuyer: false,
+        card: null,
+        codes: "card_declined / stolen_card",
+      },
+    });
+    expect(body).not.toContain("Worth a call");
+    expect(body).toContain("Do not chase the sale.");
+  });
+
+  it("still invites a call on an ordinary decline", () => {
+    expect(failureNotification(FAIL).body).toContain("Worth a call");
+  });
+});

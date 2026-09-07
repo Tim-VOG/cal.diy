@@ -242,11 +242,14 @@ export function failureNotification(input: FailureNotificationInput): TeamNotifi
         : "Checkout expired";
   const subject = `${headline} — ${what} (${formatMoney(input.amountHt, input.currency)})`;
 
+  // "Worth a call if they do not" is wrong above a card blocked as stolen,
+  // where the next step is to leave it alone. Say one thing or the other.
+  const chase = input.decline?.tellBuyer === false ? "" : " Worth a call if they do not.";
   const opening =
     input.reason === "payment_attempt_failed"
       ? `A card was declined. Nothing is lost yet: the rooms below are still held${
           input.holdUntilLabel ? ` until ${input.holdUntilLabel}` : ""
-        } and the buyer can still pay. Worth a call if they do not.`
+        } and the buyer can still pay.${chase}`
       : input.reason === "payment_failed"
         ? "A payment was attempted and declined. The rooms below are back on sale."
         : "A checkout was started and never completed. The rooms below are back on sale.";
