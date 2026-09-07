@@ -33,13 +33,32 @@ export async function GET(): Promise<Response> {
     );
   }
 
-  const orders = await getNe26OrderRepository().findIssuedDocuments();
+  const repo = getNe26OrderRepository();
+  // Two sources, because the first four invoices VO issued predate orders and
+  // hang off the booking instead. Reading only one of them hands the accountant
+  // a third of the file while looking complete.
+  const [orders, legacy] = await Promise.all([repo.findIssuedDocuments(), repo.findLegacyIssuedDocuments()]);
+  const documents = [
+    ...orders.map((o) => ({
+      uid: o.uid,
+      invoiceNumber: o.invoiceNumber,
+      creditNoteNumber: o.creditNoteNumber,
+      who: o.bookerLegalName || o.bookerName || "",
+    })),
+    ...legacy.map((b) => ({
+      uid: b.uid,
+      invoiceNumber: b.invoiceNumber,
+      creditNoteNumber: b.creditNoteNumber,
+      who: b.bookerName || "",
+    })),
+  ].sort((a, b) => (a.invoiceNumber ?? "").localeCompare(b.invoiceNumber ?? "", "en"));
+
   const entries: ZipEntry[] = [];
 
-  for (const order of orders) {
+  for (const order of documents) {
     // Named for a human filing them: the number first, so the archive sorts
     // into the ledger's order, then who it was made out to.
-    const who = (order.bookerLegalName || order.bookerName || "").replace(/[\\/:*?"<>|]/g, " ").trim();
+    const who = order.who.replace(/[\\/:*?"<>|]/g, " ").trim();
     if (order.invoiceNumber) {
       const pdf = await readInvoicePdf(order.uid, "invoice");
       if (pdf) {

@@ -402,6 +402,32 @@ export class Ne26OrderRepository {
     });
   }
 
+  /**
+   * Documents issued before orders existed, which hang off the booking itself.
+   *
+   * Four of the first six invoices are these. An accounting bundle built from
+   * orders alone hands over a third of the file and says nothing about the
+   * rest — the worst kind of incomplete, because it looks complete.
+   *
+   * Their PDFs are stored under the BOOKING uid, which is why the caller has
+   * to keep them apart from the order-backed ones.
+   */
+  findLegacyIssuedDocuments() {
+    return this.prismaClient.resourceBooking.findMany({
+      where: {
+        orderUid: null,
+        OR: [{ invoiceNumber: { not: null } }, { creditNoteNumber: { not: null } }],
+      },
+      select: {
+        uid: true,
+        invoiceNumber: true,
+        creditNoteNumber: true,
+        bookerName: true,
+      },
+      orderBy: { invoiceNumber: "asc" },
+    });
+  }
+
   /** Open Checkout sessions for these orders, read BEFORE the orders are deleted. */
   async findStripeSessionIds(
     uids: string[],
