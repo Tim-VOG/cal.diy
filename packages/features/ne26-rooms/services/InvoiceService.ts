@@ -112,10 +112,19 @@ export class InvoiceService {
    * PDF, store it, persist the number, then email it with the calendar invites.
    * Idempotent: a no-op if the order is missing, not CONFIRMED, or already
    * invoiced — which is what makes a replayed webhook harmless.
+   *
+   * Also a no-op for an order holding no rooms. confirmPaid already refuses to
+   * record a sale with nothing in it, and this is the same refusal one step
+   * later: an invoice listing no rooms would still take its number from a
+   * gapless series and still be emailed to the buyer. The admin screens hide
+   * the button for that case, but a screen is not a boundary — the procedure
+   * behind it accepts any uid an admin sends, and the button that reaches it
+   * exists to repair orders that are already broken.
    */
   async issueInvoice(uid: string): Promise<void> {
     const order = await this.deps.ne26OrderRepository.findByUid(uid);
     if (!order || order.status !== ResourceBookingStatus.CONFIRMED || order.invoiceNumber) return;
+    if (order.bookings.length === 0) return;
 
     const issuer = await this.deps.invoiceSettingsRepository.get();
     const vat = resolveVatTreatment(

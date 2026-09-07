@@ -363,6 +363,57 @@ describe("NE26 Stripe webhook", () => {
       expect(alert.body).toContain("pi_test_webhook");
       expect(alert.body).toContain("cs_test_webhook");
     });
+
+    /**
+     * The worst case in the whole system: money captured, the rooms already
+     * reclaimed and possibly resold, and the order still sitting there.
+     *
+     * confirmPaid refuses to record it as a sale, and rolls back — which takes
+     * the payment id back out with it. For a long time that left a row nothing
+     * could tell apart from a checkout somebody abandoned: PENDING, no rooms,
+     * no payment id. The admin dashboard read exactly that field to decide
+     * whether money had moved, so it described the one case needing a refund as
+     * the one needing nothing.
+     */
+    describe("money captured after the rooms had gone", () => {
+      async function reclaimedOrder(): Promise<string> {
+        const { uid } = await heldOrder();
+        // What the reclaim job does to an expired hold.
+        await prisma.resourceBooking.deleteMany({ where: { orderUid: uid } });
+        return uid;
+      }
+
+      it("refuses to record it as a sale", async () => {
+        const uid = await reclaimedOrder();
+
+        const response = await deliver(sessionEvent("checkout.session.completed", { orderUid: uid }));
+
+        expect(response.status).toBe(200);
+        const order = await orders.findByUid(uid);
+        expect(order?.status).toBe(ResourceBookingStatus.PENDING);
+        expect(order?.invoiceNumber).toBeNull();
+        expect(sendInvoiceEmail).not.toHaveBeenCalled();
+      });
+
+      it("remembers the payment on the order, so nobody can mistake it for an abandoned checkout", async () => {
+        const uid = await reclaimedOrder();
+
+        await deliver(sessionEvent("checkout.session.completed", { orderUid: uid }));
+
+        expect((await orders.findByUid(uid))?.stripePaymentId).toBe("pi_test_webhook");
+      });
+
+      it("tells the desk, with enough to find the money in Stripe", async () => {
+        const uid = await reclaimedOrder();
+
+        await deliver(sessionEvent("checkout.session.completed", { orderUid: uid }));
+
+        expect(sendTeamEmail).toHaveBeenCalledTimes(1);
+        const alert = vi.mocked(sendTeamEmail).mock.calls[0][0];
+        expect(alert.subject).toMatch(/rooms were gone/i);
+        expect(alert.body).toContain("pi_test_webhook");
+      });
+    });
   });
 
   describe("delayed payments", () => {

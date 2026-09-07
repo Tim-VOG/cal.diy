@@ -15,6 +15,13 @@ const repo = getNe26OrderRepository();
 const madeHere: string[] = [];
 let resourceId: number;
 
+/**
+ * Orders are built through the repository where the state is reachable, and
+ * directly where it is not. The distinction matters: an earlier version of this
+ * file created PENDING orders carrying a Stripe payment id by hand, a state the
+ * application could not produce at the time, and the tests agreed with a screen
+ * that was reading that field to decide whether money had moved.
+ */
 async function makeOrder(data: {
   status?: "PENDING" | "CONFIRMED" | "CANCELLED";
   stripePaymentId?: string | null;
@@ -176,5 +183,70 @@ describe("findForAdmin", () => {
     const uid = await makeOrder({ withRoom: true });
     const order = await repo.findForAdmin(uid);
     expect(order?.bookings[0]?.resource.name).toBe("TEST Orphan Room");
+  });
+});
+
+/**
+ * Telling "money was captured" apart from "nobody finished checking out".
+ *
+ * Both leave a PENDING order holding no rooms. One needs a refund and a phone
+ * call; the other needs nothing at all. The dashboard decides between them on
+ * the payment id, so the payment id has to be there.
+ */
+describe("a payment captured against rooms that had already gone", () => {
+  it("is remembered on the order, so it cannot be read as an abandoned checkout", async () => {
+    const uid = await makeOrder({});
+    const paymentId = `pi_unattached_${Date.now()}`;
+
+    expect(await repo.recordUnattachedPayment(uid, paymentId)).toBe(true);
+
+    // The dashboard reads this exact field to choose between "refund it" and
+    // "nothing to do".
+    const found = (await repo.findOrdersWithoutRooms()).find((o) => o.uid === uid);
+    expect(found?.stripePaymentId).toBe(paymentId);
+  });
+
+  it("never overwrites the payment that settled a real sale", async () => {
+    const settled = `pi_settled_real_${Date.now()}`;
+    const uid = await makeOrder({ status: "CONFIRMED", stripePaymentId: settled });
+
+    expect(await repo.recordUnattachedPayment(uid, "pi_something_else")).toBe(false);
+    expect((await prisma.ne26Order.findUnique({ where: { uid } }))?.stripePaymentId).toBe(settled);
+  });
+
+  it("does not record a second payment over the first", async () => {
+    const uid = await makeOrder({});
+    const first = `pi_first_${Date.now()}`;
+    await repo.recordUnattachedPayment(uid, first);
+
+    expect(await repo.recordUnattachedPayment(uid, `pi_second_${Date.now()}`)).toBe(false);
+    expect((await prisma.ne26Order.findUnique({ where: { uid } }))?.stripePaymentId).toBe(first);
+  });
+
+  it("can still be closed once the refund is made, keeping the trail", async () => {
+    const uid = await makeOrder({});
+    const paymentId = `pi_closeable_${Date.now()}`;
+    await repo.recordUnattachedPayment(uid, paymentId);
+
+    expect(await repo.closeSettledOrder(uid)).toBe(true);
+    const after = await prisma.ne26Order.findUnique({ where: { uid } });
+    expect(after?.status).toBe("CANCELLED");
+    expect(after?.stripePaymentId).toBe(paymentId);
+  });
+
+  it("cannot be deleted by the cancel path, which would destroy the trail", async () => {
+    // cancelPending DELETES the row. Scoping it to PENDING was enough while
+    // PENDING meant "no money moved"; it no longer does.
+    const uid = await makeOrder({});
+    await repo.recordUnattachedPayment(uid, `pi_undeletable_${Date.now()}`);
+
+    expect(await repo.cancelPending(uid)).toBe(false);
+    expect(await prisma.ne26Order.findUnique({ where: { uid } })).not.toBeNull();
+  });
+
+  it("still lets an ordinary abandoned checkout be cancelled", async () => {
+    const uid = await makeOrder({});
+    expect(await repo.cancelPending(uid)).toBe(true);
+    expect(await prisma.ne26Order.findUnique({ where: { uid } })).toBeNull();
   });
 });

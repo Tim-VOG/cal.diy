@@ -2,21 +2,21 @@ import process from "node:process";
 import { getResourceBookingService } from "@calcom/features/ne26-rooms/di/ResourceBookingService.container";
 import { getStripeCheckoutService } from "@calcom/features/ne26-rooms/di/StripeCheckoutService.container";
 import {
-  ne26OrderUidFromPaymentIntent,
   checkoutOutcome,
   isFullRefund,
   ne26OrderUid,
+  ne26OrderUidFromPaymentIntent,
   paymentIdOf,
 } from "@calcom/features/ne26-rooms/lib/stripeEvents";
 import {
-  type ReleaseReason,
   failureNotification,
   formatMoney,
+  type ReleaseReason,
   saleNotification,
 } from "@calcom/features/ne26-rooms/lib/teamNotification";
+import type { Ne26OrderRepository as Ne26OrderRepositoryLike } from "@calcom/features/ne26-rooms/repositories/Ne26OrderRepository";
 import { WEBAPP_URL } from "@calcom/lib/constants";
 import logger from "@calcom/lib/logger";
-import type { Ne26OrderRepository as Ne26OrderRepositoryLike } from "@calcom/features/ne26-rooms/repositories/Ne26OrderRepository";
 import type Stripe from "stripe";
 
 const log = logger.getSubLogger({ prefix: ["[ne26-rooms-stripe-webhook]"] });
@@ -213,6 +213,14 @@ async function reportUnconfirmed(
   // Refusing to confirm is what keeps this out of the books; a human still
   // owes the buyer their money back.
   if (order && order.bookings.length === 0) {
+    // Write the capture onto the order before saying anything about it.
+    // confirmPaid rolled its transaction back, taking the payment id with it,
+    // so without this the row is indistinguishable from an abandoned checkout —
+    // and the admin dashboard, reading that same field, would tell whoever
+    // opened it that no money had been taken.
+    if (stripePaymentId) {
+      await getNe26OrderRepository().recordUnattachedPayment(orderUid, stripePaymentId);
+    }
     const detail = `${trail}\n\nThe order still exists but holds no rooms — they went back on sale before the payment landed, and may have been sold to someone else. Nothing was booked. Refund this payment in Stripe and tell the buyer.`;
     log.error(`PAID WITH NO ROOMS: ${detail.replace(/\n+/g, " ")}`);
     await notifyTeam("Payment captured but the rooms were gone", detail);

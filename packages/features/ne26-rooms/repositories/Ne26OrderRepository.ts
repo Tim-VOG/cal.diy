@@ -447,12 +447,50 @@ export class Ne26OrderRepository {
    * A delete rather than a status change, so the slot rows go with it — a
    * CANCELLED row keeping its slots would leave the rooms unsellable. Scoped to
    * PENDING, so it can never touch something already paid for.
+   *
+   * And scoped to orders carrying no payment. PENDING alone stopped meaning
+   * "no money moved" the moment recordUnattachedPayment started writing the
+   * payment id onto a hold whose rooms had gone: deleting one of those would
+   * destroy the only record that a capture needs refunding. Those are closed,
+   * not deleted — closeSettledOrder keeps the row.
    */
   async cancelPending(uid: string): Promise<boolean> {
     const result = await this.prismaClient.ne26Order.deleteMany({
-      where: { uid, status: ResourceBookingStatus.PENDING },
+      where: { uid, status: ResourceBookingStatus.PENDING, stripePaymentId: null },
     });
     return result.count > 0;
+  }
+
+  /**
+   * Remember a payment that was captured but could not be attached to anything.
+   *
+   * Money landed, the rooms had already gone back on sale, and confirmPaid
+   * rolled the whole transaction back rather than record a sale of nothing —
+   * correctly. But the payment id went back with it, so the row left behind was
+   * indistinguishable from a checkout somebody simply abandoned: PENDING, no
+   * rooms, no payment id.
+   *
+   * The admin dashboard was reading exactly that field to decide between "money
+   * was captured, refund it" and "took no money, nothing to do", so the one case
+   * that needed a human was the one it described as harmless. This is what makes
+   * the two tellable apart.
+   *
+   * Scoped so it can only ever fill an empty field on a held order — it must
+   * never overwrite the payment that settled a real sale.
+   */
+  async recordUnattachedPayment(uid: string, stripePaymentId: string): Promise<boolean> {
+    try {
+      const result = await this.prismaClient.ne26Order.updateMany({
+        where: { uid, status: ResourceBookingStatus.PENDING, stripePaymentId: null },
+        data: { stripePaymentId },
+      });
+      return result.count > 0;
+    } catch {
+      // The id is unique across orders. If it somehow belongs to another one,
+      // the alert still has to go out — losing it is worse than losing the
+      // annotation, and the caller sends it either way.
+      return false;
+    }
   }
 
   /** Billing confirmed at Checkout. Only ever upgrades what we already know. */
@@ -805,7 +843,7 @@ export class Ne26OrderRepository {
   async closeSettledOrder(uid: string): Promise<boolean> {
     const count = await this.prismaClient.$executeRaw`
       UPDATE "Ne26Order"
-      SET "status" = 'CANCELLED', "updatedAt" = CURRENT_TIMESTAMP
+      SET "status" = 'CANCELLED', "updatedAt" = (NOW() AT TIME ZONE 'UTC')
       WHERE "uid" = ${uid}
         AND "status" = 'PENDING'
         AND NOT EXISTS (SELECT 1 FROM "ResourceBooking" b WHERE b."orderUid" = "Ne26Order"."uid")`;
