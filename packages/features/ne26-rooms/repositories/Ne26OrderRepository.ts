@@ -382,6 +382,26 @@ export class Ne26OrderRepository {
     });
   }
 
+  /**
+   * Every order that has a document, for the accounting bundle.
+   *
+   * Ordered by number rather than by date so the archive reads like the ledger
+   * it will be filed against.
+   */
+  findIssuedDocuments() {
+    return this.prismaClient.ne26Order.findMany({
+      where: { OR: [{ invoiceNumber: { not: null } }, { creditNoteNumber: { not: null } }] },
+      select: {
+        uid: true,
+        invoiceNumber: true,
+        creditNoteNumber: true,
+        bookerName: true,
+        bookerLegalName: true,
+      },
+      orderBy: { invoiceNumber: "asc" },
+    });
+  }
+
   /** Open Checkout sessions for these orders, read BEFORE the orders are deleted. */
   async findStripeSessionIds(
     uids: string[],

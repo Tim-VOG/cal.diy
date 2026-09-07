@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
 import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
+import { buildXlsx, type CellValue } from "@calcom/features/ne26-rooms/lib/xlsx";
+import { useMemo, useState } from "react";
 
 const TZ = EVENT_TIME_ZONE;
 
@@ -48,15 +49,71 @@ function fmt(iso: string): string {
   }).format(new Date(iso));
 }
 
+type BookerSort = "name" | "bookings" | "total";
+
+const BOOKER_SORTS: { key: BookerSort; label: string }[] = [
+  { key: "name", label: "Name" },
+  { key: "bookings", label: "Bookings" },
+  { key: "total", label: "Total spent" },
+];
+
 export default function BookersView({ bookers }: { bookers: Booker[] }): JSX.Element {
   const [query, setQuery] = useState("");
   const [openEmail, setOpenEmail] = useState<string | null>(null);
+  const [sort, setSort] = useState<{ key: BookerSort; dir: "asc" | "desc" }>({
+    key: "name",
+    dir: "asc",
+  });
+
+  /** Same control again flips the direction; a new one starts ascending. */
+  function sortBy(key: BookerSort): void {
+    setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return bookers;
     return bookers.filter((b) => b.name.toLowerCase().includes(q) || b.email.toLowerCase().includes(q));
   }, [bookers, query]);
+
+  /**
+   * Alphabetical is how you find somebody; by spend is how you see who your
+   * biggest exhibitors are. The list only ever offered the first.
+   */
+  const sorted = useMemo(() => {
+    const sign = sort.dir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      if (sort.key === "bookings") return (a.bookingCount - b.bookingCount) * sign;
+      if (sort.key === "total") return (a.confirmedTotal - b.confirmedTotal) * sign;
+      return (a.name || a.email).localeCompare(b.name || b.email, "en") * sign;
+    });
+  }, [filtered, sort]);
+
+  function downloadExcel(): void {
+    const rows: CellValue[][] = sorted.map((b) => [
+      b.name,
+      b.email,
+      b.bookingCount,
+      // A number, so the column sums.
+      b.confirmedTotal / 100,
+      b.currency,
+      b.bookings.map((x) => `${x.roomName} ${fmt(x.startUtc)} (${x.status})`).join("; "),
+    ]);
+    const book = buildXlsx({
+      sheetName: "Bookers",
+      headers: ["Name", "Email", "Bookings", "Confirmed total", "Currency", "Rooms"],
+      rows,
+    });
+    const blob = new Blob([book as BlobPart], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ne26-bookers-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div>
@@ -65,19 +122,44 @@ export default function BookersView({ bookers }: { bookers: Booker[] }): JSX.Ele
         Everyone who has booked a room, with what they purchased. Click a booker to expand their bookings.
       </p>
 
-      <input
-        type="search"
-        placeholder="Search by name or email…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        className="mt-4 w-full max-w-sm rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#000643] focus:outline-none"
-      />
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <input
+          type="search"
+          placeholder="Search by name or email…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="w-full max-w-sm rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#000643] focus:outline-none"
+        />
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-gray-500 text-xs uppercase tracking-wide">Sort</span>
+          {BOOKER_SORTS.map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => sortBy(key)}
+              className={`rounded-lg border px-2.5 py-1.5 font-medium text-xs transition ${
+                sort.key === key
+                  ? "border-[#000643] bg-[#000643] text-white"
+                  : "border-gray-200 bg-white text-gray-600 hover:border-[#000643]"
+              }`}>
+              {label}
+              {sort.key === key ? <span aria-hidden> {sort.dir === "asc" ? "▲" : "▼"}</span> : null}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={downloadExcel}
+          className="ml-auto rounded-lg bg-[#000643] px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90">
+          Export Excel
+        </button>
+      </div>
 
       <div className="mt-4 space-y-3">
-        {filtered.length === 0 ? (
+        {sorted.length === 0 ? (
           <p className="text-gray-400 text-sm">No bookers yet.</p>
         ) : (
-          filtered.map((b) => {
+          sorted.map((b) => {
             const open = openEmail === b.email;
             return (
               <div key={b.email} className="rounded-xl border border-gray-200 bg-white">

