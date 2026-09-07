@@ -734,10 +734,19 @@ export class Ne26OrderRepository {
    * order itself becomes invisible. It still exists, and it may be paid. These
    * are surfaced at the top of the dashboard rather than left to be found by
    * someone querying the database.
+   *
+   * CANCELLED is excluded, and that exclusion is the whole difference between a
+   * panel worth reading and one nobody reads. Issuing a credit note deletes the
+   * order's rooms (creditNoteAndCancel) — so every properly refunded order left
+   * this query holding no rooms and carrying a Stripe payment id, and was
+   * announced in red as "paid but holds no room, reconcile or refund in
+   * Stripe". Business already finished. Over a three-day event the alarm that
+   * exists to catch the one real disaster would have filled with resolved
+   * refunds long before the disaster arrived.
    */
   findOrdersWithoutRooms() {
     return this.prismaClient.ne26Order.findMany({
-      where: { bookings: { none: {} } },
+      where: { bookings: { none: {} }, status: { not: ResourceBookingStatus.CANCELLED } },
       orderBy: { createdAt: "desc" },
       select: {
         uid: true,
@@ -752,6 +761,55 @@ export class Ne26OrderRepository {
         createdAt: true,
       },
     });
+  }
+
+  /**
+   * One order, whatever state it is in — including holding no rooms at all.
+   *
+   * findByUid is reached through a room in the admin, which is exactly the path
+   * that does not exist for an order whose rooms are gone: the case someone
+   * most needs to open.
+   */
+  findForAdmin(uid: string) {
+    return this.prismaClient.ne26Order.findUnique({
+      where: { uid },
+      include: {
+        bookings: {
+          include: { resource: { select: { name: true } } },
+          orderBy: { startTime: "asc" },
+        },
+      },
+    });
+  }
+
+  /**
+   * Close an order that holds nothing, once a human has settled it elsewhere.
+   *
+   * The one case that reaches this: money was captured, the confirmation never
+   * ran, and the hold lapsed — so the rooms went back on sale and may already
+   * belong to somebody else. The app must not re-book them and must not invoice
+   * them, and it deliberately does neither. What it can do is stop being a dead
+   * end: after the refund is made in Stripe, this marks the order settled so the
+   * alert clears.
+   *
+   * CANCELLED rather than deleted, on purpose. cancelPending deletes, which is
+   * right for an abandoned checkout that took no money and wrong for one that
+   * did: the Stripe payment id and the amount are the reconciliation trail and
+   * they stay on the row.
+   *
+   * Written as one statement with a NOT EXISTS guard rather than a read followed
+   * by a write. Reading "it has no rooms" and then cancelling leaves a window in
+   * which a room could be attached, and this must never be able to cancel an
+   * order that is holding one.
+   */
+  async closeSettledOrder(uid: string): Promise<boolean> {
+    const count = await this.prismaClient.$executeRaw`
+      UPDATE "Ne26Order"
+      SET "status" = 'CANCELLED', "updatedAt" = CURRENT_TIMESTAMP
+      WHERE "uid" = ${uid}
+        AND "status" = 'PENDING'
+        AND NOT EXISTS (SELECT 1 FROM "ResourceBooking" b WHERE b."orderUid" = "Ne26Order"."uid")`;
+    return count > 0;
   }
 
   /**

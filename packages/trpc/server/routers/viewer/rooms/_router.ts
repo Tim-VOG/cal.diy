@@ -479,6 +479,19 @@ export const roomsRouter = router({
     return { issued: Boolean(order?.invoiceNumber) };
   }),
 
+  // Admin-only: close an order that holds no rooms, once it has been settled in
+  // Stripe. The rooms are gone and may belong to someone else, so there is
+  // nothing here to re-book and nothing to invoice — this only records that a
+  // human dealt with it, so the alert stops. The row keeps its payment id and
+  // amount: that is the reconciliation trail.
+  closeSettledOrder: ne26AdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
+    const { getNe26OrderRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
+    );
+    const closed = await getNe26OrderRepository().closeSettledOrder(input.uid);
+    return { closed };
+  }),
+
   // Admin-only: re-send an already-issued invoice email to the booker.
   resendInvoice: ne26AdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
     const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
