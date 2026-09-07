@@ -1,10 +1,27 @@
 /**
- * Plain-text notifications sent to the NE26 team (sales + admin) when money
- * moves. Kept pure so the wording and — above all — the amounts can be asserted
- * in unit tests: the first version of these mails printed Stripe's raw minor
- * units, so a 871.20 EUR sale was announced to the sales team as "87120 EUR".
+ * Notifications sent to the NE26 team (sales + admin) when money moves.
+ *
+ * Kept pure so the wording and — above all — the amounts can be asserted in unit
+ * tests: the first version of these mails printed Stripe's raw minor units, so a
+ * 871.20 EUR sale was announced to the sales team as "87120 EUR".
+ *
+ * Each builder returns both a text body and an HTML one. The text is what the
+ * tests read and what a phone's notification preview shows; the HTML is the
+ * same content in the layout the buyer-facing mails use, because the sales desk
+ * reads these fastest and under the most pressure.
  */
 
+import {
+  type EmailRoomLine,
+  card,
+  emailShell,
+  escapeHtml,
+  factRows,
+  linkList,
+  roomBlock,
+  signOff,
+  totalRow,
+} from "./emailLayout";
 import { EVENT_TIME_ZONE, EVENT_TIME_ZONE_LABEL } from "./eventSchedule";
 
 /** Minor units -> "871.20 EUR". Never hand raw cents to a human. */
@@ -63,17 +80,38 @@ export interface SaleNotificationInput {
   adminUrl: string;
 }
 
+/** What every one of these mails returns: the same content in two forms. */
+export interface TeamNotification {
+  subject: string;
+  body: string;
+  html: string;
+}
+
 const LABEL_WIDTH = 18;
 
 function field(label: string, value: string): string {
   return `${`${label}:`.padEnd(LABEL_WIDTH)}${value}`;
 }
 
+/** The rooms, laid out the way the invoice mail lays them out. */
+function roomLines(rooms: SaleNotificationRoom[], currency: string): EmailRoomLine[] {
+  return rooms.map((room) => ({
+    roomName: room.roomName,
+    slotLabel: formatSlotRange(room.startUtc, room.endUtc),
+    durationMinutes: room.durationMinutes,
+    addOns: room.addOns.map((a) => ({
+      name: a.name,
+      quantity: a.quantity,
+      lineLabel: formatMoney(a.lineTotal, currency),
+    })),
+  }));
+}
+
 /**
  * The "a room just sold" mail. Everything the sales desk needs to recognise the
  * order without opening the dashboard: which room, when, who, how much.
  */
-export function saleNotification(input: SaleNotificationInput): { subject: string; body: string } {
+export function saleNotification(input: SaleNotificationInput): TeamNotification {
   const paid = input.amountPaid ?? null;
   const buyer = input.bookerName?.trim() || "An exhibitor";
   const rooms = input.rooms;
@@ -95,9 +133,12 @@ export function saleNotification(input: SaleNotificationInput): { subject: strin
     lines.push("");
   }
 
-  lines.push(field("Buyer", input.bookerEmail ? `${buyer} <${input.bookerEmail}>` : buyer));
+  const vat = [input.bookerVatNumber, input.bookerCountry].filter(Boolean).join(" · ") || "-";
+  const buyerLine = input.bookerEmail ? `${buyer} <${input.bookerEmail}>` : buyer;
+
+  lines.push(field("Buyer", buyerLine));
   if (input.bookerCountry || input.bookerVatNumber) {
-    lines.push(field("VAT", [input.bookerVatNumber, input.bookerCountry].filter(Boolean).join(" · ") || "-"));
+    lines.push(field("VAT", vat));
   }
 
   lines.push("", field("Total excl. VAT", formatMoney(input.amountHt, input.currency)));
@@ -107,7 +148,34 @@ export function saleNotification(input: SaleNotificationInput): { subject: strin
   lines.push("", field("Order", input.orderUid), "", input.adminUrl);
   if (input.stripeUrl) lines.push(input.stripeUrl);
 
-  return { subject, body: lines.join("\n") };
+  const facts: { label: string; value: string; strong?: boolean }[] = [
+    { label: "Buyer", value: buyerLine },
+    ...(input.bookerCountry || input.bookerVatNumber ? [{ label: "VAT", value: vat }] : []),
+    // The card above shows what Stripe captured; accounting works in the other
+    // figure, and the text body has always carried both.
+    { label: "Total excl. VAT", value: formatMoney(input.amountHt, input.currency) },
+    ...(input.invoiceNumber ? [{ label: "Invoice", value: input.invoiceNumber }] : []),
+    { label: "Order", value: input.orderUid },
+  ];
+
+  const html = emailShell(
+    `<p style="margin:0 0 14px">${escapeHtml(buyer)} booked ${escapeHtml(what)}.</p>` +
+      card(
+        roomLines(rooms, input.currency).map(roomBlock).join("") +
+          totalRow(
+            paid === null ? "Total excl. VAT" : "Paid (incl. VAT)",
+            formatMoney(paid ?? input.amountHt, input.currency)
+          )
+      ) +
+      factRows(facts) +
+      linkList([
+        { label: "Open the order in the admin dashboard", href: input.adminUrl },
+        ...(input.stripeUrl ? [{ label: "See the payment in Stripe", href: input.stripeUrl }] : []),
+      ]) +
+      signOff()
+  );
+
+  return { subject, body: lines.join("\n"), html };
 }
 
 /**
@@ -154,10 +222,7 @@ export interface FailureNotificationInput {
  * had tried and failed — which during a three-day event is exactly the lead the
  * sales desk would want to call back the same morning.
  */
-export function failureNotification(input: FailureNotificationInput): {
-  subject: string;
-  body: string;
-} {
+export function failureNotification(input: FailureNotificationInput): TeamNotification {
   const buyer = input.bookerName?.trim() || "An exhibitor";
   const rooms = input.rooms;
   const what =
@@ -193,15 +258,33 @@ export function failureNotification(input: FailureNotificationInput): {
     lines.push("");
   }
 
-  lines.push(field("Buyer", input.bookerEmail ? `${buyer} <${input.bookerEmail}>` : buyer));
-  lines.push(
-    field(
-      input.reason === "payment_attempt_failed" ? "At stake (excl. VAT)" : "Lost (excl. VAT)",
-      formatMoney(input.amountHt, input.currency)
-    )
-  );
+  const buyerLine = input.bookerEmail ? `${buyer} <${input.bookerEmail}>` : buyer;
+  const stakeLabel = input.reason === "payment_attempt_failed" ? "At stake (excl. VAT)" : "Lost (excl. VAT)";
+
+  lines.push(field("Buyer", buyerLine));
+  lines.push(field(stakeLabel, formatMoney(input.amountHt, input.currency)));
   lines.push("", field("Order", input.orderUid), "", input.adminUrl);
   if (input.stripeUrl) lines.push(input.stripeUrl);
 
-  return { subject, body: lines.join("\n") };
+  const facts: { label: string; value: string; strong?: boolean }[] = [
+    { label: "Buyer", value: buyerLine },
+    ...(input.declineMessage ? [{ label: "Bank said", value: input.declineMessage, strong: true }] : []),
+    { label: "Order", value: input.orderUid },
+  ];
+
+  const html = emailShell(
+    `<p style="margin:0 0 14px">${escapeHtml(opening)}</p>` +
+      card(
+        roomLines(rooms, input.currency).map(roomBlock).join("") +
+          totalRow(stakeLabel, formatMoney(input.amountHt, input.currency))
+      ) +
+      factRows(facts) +
+      linkList([
+        { label: "Open the order in the admin dashboard", href: input.adminUrl },
+        ...(input.stripeUrl ? [{ label: "See the attempt in Stripe", href: input.stripeUrl }] : []),
+      ]) +
+      signOff()
+  );
+
+  return { subject, body: lines.join("\n"), html };
 }

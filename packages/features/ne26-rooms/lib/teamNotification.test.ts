@@ -268,3 +268,63 @@ describe("a card that was declined, not a sale that was lost", () => {
     expect(body).not.toContain("undefined");
   });
 });
+
+/**
+ * The sales desk used to get these as a monospace block. They now carry the
+ * same layout as the invoice mail — which only helps if the content survived
+ * the move, and if a buyer cannot write HTML into an internal mail.
+ */
+describe("the laid-out version of the team mails", () => {
+  it("says the same things as the text body", () => {
+    const { html } = saleNotification(BASE);
+    expect(html).toContain("Suite 1");
+    expect(html).toContain("Tue, 17 Nov 2026, 16:00-18:00 TRT");
+    expect(html).toContain("871.20 EUR");
+    expect(html).toContain("NE26-2026-0007");
+    expect(html).toContain("jane@example.com");
+    expect(html).toContain(BASE.orderUid);
+  });
+
+  it("links to the admin dashboard and to Stripe", () => {
+    const url = "https://dashboard.stripe.com/test/payments/pi_123";
+    const { html } = saleNotification({ ...BASE, stripeUrl: url });
+    expect(html).toContain(`href="${BASE.adminUrl}"`);
+    expect(html).toContain(`href="${url}"`);
+  });
+
+  it("has no Stripe link to offer when there is no payment", () => {
+    expect(saleNotification({ ...BASE, stripeUrl: null }).html).not.toContain("dashboard.stripe.com");
+  });
+
+  it("cannot be used to put markup into the team's inbox", () => {
+    // The buyer's name is theirs to choose, and it lands in an internal mail.
+    const { html } = saleNotification({ ...BASE, bookerName: "<img src=x onerror=alert(1)>" });
+    expect(html).not.toContain("<img");
+    expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+  });
+
+  it("prints no raw minor units, in the HTML either", () => {
+    const { html } = saleNotification(BASE);
+    expect(html).not.toContain("87120");
+    expect(html).not.toContain("72000");
+  });
+
+  it("calls a declined card money at stake, not money lost", () => {
+    const { html } = failureNotification({
+      orderUid: BASE.orderUid,
+      reason: "payment_attempt_failed",
+      rooms: BASE.rooms,
+      bookerName: "Jane Exhibitor",
+      bookerEmail: "jane@example.com",
+      amountHt: 72000,
+      currency: "EUR",
+      adminUrl: BASE.adminUrl,
+      holdUntilLabel: "14:35 TRT",
+      declineMessage: "Your card was declined.",
+    });
+    expect(html).toContain("At stake");
+    expect(html).not.toContain("Lost (excl. VAT)");
+    expect(html).toContain("still held");
+    expect(html).toContain("Your card was declined.");
+  });
+});

@@ -29,7 +29,7 @@ const log = logger.getSubLogger({ prefix: ["[ne26-rooms-stripe-webhook]"] });
  * contactEmail, then to EMAIL_FROM — anything rather than a log line nobody
  * reads during a three-day event.
  */
-async function notifyTeam(subject: string, body: string): Promise<void> {
+async function notifyTeam(subject: string, body: string, html?: string): Promise<void> {
   try {
     const { getInvoiceSettingsRepository } = await import(
       "@calcom/features/ne26-rooms/di/InvoiceSettingsRepository.container"
@@ -42,7 +42,7 @@ async function notifyTeam(subject: string, body: string): Promise<void> {
       return;
     }
     const { sendTeamEmail } = await import("@calcom/features/ne26-rooms/lib/mailer");
-    await sendTeamEmail({ to: recipients, subject, body });
+    await sendTeamEmail({ to: recipients, subject, body, html });
   } catch (e) {
     log.error(`Could not send the team notification "${subject}"`, e);
   }
@@ -91,7 +91,7 @@ async function notifyReleased(
     addOns: b.addOns.map((a) => ({ name: a.addOn.name, quantity: a.quantity, lineTotal: a.lineTotal })),
   }));
 
-  const { subject, body } = failureNotification({
+  const { subject, body, html } = failureNotification({
     orderUid: order.uid,
     reason,
     rooms,
@@ -102,7 +102,7 @@ async function notifyReleased(
     stripeUrl,
     adminUrl: `${WEBAPP_URL}/rooms/admin`,
   });
-  await notifyTeam(subject, body);
+  await notifyTeam(subject, body, html);
 
   const first = rooms[0];
   if (!order.bookerEmail || !first) return;
@@ -138,7 +138,7 @@ async function notifySale(orderUid: string, session: Stripe.Checkout.Session): P
     );
     const order = await getNe26OrderRepository().findByUid(orderUid);
     if (order) {
-      const { subject, body } = saleNotification({
+      const { subject, body, html } = saleNotification({
         orderUid,
         rooms: order.bookings.map((b) => ({
           roomName: b.resource.name,
@@ -162,7 +162,7 @@ async function notifySale(orderUid: string, session: Stripe.Checkout.Session): P
         stripeUrl: stripeUrlFor(paymentIdOf(session)),
         adminUrl,
       });
-      await notifyTeam(subject, body);
+      await notifyTeam(subject, body, html);
       return;
     }
   } catch (e) {
@@ -338,7 +338,7 @@ export async function POST(req: Request): Promise<Response> {
           const { holdExpiryLabel } = await import(
             "@calcom/features/ne26-rooms/services/HoldReminderService"
           );
-          const { subject, body } = failureNotification({
+          const { subject, body, html } = failureNotification({
             orderUid,
             reason: "payment_attempt_failed",
             rooms: order.bookings.map((b) => ({
@@ -362,7 +362,7 @@ export async function POST(req: Request): Promise<Response> {
             adminUrl: `${WEBAPP_URL}/rooms/admin`,
           });
           log.warn(`Payment declined for order ${orderUid}: ${intent.last_payment_error?.code ?? "?"}`);
-          await notifyTeam(subject, body);
+          await notifyTeam(subject, body, html);
         }
       }
     }
