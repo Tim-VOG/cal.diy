@@ -1,6 +1,7 @@
 import { defaultResponderForAppDir } from "app/api/defaultResponderForAppDir";
 import { parseRequestData } from "app/api/parseRequestData";
 import { NextResponse, type NextRequest } from "next/server";
+import { ZodError } from "zod";
 
 import calcomSignupHandler from "./handlers/calcomSignupHandler";
 import selfHostedSignupHandler from "./handlers/selfHostedHandler";
@@ -13,6 +14,7 @@ import logger from "@calcom/lib/logger";
 import { piiHasher } from "@calcom/lib/server/PiiHasher";
 import { checkCfTurnstileToken } from "@calcom/lib/server/checkCfTurnstileToken";
 import { prisma } from "@calcom/prisma";
+import { signupIssueMessage } from "@calcom/features/ne26-rooms/lib/passwordRules";
 import { signupSchema } from "@calcom/prisma/zod-utils";
 
 async function ensureSignupIsEnabled(body: Record<string, string>) {
@@ -70,6 +72,17 @@ async function handler(req: NextRequest) {
   } catch (e) {
     if (e instanceof HttpError) {
       return NextResponse.json({ message: e.message }, { status: e.statusCode });
+    }
+    // A password that breaks the rules is the visitor's to fix, not a fault of
+    // ours. It was reaching the branch below, so someone whose password merely
+    // lacked a lowercase letter was told the server had broken — with nothing
+    // naming what to change, since the schema's own message is the rule's
+    // internal flag ("caplow").
+    if (e instanceof ZodError) {
+      return NextResponse.json(
+        { message: signupIssueMessage(e.issues) ?? "Check the details you entered." },
+        { status: 400 }
+      );
     }
     logger.error(e);
     return NextResponse.json({ message: "Internal server error" }, { status: 500 });

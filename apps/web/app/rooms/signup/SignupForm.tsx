@@ -1,5 +1,7 @@
 "use client";
 
+import { passwordChecklist, passwordProblem } from "@calcom/features/ne26-rooms/lib/passwordRules";
+import { Check } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
@@ -25,10 +27,19 @@ export default function SignupForm(): JSX.Element {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const checks = passwordChecklist(password);
 
   async function onSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setError(null);
+    // Answer before the round trip. The server refuses the same rules, but it
+    // used to answer "Internal server error", and even corrected it names the
+    // problem a second too late to be useful.
+    const problem = passwordProblem(password);
+    if (problem) {
+      setError(problem);
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/auth/signup", {
@@ -86,9 +97,34 @@ export default function SignupForm(): JSX.Element {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
-            <span className="mt-1 block text-gray-400 text-xs">
-              At least 7 characters, including a number and an uppercase letter.
-            </span>
+            {/* The rules as they are actually enforced, ticking themselves off
+                while the field is typed in. This was one line of prose that
+                said "a number and an uppercase letter" and never mentioned the
+                lowercase one — so a password that did everything the screen
+                asked for was refused, and the refusal came back as "Internal
+                server error". Shown only once there is something to check, so
+                an untouched form is not a wall of red. */}
+            <ul className="mt-2 space-y-1" aria-live="polite">
+              {checks.map((check) => (
+                <li
+                  key={check.label}
+                  className={`flex items-center gap-1.5 text-xs transition-colors ${
+                    check.met ? "text-green-600" : password ? "text-gray-500" : "text-gray-400"
+                  }`}>
+                  <span
+                    aria-hidden
+                    className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full transition ${
+                      check.met ? "bg-green-100" : "border border-gray-300"
+                    }`}>
+                    {check.met ? <Check className="h-2.5 w-2.5" strokeWidth={3} /> : null}
+                  </span>
+                  {/* Read out as a state, not just a colour: a red/green tick
+                      alone tells a colour-blind visitor nothing. */}
+                  <span className="sr-only">{check.met ? "Requirement met:" : "Still required:"}</span>
+                  {check.label}
+                </li>
+              ))}
+            </ul>
           </label>
 
           {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-red-700 text-sm">{error}</p> : null}
