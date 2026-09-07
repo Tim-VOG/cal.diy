@@ -331,10 +331,19 @@ export async function POST(req: Request): Promise<Response> {
       const order = await orders.findByUid(orderUid);
       // Only while it is still unpaid and still holding something: a decline
       // followed by a successful retry must not reach anyone.
+      const error = intent.last_payment_error;
+      const card = error?.payment_method?.card;
+      // Stripe added these after the SDK version pinned here, and whether they
+      // arrive depends on the API version the account is on. Read them if they
+      // are there rather than pretending the type says so.
+      const extra = (error ?? {}) as Record<string, unknown>;
+      const str = (key: string): string | null =>
+        typeof extra[key] === "string" ? (extra[key] as string) : null;
       if (order && order.status === "PENDING" && order.bookings.length > 0) {
         // Once per order. Three cards tried is one problem, not three mails.
         if (await orders.claimPaymentFailedNotice(orderUid, new Date())) {
           const { failureNotification } = await import("@calcom/features/ne26-rooms/lib/teamNotification");
+          const { describeDecline } = await import("@calcom/features/ne26-rooms/lib/stripeDecline");
           const { holdExpiryLabel } = await import(
             "@calcom/features/ne26-rooms/services/HoldReminderService"
           );
@@ -357,11 +366,27 @@ export async function POST(req: Request): Promise<Response> {
             amountHt: order.amountTotal,
             currency: order.currency,
             holdUntilLabel: order.holdExpiresAt ? holdExpiryLabel(order.holdExpiresAt) : null,
-            declineMessage: intent.last_payment_error?.message ?? null,
+            declineMessage: error?.message ?? null,
+            // The message above is written for the buyer and says the same
+            // thing for an empty account and a stolen card. decline_code is
+            // what tells the desk which of the two they are looking at.
+            decline: describeDecline({
+              code: error?.code,
+              declineCode: error?.decline_code,
+              networkDeclineCode: str("network_decline_code"),
+              adviceCode: str("advice_code"),
+              message: error?.message,
+              cardBrand: card?.brand,
+              cardLast4: card?.last4,
+              cardCountry: card?.country,
+              cardFunding: card?.funding,
+            }),
             stripeUrl: stripeUrlFor(intent.id),
             adminUrl: `${WEBAPP_URL}/rooms/admin`,
           });
-          log.warn(`Payment declined for order ${orderUid}: ${intent.last_payment_error?.code ?? "?"}`);
+          log.warn(
+            `Payment declined for order ${orderUid}: ${error?.code ?? "?"}/${error?.decline_code ?? "?"}`
+          );
           await notifyTeam(subject, body, html);
         }
       }

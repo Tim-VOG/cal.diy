@@ -328,3 +328,59 @@ describe("the laid-out version of the team mails", () => {
     expect(html).toContain("Your card was declined.");
   });
 });
+
+describe("the decline, explained", () => {
+  const BASE_FAIL = {
+    orderUid: BASE.orderUid,
+    reason: "payment_attempt_failed" as const,
+    rooms: BASE.rooms,
+    bookerName: "Jane Exhibitor",
+    bookerEmail: "jane@example.com",
+    amountHt: 72000,
+    currency: "EUR",
+    adminUrl: BASE.adminUrl,
+    holdUntilLabel: "14:35 TRT",
+    declineMessage: "Your card was declined.",
+  };
+
+  it("tells the desk what to do, not just what the buyer saw", () => {
+    const { body, html } = failureNotification({
+      ...BASE_FAIL,
+      decline: {
+        reason: "The card has no room left — funds or limit.",
+        nextStep: "They need another card.",
+        tellBuyer: true,
+        card: "Visa ···· 0002 · FR · credit",
+        codes: "card_declined / insufficient_funds",
+      },
+    });
+    for (const text of [body, html]) {
+      expect(text).toContain("no room left");
+      expect(text).toContain("They need another card.");
+      expect(text).toContain("card_declined / insufficient_funds");
+    }
+    expect(html).toContain("···· 0002");
+  });
+
+  it("warns, loudly, when the reason must not reach the buyer", () => {
+    const { body, html } = failureNotification({
+      ...BASE_FAIL,
+      decline: {
+        reason: "The card was blocked as lost, stolen or fraudulent.",
+        nextStep: "Internal only — do not repeat this reason to the buyer.",
+        tellBuyer: false,
+        card: null,
+        codes: "card_declined / stolen_card",
+      },
+    });
+    expect(body).toContain("DO NOT REPEAT THE REASON ABOVE TO THE BUYER.");
+    expect(html).toContain("Do not repeat the reason above to the buyer.");
+  });
+
+  it("stays quiet when Stripe explained nothing", () => {
+    const { body, html } = failureNotification({ ...BASE_FAIL, declineMessage: null, decline: null });
+    expect(body).not.toContain("Next step");
+    expect(html).not.toContain("Next step");
+    expect(body).not.toContain("DO NOT REPEAT");
+  });
+});

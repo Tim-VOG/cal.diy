@@ -20,11 +20,7 @@ const SOFT = "#555";
 const RULE = "#e5e7eb";
 
 export function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 /**
@@ -137,4 +133,16 @@ export function roomHeading(roomName: string, slotLabel: string): string {
  */
 export function button(label: string, href: string): string {
   return `<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:separate;margin:18px 0"><tr><td style="background:${INK};border-radius:8px"><a href="${escapeHtml(href)}" style="display:inline-block;padding:11px 20px;color:#fff;text-decoration:none;font-weight:600">${escapeHtml(label)}</a></td></tr></table>`;
+}
+
+/**
+ * A reason the desk may know but must not repeat.
+ *
+ * Stripe asks that a card blocked as lost, stolen or fraudulent be presented to
+ * the buyer as an ordinary decline — telling them what the bank actually said
+ * is how a fraud check becomes a tip-off. The desk still needs it, so the mail
+ * carries it with the warning attached rather than leaving it out.
+ */
+export function confidentialNote(): string {
+  return `<div style="border-left:3px solid #b45309;background:#fffbeb;padding:10px 14px;margin:16px 0;color:#7c2d12;font-size:13px"><strong>Do not repeat the reason above to the buyer.</strong> Stripe asks that this be presented to them as an ordinary decline.</div>`;
 }

@@ -14,6 +14,7 @@
 import {
   type EmailRoomLine,
   card,
+  confidentialNote,
   emailShell,
   escapeHtml,
   factRows,
@@ -23,6 +24,7 @@ import {
   totalRow,
 } from "./emailLayout";
 import { EVENT_TIME_ZONE, EVENT_TIME_ZONE_LABEL } from "./eventSchedule";
+import type { DeclineSummary } from "./stripeDecline";
 
 /** Minor units -> "871.20 EUR". Never hand raw cents to a human. */
 export function formatMoney(minorUnits: number, currency: string): string {
@@ -212,6 +214,11 @@ export interface FailureNotificationInput {
   holdUntilLabel?: string | null;
   /** What the bank said, when Stripe told us. */
   declineMessage?: string | null;
+  /**
+   * The same decline, explained — the reason behind Stripe's deliberately vague
+   * customer-facing message, and what to do about it.
+   */
+  decline?: DeclineSummary | null;
 }
 
 /**
@@ -245,9 +252,18 @@ export function failureNotification(input: FailureNotificationInput): TeamNotifi
         : "A checkout was started and never completed. The rooms below are back on sale.";
 
   const lines: string[] = [opening, ""];
-  if (input.declineMessage) {
-    lines.push(field("Bank said", input.declineMessage), "");
+  const decline = input.decline ?? null;
+  if (input.declineMessage) lines.push(field("Bank said", input.declineMessage));
+  if (decline) {
+    lines.push(field("Reason", decline.reason));
+    lines.push(field("Next step", decline.nextStep));
+    if (decline.card) lines.push(field("Card", decline.card));
+    if (decline.codes) lines.push(field("Stripe code", decline.codes));
+    if (!decline.tellBuyer) {
+      lines.push("", "DO NOT REPEAT THE REASON ABOVE TO THE BUYER.");
+    }
   }
+  if (input.declineMessage || decline) lines.push("");
   for (const room of rooms) {
     lines.push(`${room.roomName} — ${room.durationMinutes / 60}h`);
     lines.push(`  ${formatSlotRange(room.startUtc, room.endUtc)}`);
@@ -268,7 +284,15 @@ export function failureNotification(input: FailureNotificationInput): TeamNotifi
 
   const facts: { label: string; value: string; strong?: boolean }[] = [
     { label: "Buyer", value: buyerLine },
-    ...(input.declineMessage ? [{ label: "Bank said", value: input.declineMessage, strong: true }] : []),
+    ...(input.declineMessage ? [{ label: "Bank said", value: input.declineMessage }] : []),
+    ...(decline
+      ? [
+          { label: "Reason", value: decline.reason, strong: true },
+          { label: "Next step", value: decline.nextStep },
+          ...(decline.card ? [{ label: "Card", value: decline.card }] : []),
+          ...(decline.codes ? [{ label: "Stripe code", value: decline.codes }] : []),
+        ]
+      : []),
     { label: "Order", value: input.orderUid },
   ];
 
@@ -279,6 +303,7 @@ export function failureNotification(input: FailureNotificationInput): TeamNotifi
           totalRow(stakeLabel, formatMoney(input.amountHt, input.currency))
       ) +
       factRows(facts) +
+      (decline && !decline.tellBuyer ? confidentialNote() : "") +
       linkList([
         { label: "Open the order in the admin dashboard", href: input.adminUrl },
         ...(input.stripeUrl ? [{ label: "See the attempt in Stripe", href: input.stripeUrl }] : []),
