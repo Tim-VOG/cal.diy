@@ -7,25 +7,25 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-type TextFieldKey =
-  | "firstName"
-  | "lastName"
-  | "legalName"
-  | "vatNumber"
-  | "addressLine1"
-  | "addressLine2"
-  | "postalCode"
-  | "city"
-  | "poNumber"
-  | "internalReference";
+type TextFieldKey = "firstName" | "lastName" | "vatNumber";
 
-// `optional` mirrors isBillingProfileComplete(): anything not marked optional is
-// required there, so the browser must refuse the submit rather than let the
-// exhibitor save, get bounced back by the guard, and have to guess what was
-// missing.
-// `autoComplete` is what lets the browser fill this form from what it already
-// has. Without these tokens it offers nothing, which is why exhibitors felt they
-// were typing an address here that Stripe would have auto-filled for them.
+/**
+ * Only what has to be known before the buyer reaches Stripe.
+ *
+ * This was ten fields, and it stood between an exhibitor and the room list. The
+ * company name, street, postcode and city are now collected by Checkout, which
+ * was always going to ask for an address anyway; the purchase order number and
+ * the internal reference are asked for there too, as optional custom fields,
+ * because they belong to an order rather than to a person.
+ *
+ * What is left cannot be moved. The country decides the VAT and the VAT decides
+ * the amount charged, so it has to be settled while the price is still being
+ * computed. The contact name is who the welcome desk asks for at the door.
+ *
+ * `optional` mirrors isBillingProfileComplete(): anything not marked optional is
+ * required there, so the browser refuses the submit rather than letting someone
+ * save, get bounced back by the guard, and have to guess what was missing.
+ */
 const TEXT_FIELDS: {
   key: TextFieldKey;
   label: string;
@@ -36,16 +36,7 @@ const TEXT_FIELDS: {
   // The welcome desk asks for a person, not a company.
   { key: "firstName", label: "First name", autoComplete: "given-name" },
   { key: "lastName", label: "Last name", autoComplete: "family-name" },
-  { key: "legalName", label: "Company / legal name", full: true, autoComplete: "organization" },
-  { key: "vatNumber", label: "VAT number", optional: true, autoComplete: "off" },
-  { key: "addressLine1", label: "Address line 1", full: true, autoComplete: "address-line1" },
-  { key: "addressLine2", label: "Address line 2", full: true, optional: true, autoComplete: "address-line2" },
-  { key: "postalCode", label: "Postal code", autoComplete: "postal-code" },
-  { key: "city", label: "City", autoComplete: "address-level2" },
-  // Printed on the invoice when filled in. Some finance departments will not pay
-  // one without their own PO on it.
-  { key: "poNumber", label: "PO number", optional: true, autoComplete: "off" },
-  { key: "internalReference", label: "Internal reference", optional: true, autoComplete: "off" },
+  { key: "vatNumber", label: "VAT number", full: true, optional: true, autoComplete: "off" },
 ];
 
 const EMPTY: BillingProfile = {
@@ -91,8 +82,8 @@ export default function BillingProfileForm({
         <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4" role="status">
           <p className="font-semibold text-[#000643] text-sm">Complete your billing details to continue</p>
           <p className="mt-1 text-gray-700 text-sm">
-            They appear on your invoice and pre-fill the payment page, so you won&apos;t have to type them
-            again. We&apos;ll take you straight back once saved.
+            Three fields: they set the VAT on your invoice and tell the welcome desk who to expect.
+            We&apos;ll take you straight back once saved.
           </p>
         </div>
       ) : null}
@@ -101,8 +92,8 @@ export default function BillingProfileForm({
       </Link>
       <h1 className="mt-2 font-bold text-2xl text-[#000643]">Billing details</h1>
       <p className="mt-1 text-gray-600 text-sm">
-        Saved once and reused at checkout, so you don&apos;t re-enter them every booking. Your VAT number and
-        country determine how VAT is applied on your invoice.
+        Just enough to price your booking correctly and to greet you at the desk. Your country and VAT number
+        determine how VAT is applied. Your invoice address is collected on the payment page.
       </p>
 
       <form

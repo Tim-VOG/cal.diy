@@ -22,6 +22,16 @@ import type Stripe from "stripe";
 const log = logger.getSubLogger({ prefix: ["[ne26-rooms-stripe-webhook]"] });
 
 /**
+ * A Checkout custom field, as the API returns it. Declared here because the
+ * pinned SDK's types predate the feature; the API does return them on a session
+ * created against version 2020-08-27, verified against test mode.
+ */
+interface CustomField {
+  key: string;
+  text?: { value?: string | null } | null;
+}
+
+/**
  * Email the NE26 team. Never throws: the webhook must still acknowledge the
  * delivery, or Stripe retries it forever.
  *
@@ -264,6 +274,13 @@ export async function POST(req: Request): Promise<Response> {
       // Persist what Stripe collected before confirming, while the order is
       // still PENDING. It drives the invoice's "Bill to" and its VAT.
       const details = session.customer_details;
+      // The two optional fields Checkout asks for. Stripe returns every declared
+      // custom field whether or not it was filled in, so an untouched one comes
+      // back as an empty string — which applyCheckoutBilling ignores, leaving
+      // whatever the order already had.
+      const customFields = (session as unknown as { custom_fields?: CustomField[] }).custom_fields ?? [];
+      const customField = (key: string): string | null =>
+        customFields.find((f) => f.key === key)?.text?.value ?? null;
       await orders.applyCheckoutBilling(orderUid, {
         country: details?.address?.country ?? null,
         vatNumber: details?.tax_ids?.[0]?.value ?? null,
@@ -276,6 +293,8 @@ export async function POST(req: Request): Promise<Response> {
         addressLine2: details?.address?.line2 ?? null,
         postalCode: details?.address?.postal_code ?? null,
         city: details?.address?.city ?? null,
+        poNumber: customField("poNumber"),
+        internalReference: customField("internalReference"),
       });
 
       const stripePaymentId = paymentIdOf(session);

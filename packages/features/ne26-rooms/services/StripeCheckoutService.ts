@@ -5,6 +5,38 @@ import Stripe from "stripe";
 
 const STRIPE_API_VERSION = "2020-08-27";
 
+/**
+ * A purchase order number belongs to an order, not to a person: the same company
+ * can have a different one per booking. So it is asked for at the moment of
+ * buying rather than kept on a profile, where it sat as a default nobody
+ * revisited. Optional — most buyers have neither, and the few who need them
+ * cannot pay an invoice without them.
+ *
+ * Spread through a cast because the pinned SDK's types predate custom fields.
+ * The API itself does not: a session created against version 2020-08-27 accepts
+ * these and returns them, with text.value null until the buyer fills one in.
+ * Verified against the live test-mode API rather than assumed from Stripe's
+ * additive-parameter policy.
+ */
+const CHECKOUT_CUSTOM_FIELDS = {
+  custom_fields: [
+    {
+      key: "poNumber",
+      label: { type: "custom", custom: "Purchase order number" },
+      type: "text",
+      optional: true,
+      text: { maximum_length: 60 },
+    },
+    {
+      key: "internalReference",
+      label: { type: "custom", custom: "Your internal reference" },
+      type: "text",
+      optional: true,
+      text: { maximum_length: 60 },
+    },
+  ],
+} as unknown as Partial<Stripe.Checkout.SessionCreateParams>;
+
 /** Stripe rejects a Checkout session expiring sooner than this. */
 const STRIPE_MIN_SESSION_LIFETIME_SECONDS = 30 * 60;
 
@@ -27,12 +59,7 @@ export interface CreateCheckoutSessionInput {
    * buyer can never pay against a hold that has already been released.
    */
   holdExpiresAt: Date;
-  /**
-   * Counter sale: the buyer has no account and no saved profile, so Checkout is
-   * the only place their billing address can be captured — and the invoice needs
-   * one. Web bookings leave this false and keep the light collection.
-   */
-  requireFullAddress?: boolean;
+
 }
 
 /**
@@ -143,18 +170,19 @@ export class StripeCheckoutService {
       // Die with the hold: a session outliving it lets the buyer pay for a slot
       // that has already been released to someone else.
       expires_at: checkoutExpiresAtSeconds(input.holdExpiresAt, new Date()),
-      // Collect/confirm billing details here. The buyer types these from
-      // scratch — a Customer does not seed them (see ensureCustomer) — and the
-      // webhook syncs whatever they enter back onto the booking. A blank value
-      // never overwrites what the billing profile already told us.
-      // "auto" for a web booking: Checkout cannot pre-fill the address block (see
-      // ensureCustomer), so "required" only meant every buyer retyping five
-      // fields they had already given us, and the invoice takes the address from
-      // their profile anyway.
+      // The invoice address is collected HERE, for everybody, and the webhook
+      // writes it onto the order. The profile used to ask for it as well, which
+      // put ten fields between an exhibitor and the room list — for an address
+      // this page was always going to ask for. Only what decides the PRICE
+      // (country, VAT number) is still known before this point, because by now
+      // the amount is on the screen.
       //
-      // "required" for a counter sale, where there is no profile: this is the
-      // one and only chance to capture the address the invoice needs.
-      billing_address_collection: input.requireFullAddress ? "required" : "auto",
+      // Checkout cannot pre-fill the address block from anything we control: it
+      // seeds it only from a saved card's billing details, and we save none. So
+      // someone booking twice in two payments types it twice. That is the whole
+      // cost, and it is smaller than the registration form it replaces.
+      billing_address_collection: "required",
+      ...CHECKOUT_CUSTOM_FIELDS,
       tax_id_collection: { enabled: true },
       // Stripe forbids customer + customer_email together; prefer the Customer.
       // With an existing Customer, tax_id/address collection requires

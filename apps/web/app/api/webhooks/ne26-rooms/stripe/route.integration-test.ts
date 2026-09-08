@@ -85,6 +85,8 @@ interface SessionOptions {
   source?: string;
   paymentIntent?: string;
   amountTotal?: number;
+  /** What the buyer typed into Checkout's optional custom fields, if anything. */
+  customFields?: { key: string; type: string; text: { value: string | null } }[];
 }
 
 function sessionEvent(type: string, options: SessionOptions = {}): string {
@@ -102,9 +104,20 @@ function sessionEvent(type: string, options: SessionOptions = {}): string {
         currency: "eur",
         customer_details: {
           name: "Webhook Buyer BV",
-          address: { country: "NL" },
+          address: {
+            country: "NL",
+            line1: "Keizersgracht 1",
+            postal_code: "1015 CJ",
+            city: "Amsterdam",
+          },
           tax_ids: [{ type: "eu_vat", value: "NL123456789B01" }],
         },
+        // Stripe returns every declared custom field whether or not it was
+        // filled in — an untouched one comes back with a null value.
+        custom_fields: options.customFields ?? [
+          { key: "poNumber", type: "text", text: { value: null } },
+          { key: "internalReference", type: "text", text: { value: null } },
+        ],
         metadata: {
           source: options.source ?? "ne26-rooms",
           ...(options.orderUid ? { orderUid: options.orderUid } : {}),
@@ -362,6 +375,80 @@ describe("NE26 Stripe webhook", () => {
       expect(alert.subject).toMatch(/no matching order/i);
       expect(alert.body).toContain("pi_test_webhook");
       expect(alert.body).toContain("cs_test_webhook");
+    });
+
+    /**
+     * The billing details the buyer confirms at Checkout are the invoice's, and
+     * for a web booking they are now the ONLY source of the address: the profile
+     * stopped asking for it, because this page was always going to.
+     */
+    describe("what Checkout collected reaches the order", () => {
+      it("writes the address onto the order, so the invoice has one", async () => {
+        const { uid } = await heldOrder();
+
+        await deliver(sessionEvent("checkout.session.completed", { orderUid: uid }));
+
+        const order = await orders.findByUid(uid);
+        expect(order?.bookerLegalName).toBe("Webhook Buyer BV");
+        expect(order?.bookerAddressLine1).toBe("Keizersgracht 1");
+        expect(order?.bookerPostalCode).toBe("1015 CJ");
+        expect(order?.bookerCity).toBe("Amsterdam");
+      });
+
+      it("carries the purchase order number through to the order", async () => {
+        // Asked for at Checkout rather than kept on a profile: the same company
+        // can have a different one per booking. Some finance departments will
+        // not pay an invoice without their own reference on it.
+        const { uid } = await heldOrder();
+
+        await deliver(
+          sessionEvent("checkout.session.completed", {
+            orderUid: uid,
+            customFields: [
+              { key: "poNumber", type: "text", text: { value: "PO-2026-4471" } },
+              { key: "internalReference", type: "text", text: { value: "COST-CENTRE-12" } },
+            ],
+          })
+        );
+
+        const order = await orders.findByUid(uid);
+        expect(order?.bookerPoNumber).toBe("PO-2026-4471");
+        expect(order?.bookerInternalReference).toBe("COST-CENTRE-12");
+      });
+
+      it("leaves them empty when the buyer skipped them, rather than writing a blank", async () => {
+        const { uid } = await heldOrder();
+
+        await deliver(sessionEvent("checkout.session.completed", { orderUid: uid }));
+
+        const order = await orders.findByUid(uid);
+        expect(order?.bookerPoNumber ?? null).toBeNull();
+        expect(order?.bookerInternalReference ?? null).toBeNull();
+      });
+
+      it("does not re-rate an order from the country Stripe returns", async () => {
+        // The country decided the VAT and the VAT decided the amount already
+        // charged to the card. A buyer whose card sits elsewhere must not be
+        // invoiced under a treatment they were never charged for; if the country
+        // really was wrong, that is a credit note, not a silent re-rating.
+        const { uid } = await heldOrder();
+        await prisma.ne26Order.update({ where: { uid }, data: { bookerCountry: "FR" } });
+
+        // The session says NL.
+        await deliver(sessionEvent("checkout.session.completed", { orderUid: uid }));
+
+        expect((await orders.findByUid(uid))?.bookerCountry).toBe("FR");
+      });
+
+      it("does fill the country when the order has none — the counter sale", async () => {
+        // No profile behind it, so Checkout is the only source there will be.
+        const { uid } = await heldOrder();
+        expect((await orders.findByUid(uid))?.bookerCountry ?? null).toBeNull();
+
+        await deliver(sessionEvent("checkout.session.completed", { orderUid: uid }));
+
+        expect((await orders.findByUid(uid))?.bookerCountry).toBe("NL");
+      });
     });
 
     /**

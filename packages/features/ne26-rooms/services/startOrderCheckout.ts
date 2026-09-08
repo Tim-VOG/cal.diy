@@ -83,8 +83,6 @@ export async function holdRooms(input: {
     billing: {
       country: profile?.country || null,
       vatNumber: profile?.vatNumber || null,
-      poNumber: profile?.poNumber || null,
-      internalReference: profile?.internalReference || null,
     },
     rooms: input.rooms,
   });
@@ -114,9 +112,9 @@ export async function startOrderCheckout(input: StartOrderCheckoutInput) {
   const atTheCounter = input.buyer.userId === null;
   const profile = atTheCounter ? null : await billingRepo.findByUserId(input.buyer.userId as number);
 
-  // An account holder must have completed their profile: it is what the invoice
-  // is made out to. A counter sale has no account to complete, so Checkout
-  // collects the address instead and the webhook writes it onto the order.
+  // An account holder must have said who they are and where they are: the
+  // country decides the VAT, and the VAT decides what the card is about to be
+  // charged. The address is Checkout's job, for the counter and the web alike.
   if (!atTheCounter && !isBillingProfileComplete(profile)) {
     throw new ErrorWithCode(
       ErrorCode.BadRequest,
@@ -125,11 +123,13 @@ export async function startOrderCheckout(input: StartOrderCheckoutInput) {
   }
 
   const contactName = [profile?.firstName, profile?.lastName].filter(Boolean).join(" ");
+  // Only what decides the price. The purchase order number and the internal
+  // reference are asked for at Checkout, as custom fields, and land on the order
+  // through the webhook — they belong to an order, and the same company can have
+  // a different one per booking.
   const billing = input.billing ?? {
     country: profile?.country || null,
     vatNumber: profile?.vatNumber || null,
-    poNumber: profile?.poNumber || null,
-    internalReference: profile?.internalReference || null,
   };
 
   const { order, checkoutLines } = await new Ne26OrderService().createOrder({
@@ -203,7 +203,6 @@ export async function startOrderCheckout(input: StartOrderCheckoutInput) {
       customerEmail: input.buyer.email,
       customerId,
       holdExpiresAt: order.holdExpiresAt as Date,
-      requireFullAddress: atTheCounter,
       successUrl: `${input.webappUrl}${input.successPath ?? `/rooms/booked/${order.uid}`}`,
       cancelUrl: `${input.webappUrl}${input.cancelPath}`,
     });
@@ -356,7 +355,6 @@ export async function resumeOrderCheckout(input: {
     customerEmail: input.buyerEmail,
     customerId,
     holdExpiresAt: sessionExpiry,
-    requireFullAddress: order.bookerUserId === null,
     successUrl: `${input.webappUrl}/rooms/booked/${order.uid}`,
     cancelUrl: `${input.webappUrl}/rooms/bookings`,
   });

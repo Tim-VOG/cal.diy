@@ -526,6 +526,8 @@ export class Ne26OrderRepository {
       addressLine2?: string | null;
       postalCode?: string | null;
       city?: string | null;
+      poNumber?: string | null;
+      internalReference?: string | null;
     }
   ): Promise<void> {
     await this.prismaClient.$transaction(async (tx) => {
@@ -541,6 +543,14 @@ export class Ne26OrderRepository {
           ...(data.addressLine2?.trim() ? { bookerAddressLine2: data.addressLine2 } : {}),
           ...(data.postalCode?.trim() ? { bookerPostalCode: data.postalCode } : {}),
           ...(data.city?.trim() ? { bookerCity: data.city } : {}),
+          // Asked for at Checkout rather than kept on a profile: the same
+          // company can have a different purchase order per booking. Like the
+          // address, they change no amount — they are printed so the buyer's
+          // finance department can match the invoice to their own paperwork.
+          ...(data.poNumber?.trim() ? { bookerPoNumber: data.poNumber } : {}),
+          ...(data.internalReference?.trim()
+            ? { bookerInternalReference: data.internalReference }
+            : {}),
         },
       });
 
