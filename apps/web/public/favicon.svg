@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="NATO Edge 26 Rooms">
+  <title>NATO Edge 26 Rooms</title>
+  <!--
+    The slash from the vo/eu wordmark, on the brand navy.
+
+    Both existing logos are horizontal lockups: at 16px a wordmark is a smudge.
+    The slash is the one element of the mark that stays itself at tab size, and
+    it is lifted verbatim from VOEU_LOGO-RVB_BLACK-BLUE.svg rather than redrawn —
+    same path, same #5A96DC.
+
+    Its bounding box in that file is 82.5 x 121.7 centred on (420.9, 297.9); the
+    transform below moves that centre to the middle of a 512 square and scales it
+    to 300 tall, leaving a margin so the shape is not clipped by the circular
+    mask Android and Safari apply to touch icons.
+  -->
+  <rect width="512" height="512" rx="96" fill="#000643"/>
+  <g transform="translate(256 256) scale(2.4655) translate(-420.9 -297.9)">
+    <path fill="#5A96DC" d="M437.5,308.3c20.9-33.1,30.4-64.6,21.2-70.4c-9.1-5.8-33.5,16.4-54.3,49.5c-20.9,33.1-30.4,64.6-21.2,70.4
+		S416.6,341.4,437.5,308.3"/>
+  </g>
+</svg>

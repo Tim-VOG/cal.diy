@@ -42,25 +42,30 @@ export const viewport = {
 };
 
 export const metadata = {
+  // The vo/eu slash on the brand navy. It was the NATO EDGE 26 wordmark, which
+  // is a lockup: at 16px a wordmark is a smudge, and a tab is 16px. The slash is
+  // the one part of the mark that survives that size.
   icons: {
-    icon: "/FAV.png",
-    apple: "/FAV.png",
+    icon: [
+      // Vector first, for the browsers that take it — one file, every density.
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      // Last, and unqualified: the fallback for anything that reads no further.
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
     other: [
       {
-        rel: "icon-mask",
+        rel: "mask-icon",
         url: "/safari-pinned-tab.svg",
         color: "#000643",
-      },
-      {
-        url: "/FAV.png",
-        sizes: "180x180",
-        type: "image/png",
       },
     ],
   },
   manifest: "/site.webmanifest",
   other: {
-    "application-TileColor": "#ff0000",
+    "msapplication-TileColor": "#000643",
   },
   twitter: {
     site: "@calcom",
