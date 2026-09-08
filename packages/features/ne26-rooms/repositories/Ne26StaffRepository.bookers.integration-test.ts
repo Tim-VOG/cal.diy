@@ -164,6 +164,9 @@ describe("deleteBookerAccount", () => {
     expect(order?.bookerEmail).toContain("@test.local");
     expect(order?.bookerLegalName).toBe("Frozen Legal Name SAS");
     expect(order?.bookings).toHaveLength(1);
+    // Detached, not dangling: the admin was showing an Account ID for an account
+    // that could no longer be opened.
+    expect(order?.bookerUserId).toBeNull();
     expect(await prisma.ne26Order.findUnique({ where: { uid: gone } })).toBeNull();
   });
 

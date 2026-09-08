@@ -188,9 +188,17 @@ export class Ne26StaffRepository {
       const removed = await tx.ne26Order.deleteMany({
         where: { bookerUserId: userId, invoiceNumber: null, creditNoteNumber: null },
       });
-      const ordersKept = await tx.ne26Order.count({ where: { bookerUserId: userId } });
+      // Detach what survives. There is no foreign key here — which is what lets
+      // the invoiced orders outlive the account at all — so nothing would clear
+      // this on its own, and the admin would go on showing "Account ID 41" for
+      // an account that cannot be opened. The order keeps the buyer's name,
+      // email and address, which is what the record is actually made of.
+      const kept = await tx.ne26Order.updateMany({
+        where: { bookerUserId: userId },
+        data: { bookerUserId: null },
+      });
       await tx.user.delete({ where: { id: userId } });
-      return { deleted: true, ordersDeleted: removed.count, ordersKept };
+      return { deleted: true, ordersDeleted: removed.count, ordersKept: kept.count };
     });
   }
 
