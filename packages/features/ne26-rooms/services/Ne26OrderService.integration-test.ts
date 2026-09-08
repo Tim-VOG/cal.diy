@@ -367,6 +367,44 @@ describe("Ne26OrderService.createOrder", () => {
       expect(await orders.claimHoldNotice(uid, new Date(), null)).toBe(false);
     });
 
+    it("never offers a PAID order its opening notice", async () => {
+      // The mail says "we are holding this for you, nothing has been charged
+      // yet". Sending it to somebody who has just paid would be false twice
+      // over.
+      //
+      // Two independent things stop it, and it is worth naming which does the
+      // work: confirmPaid sets CONFIRMED *and* clears holdExpiresAt, and the
+      // query wants a hold that is still running. So the expiry is what
+      // actually excludes a paid order here; the status filter is a second lock
+      // on the same door. Asserted below so this test cannot quietly come to
+      // rest on the wrong one.
+      const uid = await holdIn(30);
+      await orders.confirmPaid(uid, `pi_opening_${STAMP}`);
+
+      const paid = await orders.findByUid(uid);
+      expect(paid?.status).toBe("CONFIRMED");
+      expect(paid?.holdExpiresAt).toBeNull();
+
+      const now = new Date();
+      const aged = await orders.findHoldsOpenedBefore(new Date(now.getTime() + 60_000), now);
+      expect(aged.map((o) => o.uid)).not.toContain(uid);
+    });
+
+    it("refuses to claim one that was paid between the read and the claim", async () => {
+      // The race the claim-before-send order exists for: a cron pass reads the
+      // hold while it is still unpaid, the payment lands, and only then does the
+      // claim run. The claim is what has to refuse, because the read already
+      // happened.
+      const uid = await holdIn(30);
+      const now = new Date();
+      const found = await orders.findHoldsOpenedBefore(new Date(now.getTime() + 60_000), now);
+      expect(found.map((o) => o.uid)).toContain(uid);
+
+      await orders.confirmPaid(uid, `pi_race_${STAMP}`);
+
+      expect(await orders.claimHoldNotice(uid, new Date(), null)).toBe(false);
+    });
+
     it("offers a hold for its opening notice only once it has stood a while", async () => {
       const uid = await holdIn(30);
       const now = new Date();
