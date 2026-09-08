@@ -87,14 +87,10 @@ export async function holdRooms(input: {
     rooms: input.rooms,
   });
 
-  // The same note the payment path sends. Holding and paying both take rooms
-  // off sale on a clock, so both deserve a written trace: an exhibitor who
-  // holds a room and closes the tab had nothing but the countdown on a page
-  // they had left.
-  await notifyHoldTaken(order, `${input.webappUrl}/rooms/bookings`).catch(() => {
-    // Best-effort. The rooms are held either way, and the fifteen-minute
-    // reminder will still reach them.
-  });
+  // The buyer is NOT written to here. The opening notice waits eight minutes
+  // and is sent by the hold-notice cron, which is the only way it can say how
+  // long is actually left — and the only way somebody who pays straight away
+  // never receives it at all.
 
   return { uid: order.uid, holdExpiresAt: order.holdExpiresAt as Date };
 }
@@ -210,10 +206,6 @@ export async function startOrderCheckout(input: StartOrderCheckoutInput) {
     // act on it. Someone who leaves the payment page to fetch a purchase order
     // has no other way of knowing there is a clock running.
     await getNe26OrderRepository().setStripeSessionId(order.uid, checkout.id);
-    await notifyHoldTaken(order, checkout.url).catch(() => {
-      // Best-effort: the rooms are held and the payment page is open. Failing
-      // the checkout over a courtesy email would cost the sale.
-    });
     return { ...order, checkoutUrl: checkout.url };
   } catch {
     await getNe26OrderRepository()
@@ -228,33 +220,6 @@ export async function startOrderCheckout(input: StartOrderCheckoutInput) {
   }
 }
 
-/**
- * "We are holding these rooms until 14:35." Sent as soon as the hold is taken.
- *
- * Separate from the reminder fifteen minutes before it lapses: this one tells
- * the buyer a clock exists at all, which is what makes the later warning make
- * sense rather than arrive out of nowhere.
- */
-async function notifyHoldTaken(
-  order: { bookerEmail: string; bookerName: string; holdExpiresAt: Date | null; bookings: { startTime: Date; endTime: Date; resource: { name: string } }[] },
-  payUrl: string
-): Promise<void> {
-  if (!order.holdExpiresAt || !order.bookerEmail) return;
-  const { sendHoldReminderEmail } = await import("../lib/mailer");
-  const { holdExpiryLabel, minutesUntil, roomLabelFor } = await import("./HoldReminderService");
-  const { formatSlotRange } = await import("../lib/teamNotification");
-  const first = order.bookings[0];
-  await sendHoldReminderEmail({
-    to: order.bookerEmail,
-    bookerName: order.bookerName || "there",
-    roomName: roomLabelFor(order.bookings),
-    slotLabel: first ? formatSlotRange(first.startTime, first.endTime) : "",
-    expiresAtLabel: holdExpiryLabel(order.holdExpiresAt),
-    minutesLeft: minutesUntil(order.holdExpiresAt, new Date()),
-    kind: "created",
-    payUrl,
-  });
-}
 
 /**
  * Rebuild a Checkout session for an order that was held but never paid.

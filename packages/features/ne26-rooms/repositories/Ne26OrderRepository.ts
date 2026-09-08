@@ -765,7 +765,6 @@ export class Ne26OrderRepository {
     return this.prismaClient.ne26Order.findMany({
       where: {
         status: ResourceBookingStatus.PENDING,
-        holdReminderSentAt: null,
         holdExpiresAt: { gt: from, lte: before },
       },
       select: {
@@ -773,6 +772,11 @@ export class Ne26OrderRepository {
         bookerName: true,
         bookerEmail: true,
         holdExpiresAt: true,
+        // Whether the warning is still owed depends on this against a moment
+        // computed per row (its own expiry, less the lead), and Prisma cannot
+        // compare two columns. Returned and decided in the service; the set is
+        // never more than the holds lapsing in the next quarter of an hour.
+        holdReminderSentAt: true,
         bookings: {
           orderBy: { startTime: "asc" },
           select: { startTime: true, endTime: true, resource: { select: { name: true } } },
@@ -782,14 +786,56 @@ export class Ne26OrderRepository {
   }
 
   /**
-   * Claim the reminder for one order, returning whether this caller won it.
+   * Holds old enough to be worth writing about, that nobody has been written to
+   * about yet.
    *
-   * Scoped to holdReminderSentAt still being null, so two overlapping cron runs
-   * cannot both send: the second updates nothing and is told so.
+   * The opening notice is no longer sent the instant the rooms are held: a buyer
+   * who pays within a few minutes never needed telling there was a clock, and
+   * one who was about to be redirected to Stripe got a mail saying so while the
+   * payment page was still loading. It waits, and by the time it goes out it
+   * says how long is actually left.
    */
-  async claimHoldReminder(uid: string, at: Date): Promise<boolean> {
+  findHoldsOpenedBefore(cutoff: Date, now: Date) {
+    return this.prismaClient.ne26Order.findMany({
+      where: {
+        status: ResourceBookingStatus.PENDING,
+        holdReminderSentAt: null,
+        createdAt: { lte: cutoff },
+        holdExpiresAt: { gt: now },
+      },
+      select: {
+        uid: true,
+        bookerName: true,
+        bookerEmail: true,
+        holdExpiresAt: true,
+        holdReminderSentAt: true,
+        bookings: {
+          orderBy: { startTime: "asc" },
+          select: { startTime: true, endTime: true, resource: { select: { name: true } } },
+        },
+      },
+    });
+  }
+
+  /**
+   * Claim the next notice for one order, returning whether this caller won it.
+   *
+   * holdReminderSentAt means "when this buyer was last written to about this
+   * hold", not "the reminder went out" — one hold now earns two messages, the
+   * opening one and the warning before it lapses. `notifiedBefore` is what
+   * separates them: the warning is claimable when the last message predates the
+   * moment the hold entered its final quarter of an hour, which is only true if
+   * that last message was the opening one.
+   *
+   * Claiming before sending is what stops two overlapping cron runs both
+   * mailing: the second updates nothing and is told so.
+   */
+  async claimHoldNotice(uid: string, at: Date, notifiedBefore: Date | null): Promise<boolean> {
+    const unclaimed = notifiedBefore
+      ? [{ holdReminderSentAt: null }, { holdReminderSentAt: { lt: notifiedBefore } }]
+      : [{ holdReminderSentAt: null }];
     const result = await this.prismaClient.ne26Order.updateMany({
-      where: { uid, holdReminderSentAt: null, status: ResourceBookingStatus.PENDING },
+      where: { uid, status: ResourceBookingStatus.PENDING, OR: unclaimed },
       data: { holdReminderSentAt: at },
     });
     return result.count > 0;

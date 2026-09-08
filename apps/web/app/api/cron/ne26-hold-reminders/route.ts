@@ -1,6 +1,6 @@
 import { getNe26OrderRepository } from "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container";
 import { sendHoldReminderEmail } from "@calcom/features/ne26-rooms/lib/mailer";
-import { remindExpiringHolds } from "@calcom/features/ne26-rooms/services/HoldReminderService";
+import { runHoldNotices } from "@calcom/features/ne26-rooms/services/HoldReminderService";
 import { WEBAPP_URL } from "@calcom/lib/constants";
 import logger from "@calcom/lib/logger";
 import { defaultResponderForAppDir } from "app/api/defaultResponderForAppDir";
@@ -11,7 +11,8 @@ import { NextResponse } from "next/server";
 const log = logger.getSubLogger({ prefix: ["[ne26-hold-reminders]"] });
 
 /**
- * Warn buyers whose unpaid hold is about to lapse.
+ * Write to buyers holding rooms they have not paid for: once when the hold has
+ * been standing a few minutes, and again before it lapses.
  *
  * Meant to run every few minutes. Safe to run more often, and safe to overlap:
  * each reminder is claimed in the database before it is sent, so a slow run
@@ -42,10 +43,11 @@ async function postHandler(req: NextRequest): Promise<Response> {
   }
 
   const orders = getNe26OrderRepository();
-  const { sent } = await remindExpiringHolds(
+  const { sent } = await runHoldNotices(
     {
       findHoldsExpiringSoon: (from, before) => orders.findHoldsExpiringSoon(from, before),
-      claimHoldReminder: (uid, at) => orders.claimHoldReminder(uid, at),
+      findHoldsOpenedBefore: (cutoff, now) => orders.findHoldsOpenedBefore(cutoff, now),
+      claimHoldNotice: (uid, at, notifiedBefore) => orders.claimHoldNotice(uid, at, notifiedBefore),
       sendReminder: sendHoldReminderEmail,
       onError: (uid, error) => log.error(`Could not warn the buyer of order ${uid}`, error),
     },
@@ -53,7 +55,7 @@ async function postHandler(req: NextRequest): Promise<Response> {
     WEBAPP_URL
   );
 
-  if (sent > 0) log.warn(`Warned ${sent} buyer(s) that their hold is about to lapse.`);
+  if (sent > 0) log.warn(`Sent ${sent} hold notice(s).`);
   return NextResponse.json({ ok: true, sent });
 }
 

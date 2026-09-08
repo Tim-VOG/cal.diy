@@ -329,22 +329,55 @@ describe("Ne26OrderService.createOrder", () => {
       // Two overlapping cron runs must not both mail the same buyer.
       const uid = await holdIn(10);
       const now = new Date();
-      expect(await orders.claimHoldReminder(uid, now)).toBe(true);
-      expect(await orders.claimHoldReminder(uid, now)).toBe(false);
+      expect(await orders.claimHoldNotice(uid, now, null)).toBe(true);
+      expect(await orders.claimHoldNotice(uid, now, null)).toBe(false);
     });
 
-    it("drops out of the window once claimed", async () => {
+    it("stays in the window once claimed, carrying when it was written to", async () => {
+      // One hold now earns two messages, so the query can no longer drop a row
+      // the moment anything has been sent about it. Which message is still owed
+      // is decided by the service, from this timestamp.
       const uid = await holdIn(10);
-      await orders.claimHoldReminder(uid, new Date());
+      const at = new Date();
+      await orders.claimHoldNotice(uid, at, null);
+
       const now = new Date();
       const due = await orders.findHoldsExpiringSoon(now, new Date(now.getTime() + 15 * 60_000));
-      expect(due.map((o) => o.uid)).not.toContain(uid);
+      const found = due.find((o) => o.uid === uid);
+      expect(found).toBeDefined();
+      expect(found?.holdReminderSentAt?.getTime()).toBe(at.getTime());
+    });
+
+    it("lets the warning be claimed over an earlier opening notice", async () => {
+      // The two-stage claim. The opening message was sent long before the final
+      // stretch, so the warning is still owed; a floor at that moment is what
+      // says so.
+      const uid = await holdIn(10);
+      const longAgo = new Date(Date.now() - 30 * 60_000);
+      await orders.claimHoldNotice(uid, longAgo, null);
+
+      expect(await orders.claimHoldNotice(uid, new Date(), new Date())).toBe(true);
+      // ...and not a third time, now that the last message is recent.
+      expect(await orders.claimHoldNotice(uid, new Date(), new Date(Date.now() - 60_000))).toBe(false);
     });
 
     it("never claims an order that has been paid", async () => {
       const uid = await holdIn(10);
       await orders.confirmPaid(uid, `pi_reminder_${STAMP}`);
-      expect(await orders.claimHoldReminder(uid, new Date())).toBe(false);
+      expect(await orders.claimHoldNotice(uid, new Date(), null)).toBe(false);
+    });
+
+    it("offers a hold for its opening notice only once it has stood a while", async () => {
+      const uid = await holdIn(30);
+      const now = new Date();
+
+      // Just created: too soon.
+      const tooSoon = await orders.findHoldsOpenedBefore(new Date(now.getTime() - 8 * 60_000), now);
+      expect(tooSoon.map((o) => o.uid)).not.toContain(uid);
+
+      // A cutoff in the future stands in for the hold having aged.
+      const aged = await orders.findHoldsOpenedBefore(new Date(now.getTime() + 60_000), now);
+      expect(aged.map((o) => o.uid)).toContain(uid);
     });
   });
 
