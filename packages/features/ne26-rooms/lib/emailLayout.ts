@@ -146,3 +146,14 @@ export function button(label: string, href: string): string {
 export function confidentialNote(): string {
   return `<div style="border-left:3px solid #b45309;background:#fffbeb;padding:10px 14px;margin:16px 0;color:#7c2d12;font-size:13px"><strong>Do not repeat the reason above to the buyer.</strong> Stripe asks that this be presented to them as an ordinary decline.</div>`;
 }
+
+/**
+ * A correction to something already sent.
+ *
+ * Louder than the note below it, because it exists to overrule advice the reader
+ * may have already acted on. Red rather than amber: amber says "be careful",
+ * this says "what you were told was wrong".
+ */
+export function correctionNote(text: string): string {
+  return `<div style="border-left:3px solid #b91c1c;background:#fef2f2;padding:10px 14px;margin:0 0 16px;color:#7f1d1d;font-size:13px">${escapeHtml(text)}</div>`;
+}

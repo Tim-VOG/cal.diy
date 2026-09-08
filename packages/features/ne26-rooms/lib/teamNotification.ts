@@ -15,6 +15,7 @@ import {
   type EmailRoomLine,
   card,
   confidentialNote,
+  correctionNote,
   emailShell,
   escapeHtml,
   factRows,
@@ -215,6 +216,15 @@ export interface FailureNotificationInput {
   /** What the bank said, when Stripe told us. */
   declineMessage?: string | null;
   /**
+   * Whether an alert for this order has already gone out for an earlier attempt.
+   *
+   * Only ever true alongside a reason the buyer must not be told, because that
+   * is the one case worth a second mail: the earlier one advised calling the
+   * buyer back, and following that advice now would mean chasing someone using
+   * a card reported stolen.
+   */
+  supersedesEarlierNotice?: boolean;
+  /**
    * The same decline, explained — the reason behind Stripe's deliberately vague
    * customer-facing message, and what to do about it.
    */
@@ -235,11 +245,15 @@ export function failureNotification(input: FailureNotificationInput): TeamNotifi
   const what =
     rooms.length === 1 ? `${rooms[0].roomName}, ${rooms[0].durationMinutes / 60}h` : `${rooms.length} rooms`;
   const headline =
-    input.reason === "payment_attempt_failed"
-      ? "Payment declined"
-      : input.reason === "payment_failed"
-        ? "Payment failed"
-        : "Checkout expired";
+    // Distinct in an inbox: a second mail with the same subject reads as a
+    // duplicate and gets left unopened, which is the opposite of the point.
+    input.supersedesEarlierNotice
+      ? "Another card declined — the earlier alert was wrong"
+      : input.reason === "payment_attempt_failed"
+        ? "Payment declined"
+        : input.reason === "payment_failed"
+          ? "Payment failed"
+          : "Checkout expired";
   const subject = `${headline} — ${what} (${formatMoney(input.amountHt, input.currency)})`;
 
   // "Worth a call if they do not" is wrong above a card blocked as stolen,
@@ -254,7 +268,15 @@ export function failureNotification(input: FailureNotificationInput): TeamNotifi
         ? "A payment was attempted and declined. The rooms below are back on sale."
         : "A checkout was started and never completed. The rooms below are back on sale.";
 
-  const lines: string[] = [opening, ""];
+  const correction = input.supersedesEarlierNotice
+    ? "An earlier alert for this order named a different reason and suggested calling the buyer back. Disregard it: what follows is what the bank said about the card they tried next."
+    : null;
+
+  const lines: string[] = [];
+  // Marked rather than shouted: a whole sentence in capitals is harder to read,
+  // and this one has to be read.
+  if (correction) lines.push(`*** CORRECTION *** ${correction}`, "");
+  lines.push(opening, "");
   const decline = input.decline ?? null;
   if (input.declineMessage) lines.push(field("Bank said", input.declineMessage));
   if (decline) {
@@ -300,7 +322,8 @@ export function failureNotification(input: FailureNotificationInput): TeamNotifi
   ];
 
   const html = emailShell(
-    `<p style="margin:0 0 14px">${escapeHtml(opening)}</p>` +
+    (correction ? correctionNote(correction) : "") +
+      `<p style="margin:0 0 14px">${escapeHtml(opening)}</p>` +
       card(
         roomLines(rooms, input.currency).map(roomBlock).join("") +
           totalRow(stakeLabel, formatMoney(input.amountHt, input.currency))

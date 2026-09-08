@@ -367,10 +367,35 @@ export async function POST(req: Request): Promise<Response> {
       const str = (key: string): string | null =>
         typeof extra[key] === "string" ? (extra[key] as string) : null;
       if (order && order.status === "PENDING" && order.bookings.length > 0) {
-        // Once per order. Three cards tried is one problem, not three mails.
-        if (await orders.claimPaymentFailedNotice(orderUid, new Date())) {
-          const { failureNotification } = await import("@calcom/features/ne26-rooms/lib/teamNotification");
-          const { describeDecline } = await import("@calcom/features/ne26-rooms/lib/stripeDecline");
+        const { failureNotification } = await import("@calcom/features/ne26-rooms/lib/teamNotification");
+        const { describeDecline } = await import("@calcom/features/ne26-rooms/lib/stripeDecline");
+        const decline = describeDecline({
+          code: error?.code,
+          declineCode: error?.decline_code,
+          networkDeclineCode: str("network_decline_code"),
+          adviceCode: str("advice_code"),
+          message: error?.message,
+          cardBrand: card?.brand,
+          cardLast4: card?.last4,
+          cardCountry: card?.country,
+          cardFunding: card?.funding,
+        });
+
+        // Once per order: a buyer working through three cards is one problem,
+        // not three mails. With one exception, and it is not a nicety.
+        //
+        // Trying another card is what people actually do — they do not start a
+        // new booking — so every attempt after the first was silent. If the
+        // first failed for something ordinary and a later one is refused as
+        // lost, stolen or fraudulent, the desk has been told to call the buyer
+        // back and heard nothing since. Following that advice means chasing
+        // someone using a stolen card. A reason the buyer must not be told
+        // always gets through, and says plainly that it overrules what was
+        // sent before.
+        const mustNotBeTold = decline?.tellBuyer === false;
+        const alreadyNotified = order.paymentFailedNotifiedAt !== null;
+        const claimed = await orders.claimPaymentFailedNotice(orderUid, new Date());
+        if (claimed || mustNotBeTold) {
           const { holdExpiryLabel } = await import(
             "@calcom/features/ne26-rooms/services/HoldReminderService"
           );
@@ -397,17 +422,8 @@ export async function POST(req: Request): Promise<Response> {
             // The message above is written for the buyer and says the same
             // thing for an empty account and a stolen card. decline_code is
             // what tells the desk which of the two they are looking at.
-            decline: describeDecline({
-              code: error?.code,
-              declineCode: error?.decline_code,
-              networkDeclineCode: str("network_decline_code"),
-              adviceCode: str("advice_code"),
-              message: error?.message,
-              cardBrand: card?.brand,
-              cardLast4: card?.last4,
-              cardCountry: card?.country,
-              cardFunding: card?.funding,
-            }),
+            decline,
+            supersedesEarlierNotice: alreadyNotified && mustNotBeTold,
             stripeUrl: stripeUrlFor(intent.id),
             adminUrl: `${WEBAPP_URL}/rooms/admin`,
           });

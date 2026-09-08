@@ -128,6 +128,28 @@ function sessionEvent(type: string, options: SessionOptions = {}): string {
   });
 }
 
+/** A declined card attempt, as Stripe reports it while the session stays open. */
+function declineEvent(orderUid: string, declineCode: string): string {
+  return JSON.stringify({
+    id: `evt_decline_${declineCode}_${slotCursor++}`,
+    object: "event",
+    type: "payment_intent.payment_failed",
+    data: {
+      object: {
+        id: "pi_test_webhook",
+        object: "payment_intent",
+        metadata: { source: "ne26-rooms", orderUid },
+        last_payment_error: {
+          code: "card_declined",
+          decline_code: declineCode,
+          message: "Your card was declined.",
+          payment_method: { card: { brand: "visa", last4: "0002", country: "US", funding: "credit" } },
+        },
+      },
+    },
+  });
+}
+
 function chargeEvent(paymentIntent: string, amount: number, amountRefunded: number): string {
   return JSON.stringify({
     id: `evt_charge_${amountRefunded}`,
@@ -448,6 +470,67 @@ describe("NE26 Stripe webhook", () => {
         await deliver(sessionEvent("checkout.session.completed", { orderUid: uid }));
 
         expect((await orders.findByUid(uid))?.bookerCountry).toBe("NL");
+      });
+    });
+
+    /**
+     * A buyer whose card is refused tries ANOTHER CARD. They do not start a new
+     * booking, so every attempt lands on the same order and the same open
+     * session — which is why one alert per order was the rule, and why the
+     * exception below exists.
+     */
+    describe("a buyer working through several cards", () => {
+      it("tells the desk about the first decline", async () => {
+        const { uid } = await heldOrder();
+
+        await deliver(declineEvent(uid, "insufficient_funds"));
+
+        expect(sendTeamEmail).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(sendTeamEmail).mock.calls[0][0].body).toContain("no room left");
+      });
+
+      it("stays quiet when the next card fails for another ordinary reason", async () => {
+        // Three cards tried is one problem, not three mails.
+        const { uid } = await heldOrder();
+
+        await deliver(declineEvent(uid, "insufficient_funds"));
+        await deliver(declineEvent(uid, "expired_card"));
+
+        expect(sendTeamEmail).toHaveBeenCalledTimes(1);
+      });
+
+      it("breaks that silence when a later card is refused as stolen", async () => {
+        // The reason the exception exists. The first mail told the desk to call
+        // the buyer back. Following that now means chasing someone using a card
+        // reported stolen, and nothing else would ever say so.
+        const { uid } = await heldOrder();
+
+        await deliver(declineEvent(uid, "insufficient_funds"));
+        await deliver(declineEvent(uid, "stolen_card"));
+
+        expect(sendTeamEmail).toHaveBeenCalledTimes(2);
+        const second = vi.mocked(sendTeamEmail).mock.calls[1][0];
+        expect(second.subject).toContain("the earlier alert was wrong");
+        expect(second.body).toContain("*** CORRECTION ***");
+        expect(second.body).toContain("lost, stolen or fraudulent");
+      });
+
+      it("does not cry correction when the stolen card is the FIRST thing tried", async () => {
+        const { uid } = await heldOrder();
+
+        await deliver(declineEvent(uid, "stolen_card"));
+
+        expect(sendTeamEmail).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(sendTeamEmail).mock.calls[0][0].body).not.toContain("CORRECTION");
+      });
+
+      it("says nothing at all once the order is no longer holding rooms", async () => {
+        const { uid } = await heldOrder();
+        await prisma.resourceBooking.deleteMany({ where: { orderUid: uid } });
+
+        await deliver(declineEvent(uid, "stolen_card"));
+
+        expect(sendTeamEmail).not.toHaveBeenCalled();
       });
     });
 

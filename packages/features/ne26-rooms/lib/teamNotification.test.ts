@@ -415,3 +415,62 @@ describe("the opening and the next step must not contradict each other", () => {
     expect(failureNotification(FAIL).body).toContain("Worth a call");
   });
 });
+
+/**
+ * The second mail, and why there is one at all.
+ *
+ * A buyer whose card is refused tries another card — they do not start a new
+ * booking. Every attempt after the first used to be silent, so if the first
+ * failed for something ordinary and a later one was refused as stolen, the desk
+ * had been told to call the buyer back and heard nothing since.
+ */
+describe("a decline that overrules an earlier alert", () => {
+  const STOLEN = {
+    orderUid: BASE.orderUid,
+    reason: "payment_attempt_failed" as const,
+    rooms: BASE.rooms,
+    bookerName: "Jane Exhibitor",
+    bookerEmail: "jane@example.com",
+    amountHt: 72000,
+    currency: "EUR",
+    adminUrl: BASE.adminUrl,
+    holdUntilLabel: "14:35 TRT",
+    declineMessage: "Your card was declined.",
+    decline: {
+      reason: "The card was blocked as lost, stolen or fraudulent.",
+      nextStep: "Do not chase the sale.",
+      tellBuyer: false,
+      card: null,
+      codes: "card_declined / stolen_card",
+    },
+    supersedesEarlierNotice: true,
+  };
+
+  it("says outright that the earlier advice was wrong", () => {
+    const { body, html } = failureNotification(STOLEN);
+    for (const text of [body, html]) {
+      expect(text).toContain("Disregard it");
+    }
+    expect(body).toContain("*** CORRECTION ***");
+  });
+
+  it("carries a subject that cannot be mistaken for the first mail", () => {
+    // Two mails with one subject read as a duplicate and go unopened, which
+    // would defeat the whole point of sending the second.
+    const first = failureNotification({ ...STOLEN, supersedesEarlierNotice: false }).subject;
+    const second = failureNotification(STOLEN).subject;
+    expect(second).not.toBe(first);
+    expect(second).toContain("the earlier alert was wrong");
+  });
+
+  it("still carries the warning not to repeat the reason to the buyer", () => {
+    const { html } = failureNotification(STOLEN);
+    expect(html).toContain("Do not repeat the reason above to the buyer.");
+  });
+
+  it("says nothing of the sort when it is the first alert", () => {
+    const { body, html } = failureNotification({ ...STOLEN, supersedesEarlierNotice: false });
+    expect(body).not.toContain("Disregard");
+    expect(html).not.toContain("Disregard");
+  });
+});
