@@ -1,6 +1,7 @@
 "use client";
 
 import { trpc } from "@calcom/trpc/react";
+import MarkdownField from "./MarkdownField";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -120,15 +121,15 @@ export default function LegalPagesManager({ pages }: { pages: LegalPageRow[] }):
               </label>
             </div>
 
-            <label className="mt-3 block">
-              <span className={label}>Content (Markdown)</span>
-              <textarea
-                rows={10}
-                className={`${input} font-mono`}
-                value={r.content}
-                onChange={(e) => setField(r.id, "content", e.target.value)}
-              />
-            </label>
+            <div className="mt-3">
+              <span className={label}>Content</span>
+              <div className="mt-1">
+                <MarkdownField
+                  value={r.content}
+                  onChange={(next) => setField(r.id, "content", next)}
+                />
+              </div>
+            </div>
 
             <div className="mt-4 flex flex-wrap items-center gap-4">
               <label className="flex items-center gap-2 text-gray-700 text-sm">
