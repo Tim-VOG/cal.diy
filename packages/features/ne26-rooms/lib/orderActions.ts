@@ -33,6 +33,8 @@ export interface OrderActions {
   resendInvoice: boolean;
   /** Credit and cancel a paid, invoiced order. */
   issueCreditNote: boolean;
+  /** Delete it outright — only while no document refers to it. */
+  deleteOrder: boolean;
 }
 
 export function availableOrderActions(order: OrderState): OrderActions {
@@ -62,6 +64,12 @@ export function availableOrderActions(order: OrderState): OrderActions {
 
     // Crediting needs something to credit and must not happen twice.
     issueCreditNote: confirmed && order.hasInvoice && !order.hasCreditNote,
+
+    // Deleting is for a booking that never became anything — a test, a mistake.
+    // Never once a document refers to it: an invoice is undone with a credit
+    // note, not by removing what it points at. Not offered for a live hold
+    // either, where cancelPending says what it does and says it better.
+    deleteOrder: !order.hasInvoice && !order.hasCreditNote && !pending,
   };
 }
 

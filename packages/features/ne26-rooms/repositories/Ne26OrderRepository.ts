@@ -462,6 +462,27 @@ export class Ne26OrderRepository {
   }
 
   /**
+   * Delete an order outright, and the rooms and slots that hang off it.
+   *
+   * For clearing a test booking, or a real one that never became anything. The
+   * cascade takes the bookings and their slot rows with it, which is what puts
+   * the rooms back on sale — a CANCELLED row keeping its slots would leave them
+   * unsellable for the whole event.
+   *
+   * Refused once a document exists. An issued invoice is not a row, it is a
+   * numbered accounting document in a series with no gaps, sent to a buyer and
+   * counted in a VAT return; it is undone with a credit note, never by deleting
+   * the thing it refers to. The admin screen hides the button in that case and
+   * this refuses it anyway, because the screen is not the boundary.
+   */
+  async deleteUndocumented(uid: string): Promise<boolean> {
+    const result = await this.prismaClient.ne26Order.deleteMany({
+      where: { uid, invoiceNumber: null, creditNoteNumber: null },
+    });
+    return result.count > 0;
+  }
+
+  /**
    * Remember a payment that was captured but could not be attached to anything.
    *
    * Money landed, the rooms had already gone back on sale, and confirmPaid

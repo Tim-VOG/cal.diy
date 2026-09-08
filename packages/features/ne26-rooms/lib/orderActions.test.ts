@@ -66,8 +66,22 @@ describe("an order that holds no rooms", () => {
     expect(credited.issueCreditNote).toBe(true);
   });
 
-  it("offers nothing at all once it is closed", () => {
-    expect(hasNoActions(roomless({ status: "CANCELLED" }))).toBe(true);
+  it("offers only deletion once it is closed and carries no document", () => {
+    const a = roomless({ status: "CANCELLED" });
+    expect(a.deleteOrder).toBe(true);
+    expect(hasNoActions(a)).toBe(false);
+    for (const key of ["confirmManually", "cancelPending", "closeSettled", "issueInvoice"] as const) {
+      expect(a[key], key).toBe(false);
+    }
+  });
+
+  it("offers nothing but the paperwork once it has been credited", () => {
+    // The end of the line: refunded, credited, rooms released. Everything that
+    // could still be done to it would undo a document.
+    const a = roomless({ status: "CANCELLED", hasInvoice: true, hasCreditNote: true });
+    expect(a.resendInvoice).toBe(true);
+    expect(a.deleteOrder).toBe(false);
+    expect(a.issueCreditNote).toBe(false);
   });
 });
 
@@ -97,6 +111,54 @@ describe("every combination stays coherent", () => {
           for (const hasCreditNote of [true, false]) {
             const a = availableOrderActions({ status, roomCount, hasInvoice, hasCreditNote });
             const endings = [a.cancelPending, a.closeSettled, a.issueCreditNote].filter(Boolean).length;
+            expect(endings, `${status}/${roomCount}/${hasInvoice}/${hasCreditNote}`).toBeLessThanOrEqual(1);
+          }
+        }
+      }
+    }
+  });
+});
+
+describe("deleting", () => {
+  it("is offered for a booking that never became a document", () => {
+    expect(availableOrderActions(order({ status: "CONFIRMED" })).deleteOrder).toBe(true);
+    expect(availableOrderActions(order({ status: "CANCELLED" })).deleteOrder).toBe(true);
+    expect(availableOrderActions(order({ status: "CANCELLED", roomCount: 0 })).deleteOrder).toBe(true);
+  });
+
+  it("is never offered once an invoice or a credit note exists", () => {
+    // An invoice is a numbered document in a gapless series, sent to a buyer and
+    // counted in a VAT return. It is undone with a credit note, never by
+    // deleting what it refers to.
+    for (const status of ["PENDING", "CONFIRMED", "CANCELLED"]) {
+      for (const roomCount of [0, 1, 2]) {
+        expect(
+          availableOrderActions({ status, roomCount, hasInvoice: true, hasCreditNote: false }).deleteOrder,
+          `invoice ${status}/${roomCount}`
+        ).toBe(false);
+        expect(
+          availableOrderActions({ status, roomCount, hasInvoice: true, hasCreditNote: true }).deleteOrder,
+          `credited ${status}/${roomCount}`
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("stays out of the way of a live hold, which has its own wording", () => {
+    const a = availableOrderActions(order({ status: "PENDING" }));
+    expect(a.cancelPending).toBe(true);
+    expect(a.deleteOrder).toBe(false);
+  });
+
+  it("never appears next to another way of ending the same order", () => {
+    for (const status of ["PENDING", "CONFIRMED", "CANCELLED"]) {
+      for (const roomCount of [0, 1, 2]) {
+        for (const hasInvoice of [true, false]) {
+          for (const hasCreditNote of [true, false]) {
+            const a = availableOrderActions({ status, roomCount, hasInvoice, hasCreditNote });
+            const endings = [a.cancelPending, a.closeSettled, a.issueCreditNote, a.deleteOrder].filter(
+              Boolean
+            ).length;
             expect(endings, `${status}/${roomCount}/${hasInvoice}/${hasCreditNote}`).toBeLessThanOrEqual(1);
           }
         }

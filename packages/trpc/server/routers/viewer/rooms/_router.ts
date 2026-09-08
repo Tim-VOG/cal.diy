@@ -492,6 +492,18 @@ export const roomsRouter = router({
     return { closed };
   }),
 
+  // Admin-only: delete an order that never became anything — a test booking, a
+  // mistake. Cascades to its rooms and their slots, which is what puts them back
+  // on sale. Refused once an invoice or credit note exists: those are numbered
+  // documents in a gapless series, and they are undone with a credit note.
+  deleteOrder: ne26AdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
+    const { getNe26OrderRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
+    );
+    const deleted = await getNe26OrderRepository().deleteUndocumented(input.uid);
+    return { deleted };
+  }),
+
   // Admin-only: re-send an already-issued invoice email to the booker.
   resendInvoice: ne26AdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
     const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");

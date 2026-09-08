@@ -250,3 +250,41 @@ describe("a payment captured against rooms that had already gone", () => {
     expect(await prisma.ne26Order.findUnique({ where: { uid } })).toBeNull();
   });
 });
+
+describe("deleting an order outright", () => {
+  it("removes it, and the rooms it was holding", async () => {
+    const uid = await makeOrder({ withRoom: true });
+
+    expect(await repo.deleteUndocumented(uid)).toBe(true);
+
+    expect(await prisma.ne26Order.findUnique({ where: { uid } })).toBeNull();
+    // The cascade is what puts the room back on sale: a row that kept its slots
+    // would leave the room unsellable for the whole event.
+    expect(await prisma.resourceBooking.count({ where: { orderUid: uid } })).toBe(0);
+  });
+
+  it("refuses an order that has been invoiced", async () => {
+    // An invoice is a numbered document in a gapless series, sent to a buyer and
+    // counted in a VAT return. Deleting what it points at leaves the number
+    // referring to nothing.
+    const uid = await makeOrder({ status: "CONFIRMED", invoiceNumber: `NE26-DEL-${Date.now()}` });
+
+    expect(await repo.deleteUndocumented(uid)).toBe(false);
+    expect(await prisma.ne26Order.findUnique({ where: { uid } })).not.toBeNull();
+  });
+
+  it("refuses an order that has been credited", async () => {
+    const uid = await makeOrder({
+      status: "CANCELLED",
+      invoiceNumber: `NE26-DEL2-${Date.now()}`,
+      creditNoteNumber: `NE26-CN-DEL-${Date.now()}`,
+    });
+
+    expect(await repo.deleteUndocumented(uid)).toBe(false);
+    expect(await prisma.ne26Order.findUnique({ where: { uid } })).not.toBeNull();
+  });
+
+  it("says false rather than throwing for an order that is already gone", async () => {
+    expect(await repo.deleteUndocumented("00000000-0000-0000-0000-000000000000")).toBe(false);
+  });
+});

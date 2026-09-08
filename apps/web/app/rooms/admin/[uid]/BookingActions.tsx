@@ -46,6 +46,13 @@ export default function BookingActions({
   const resend = trpc.viewer.rooms.resendInvoice.useMutation();
   const issueInvoice = trpc.viewer.rooms.issueInvoice.useMutation(refresh);
   const closeOrder = trpc.viewer.rooms.closeSettledOrder.useMutation(refresh);
+  const deleteOrder = trpc.viewer.rooms.deleteOrder.useMutation({
+    // Nothing left to show: the order is gone, so go back to the list.
+    onSuccess: () => {
+      router.push("/rooms/admin");
+      router.refresh();
+    },
+  });
 
   const can = availableOrderActions({ status, hasInvoice, hasCreditNote, roomCount });
 
@@ -55,7 +62,8 @@ export default function BookingActions({
     creditNote.isPending ||
     resend.isPending ||
     issueInvoice.isPending ||
-    closeOrder.isPending;
+    closeOrder.isPending ||
+    deleteOrder.isPending;
 
   const error =
     confirmManually.error ??
@@ -63,7 +71,8 @@ export default function BookingActions({
     creditNote.error ??
     resend.error ??
     issueInvoice.error ??
-    closeOrder.error;
+    closeOrder.error ??
+    deleteOrder.error;
 
   const rooms = roomCount === 0 ? "this order" : roomCount > 1 ? `these ${roomCount} rooms` : "this room";
 
@@ -177,6 +186,31 @@ export default function BookingActions({
             }}
             className={`${btnBase} border border-red-200 text-red-600 hover:border-red-400`}>
             {creditNote.isPending ? "Issuing…" : "Issue credit note"}
+          </button>
+        ) : null}
+
+        {/* For a test booking, or one that never became anything. Kept away
+            from the other buttons and worded so it cannot be misread: this
+            removes the record, where every other action here preserves it. */}
+        {can.deleteOrder ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              if (
+                window.confirm(
+                  `Delete this order permanently? ${
+                    roomCount > 0
+                      ? `${roomCount === 1 ? "The room goes" : `The ${roomCount} rooms go`} back on sale. `
+                      : ""
+                  }Nothing is kept — use this for a test or a mistake, not for a booking that was invoiced.`
+                )
+              ) {
+                deleteOrder.mutate({ uid: orderUid });
+              }
+            }}
+            className={`${btnBase} border border-red-300 bg-red-50 text-red-700 hover:bg-red-100`}>
+            {deleteOrder.isPending ? "Deleting…" : "Delete order"}
           </button>
         ) : null}
 
