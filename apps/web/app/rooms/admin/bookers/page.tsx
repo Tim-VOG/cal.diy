@@ -4,6 +4,7 @@ import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import BookerAccounts from "./BookerAccounts";
 import BookersView, { type Booker } from "./BookersView";
 import { requireNotDeskMode } from "../requireNotDeskMode";
 
@@ -50,5 +51,12 @@ export default async function BookersPage(): Promise<JSX.Element> {
 
   const bookers = Array.from(byEmail.values()).sort((a, b) => b.confirmedTotal - a.confirmedTotal);
 
-  return <BookersView bookers={bookers} />;
+  return (
+    <>
+      {/* Accounts first: the list below is built from bookings, so it cannot
+          show someone who registered and has not bought yet. */}
+      <BookerAccounts />
+      <BookersView bookers={bookers} />
+    </>
+  );
 }

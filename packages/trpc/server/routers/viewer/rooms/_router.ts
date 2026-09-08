@@ -18,7 +18,7 @@ import {
   ZDeskDayInputSchema,
   ZDeskSearchInputSchema,
 } from "./desk.schema";
-import { ZGrantRoleInputSchema, ZRevokeRoleInputSchema } from "./staff.schema";
+import { ZBookerAccountInputSchema, ZGrantRoleInputSchema, ZRevokeRoleInputSchema } from "./staff.schema";
 import {
   ZCreateAddOnInputSchema,
   ZDeleteAddOnInputSchema,
@@ -491,6 +491,53 @@ export const roomsRouter = router({
     const closed = await getNe26OrderRepository().closeSettledOrder(input.uid);
     return { closed };
   }),
+
+  // Admin-only: every exhibitor account, including the ones that never booked —
+  // which the Bookers list cannot show, because it is built from bookings.
+  listBookerAccounts: ne26AdminProcedure.query(async () => {
+    const { getNe26StaffRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26StaffRepository.container"
+    );
+    return getNe26StaffRepository().listBookerAccounts();
+  }),
+
+  // Admin-only: remove an exhibitor account and the orders of theirs that never
+  // became a document. Orders carrying an invoice or a credit note stay, and
+  // stay complete — they froze the buyer's details at the time of sale and hold
+  // no foreign key to the account.
+  deleteBookerAccount: ne26AdminProcedure
+    .input(ZBookerAccountInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      // Deleting the account you are signed in as would end the session that is
+      // doing it, and there is no way back in. The repository refuses staff;
+      // only this layer knows who is asking.
+      if (input.userId === ctx.user.id) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "You cannot delete your own account." });
+      }
+      const { getNe26StaffRepository } = await import(
+        "@calcom/features/ne26-rooms/di/Ne26StaffRepository.container"
+      );
+      const repo = getNe26StaffRepository();
+      const result = await repo.deleteBookerAccount(input.userId);
+      if (result.refusedBecause === "staff") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "That is a staff account. Remove the role on the Access page first.",
+        });
+      }
+      if (result.deleted) {
+        await repo.recordAction({
+          actorUserId: ctx.user.id,
+          actorEmail: ctx.user.email,
+          actorRole: "ADMIN",
+          action: "booker.delete",
+          targetType: "user",
+          targetId: String(input.userId),
+          detail: `Deleted ${result.ordersDeleted} order(s); kept ${result.ordersKept} with documents`,
+        });
+      }
+      return result;
+    }),
 
   // Admin-only: delete an order that never became anything — a test booking, a
   // mistake. Cascades to its rooms and their slots, which is what puts them back

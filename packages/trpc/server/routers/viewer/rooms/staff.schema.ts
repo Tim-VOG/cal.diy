@@ -11,3 +11,8 @@ export const ZRevokeRoleInputSchema = z.object({
   role: z.enum(["ADMIN", "HOSTESS"]),
 });
 export type TRevokeRoleInputSchema = z.infer<typeof ZRevokeRoleInputSchema>;
+
+/** One exhibitor account, by id. */
+export const ZBookerAccountInputSchema = z.object({
+  userId: z.number().int().positive(),
+});
