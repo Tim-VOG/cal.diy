@@ -4,6 +4,7 @@ import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
+import { getNe26LegalPageRepository } from "@calcom/features/ne26-rooms/di/Ne26LegalPageRepository.container";
 import Footer from "./Footer";
 import LogoutButton from "./LogoutButton";
 import MainArea from "./MainArea";
@@ -17,6 +18,13 @@ import ShortlistPanel from "./ShortlistPanel";
 // authorization stays in each page.tsx, never in this layout.
 export default async function RoomsLayout({ children }: { children: ReactNode }) {
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
+  // Which pages the footer lists is admin-managed. Read here rather than in the
+  // footer because that component is nested in this one, and React's types in
+  // this version refuse a nested async server component. Never allowed to fail
+  // the render: the footer is on every page of the site.
+  const footerPages = await getNe26LegalPageRepository()
+    .findFooterPages()
+    .catch(() => []);
   const isLoggedIn = Boolean(session?.user?.id);
   // Admins had no way in from the site — you had to type /rooms/admin by hand.
   // The link only renders for them; the admin pages keep their own authorization.
@@ -111,7 +119,7 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
           below that it pins to the bottom. Nothing at all when there is
           neither a shortlist nor an unpaid hold. */}
       {isLoggedIn ? <ShortlistPanel eventDays={eventDays} /> : null}
-      <Footer />
+      <Footer pages={footerPages} />
     </div>
   );
 }

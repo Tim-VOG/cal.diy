@@ -3135,6 +3135,11 @@ model Ne26LegalPage {
   // drift apart. The content column is kept and ignored, so a page can be
   // switched back by clearing this.
   externalUrl String? @db.Text
+  // NE26: which footer column lists this page, and where in it. Null is the
+  // default and means the page is reachable by URL but listed nowhere — a page
+  // appearing in the footer the moment it is created is not what anybody wants.
+  footerColumn String?
+  footerOrder  Int     @default(0)
   published Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

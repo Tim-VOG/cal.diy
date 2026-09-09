@@ -19,11 +19,22 @@ const externalUrl = z
   .max(2000)
   .refine((v) => v === "" || /^https?:\/\/\S+$/i.test(v), "Enter a full web address starting with http:// or https://");
 
+/**
+ * Which footer column lists the page. Empty means it is listed nowhere.
+ *
+ * Turned into null on the way in: the form has no way to send "nothing", and a
+ * column stored as "" would be neither absent nor a column.
+ */
+const footerColumn = z.enum(["", "privacy", "more"]).transform((v) => v || null);
+const footerOrder = z.number().int().min(0).max(99);
+
 export const ZCreateLegalPageInputSchema = z.object({
   slug,
   title: z.string().min(1).max(200),
   content: z.string().max(50000).default(""),
   externalUrl: externalUrl.optional(),
+  footerColumn: footerColumn.optional(),
+  footerOrder: footerOrder.optional(),
   published: z.boolean().default(false),
 });
 export type TCreateLegalPageInputSchema = z.infer<typeof ZCreateLegalPageInputSchema>;
@@ -34,6 +45,8 @@ export const ZUpdateLegalPageInputSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   content: z.string().max(50000).optional(),
   externalUrl: externalUrl.optional(),
+  footerColumn: footerColumn.optional(),
+  footerOrder: footerOrder.optional(),
   published: z.boolean().optional(),
 });
 export type TUpdateLegalPageInputSchema = z.infer<typeof ZUpdateLegalPageInputSchema>;

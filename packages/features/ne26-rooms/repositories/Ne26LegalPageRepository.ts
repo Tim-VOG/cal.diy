@@ -9,6 +9,8 @@ const adminSelect = {
   title: true,
   content: true,
   externalUrl: true,
+  footerColumn: true,
+  footerOrder: true,
   published: true,
   updatedAt: true,
 } as const;
@@ -22,6 +24,22 @@ const publicSelect = {
 
 export class Ne26LegalPageRepository {
   constructor(private prismaClient: PrismaClient) {}
+
+  /**
+   * The published pages the footer lists, in the order they are to appear.
+   *
+   * Ordered here rather than in the component so the sort is one thing in one
+   * place: by position, then by title for anything sharing a position, so two
+   * pages left at 0 still come out in a stable order rather than in whatever
+   * order the database felt like.
+   */
+  findFooterPages() {
+    return this.prismaClient.ne26LegalPage.findMany({
+      where: { published: true, footerColumn: { not: null } },
+      orderBy: [{ footerOrder: "asc" }, { title: "asc" }],
+      select: { slug: true, title: true, footerColumn: true },
+    });
+  }
 
   /** All pages (published and drafts) for admin management. */
   findAllForAdmin() {
@@ -44,6 +62,8 @@ export class Ne26LegalPageRepository {
     title: string;
     content: string;
     externalUrl?: string | null;
+    footerColumn?: string | null;
+    footerOrder?: number;
     published?: boolean;
   }) {
     try {
@@ -63,6 +83,8 @@ export class Ne26LegalPageRepository {
       title?: string;
       content?: string;
       externalUrl?: string | null;
+      footerColumn?: string | null;
+      footerOrder?: number;
       published?: boolean;
     }
   ) {

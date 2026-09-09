@@ -28,6 +28,8 @@ export default async function ManageLegalPagesPage(): Promise<JSX.Element> {
         content: p.content,
         // Null and "" mean the same thing to the form; the column keeps null.
         externalUrl: p.externalUrl ?? "",
+        footerColumn: p.footerColumn ?? "",
+        footerOrder: p.footerOrder,
         published: p.published,
       }))}
     />

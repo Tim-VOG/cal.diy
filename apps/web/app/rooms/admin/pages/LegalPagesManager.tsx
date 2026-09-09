@@ -11,6 +11,8 @@ export interface LegalPageRow {
   title: string;
   content: string;
   externalUrl: string;
+  footerColumn: string;
+  footerOrder: number;
   published: boolean;
 }
 
@@ -39,7 +41,7 @@ export default function LegalPagesManager({ pages }: { pages: LegalPageRow[] }):
   const [newTitle, setNewTitle] = useState("");
   const [newSlug, setNewSlug] = useState("");
 
-  function setField(id: number, field: keyof LegalPageRow, value: string | boolean): void {
+  function setField(id: number, field: keyof LegalPageRow, value: string | number | boolean): void {
     setDraft((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
   }
 
@@ -51,6 +53,8 @@ export default function LegalPagesManager({ pages }: { pages: LegalPageRow[] }):
       title: row.title,
       content: row.content,
       externalUrl: row.externalUrl.trim(),
+      footerColumn: row.footerColumn as "" | "privacy" | "more",
+      footerOrder: row.footerOrder,
       published: row.published,
     });
   }
@@ -99,10 +103,9 @@ export default function LegalPagesManager({ pages }: { pages: LegalPageRow[] }):
       </div>
 
       {/* Page editors */}
-      {/* One column, not two. Side by side, each editor got half the screen for
-          a page of prose — which is what "edit it full screen" was asking to
-          escape. The button in the toolbar goes further when that is needed. */}
-      <div className="mt-6 grid grid-cols-1 items-start gap-4">
+      {/* Three across at most. The room to write is what the toolbar's
+          full-screen button is for; the list itself is better as a list. */}
+      <div className="mt-6 grid grid-cols-1 items-start gap-4 lg:grid-cols-2 2xl:grid-cols-3">
         {draft.map((r) => (
           <div key={r.id} className="@container rounded-xl border border-gray-200 bg-white p-5">
             <div className="grid grid-cols-1 gap-3 @lg:grid-cols-2">
@@ -122,6 +125,32 @@ export default function LegalPagesManager({ pages }: { pages: LegalPageRow[] }):
                   className={input}
                   value={r.slug}
                   onChange={(e) => setField(r.id, "slug", e.target.value)}
+                />
+              </label>
+            </div>
+
+            <div className="mt-3 grid grid-cols-1 gap-3 @lg:grid-cols-2">
+              <label>
+                <span className={label}>Show in footer</span>
+                <select
+                  className={input}
+                  value={r.footerColumn}
+                  onChange={(e) => setField(r.id, "footerColumn", e.target.value)}>
+                  <option value="">Not listed</option>
+                  <option value="privacy">Privacy column</option>
+                  <option value="more">More column</option>
+                </select>
+              </label>
+              <label>
+                <span className={label}>Position in that column</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={99}
+                  disabled={!r.footerColumn}
+                  className={`${input} disabled:bg-gray-50 disabled:text-gray-400`}
+                  value={r.footerOrder}
+                  onChange={(e) => setField(r.id, "footerOrder", Number(e.target.value) || 0)}
                 />
               </label>
             </div>
