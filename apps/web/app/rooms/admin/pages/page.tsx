@@ -26,6 +26,8 @@ export default async function ManageLegalPagesPage(): Promise<JSX.Element> {
         slug: p.slug,
         title: p.title,
         content: p.content,
+        // Null and "" mean the same thing to the form; the column keeps null.
+        externalUrl: p.externalUrl ?? "",
         published: p.published,
       }))}
     />

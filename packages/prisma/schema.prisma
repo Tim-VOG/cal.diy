@@ -3129,6 +3129,12 @@ model Ne26LegalPage {
   slug      String   @unique
   title     String
   content   String   @db.Text
+  // NE26: when set, the page is a signpost rather than a document — visiting it
+  // redirects here. For the pages whose real content is a PDF somebody else
+  // maintains, where copying it into Markdown would only guarantee the two
+  // drift apart. The content column is kept and ignored, so a page can be
+  // switched back by clearing this.
+  externalUrl String? @db.Text
   published Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

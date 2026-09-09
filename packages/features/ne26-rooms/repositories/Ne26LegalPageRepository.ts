@@ -8,6 +8,7 @@ const adminSelect = {
   slug: true,
   title: true,
   content: true,
+  externalUrl: true,
   published: true,
   updatedAt: true,
 } as const;
@@ -16,6 +17,7 @@ const publicSelect = {
   slug: true,
   title: true,
   content: true,
+  externalUrl: true,
 } as const;
 
 export class Ne26LegalPageRepository {
@@ -37,7 +39,13 @@ export class Ne26LegalPageRepository {
     });
   }
 
-  async create(data: { slug: string; title: string; content: string; published?: boolean }) {
+  async create(data: {
+    slug: string;
+    title: string;
+    content: string;
+    externalUrl?: string | null;
+    published?: boolean;
+  }) {
     try {
       return await this.prismaClient.ne26LegalPage.create({ data, select: adminSelect });
     } catch (e) {
@@ -48,7 +56,16 @@ export class Ne26LegalPageRepository {
     }
   }
 
-  async update(id: number, data: { slug?: string; title?: string; content?: string; published?: boolean }) {
+  async update(
+    id: number,
+    data: {
+      slug?: string;
+      title?: string;
+      content?: string;
+      externalUrl?: string | null;
+      published?: boolean;
+    }
+  ) {
     try {
       return await this.prismaClient.ne26LegalPage.update({ where: { id }, data, select: adminSelect });
     } catch (e) {

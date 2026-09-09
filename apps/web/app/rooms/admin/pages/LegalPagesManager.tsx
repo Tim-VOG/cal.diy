@@ -10,6 +10,7 @@ export interface LegalPageRow {
   slug: string;
   title: string;
   content: string;
+  externalUrl: string;
   published: boolean;
 }
 
@@ -49,6 +50,7 @@ export default function LegalPagesManager({ pages }: { pages: LegalPageRow[] }):
       slug: row.slug,
       title: row.title,
       content: row.content,
+      externalUrl: row.externalUrl.trim(),
       published: row.published,
     });
   }
@@ -124,7 +126,28 @@ export default function LegalPagesManager({ pages }: { pages: LegalPageRow[] }):
               </label>
             </div>
 
-            <div className="mt-3">
+            <label className="mt-3 block">
+              <span className={label}>Link to a document instead (optional)</span>
+              <input
+                type="url"
+                inputMode="url"
+                placeholder="https://…/brochure.pdf"
+                className={input}
+                value={r.externalUrl}
+                onChange={(e) => setField(r.id, "externalUrl", e.target.value)}
+              />
+            </label>
+
+            {/* Said where the decision is made, not in a help page: with a link
+                set, whatever is written below is never shown to anybody. */}
+            {r.externalUrl.trim() ? (
+              <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-amber-800 text-xs">
+                This page redirects to the link above. The content below is kept but not shown — clear the
+                link to publish it again.
+              </p>
+            ) : null}
+
+            <div className={`mt-3 ${r.externalUrl.trim() ? "opacity-50" : ""}`}>
               <span className={label}>Content</span>
               <div className="mt-1">
                 <MarkdownField

@@ -1,7 +1,7 @@
 import { getNe26LegalPageRepository } from "@calcom/features/ne26-rooms/di/Ne26LegalPageRepository.container";
 import { markdownToSafeHTML } from "@calcom/lib/markdownToSafeHTML";
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -18,6 +18,18 @@ export default async function LegalPage({ params }: PageProps): Promise<JSX.Elem
   const { slug } = await params;
   const page = await getNe26LegalPageRepository().findPublishedBySlug(slug);
   if (!page) notFound();
+
+  // A page can be a signpost rather than a document: for the ones whose real
+  // content is a PDF somebody else maintains, copying it into Markdown would
+  // only guarantee the two drift apart. The footer links here either way, so
+  // nothing else has to know which kind a page is.
+  //
+  // Re-checked for http(s) here as well as on save. This value goes into a
+  // Location header, and the check that put it there is a schema somebody could
+  // one day relax; the one that matters is the one next to the redirect.
+  if (page.externalUrl && /^https?:\/\//i.test(page.externalUrl)) {
+    redirect(page.externalUrl);
+  }
 
   return (
     <article className="mx-auto max-w-3xl">
