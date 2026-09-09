@@ -59,8 +59,8 @@ export default function LegalPagesManager({ pages }: { pages: LegalPageRow[] }):
     <div>
       <h1 className="font-bold text-2xl text-[#000643]">Pages</h1>
       <p className="mt-1 text-gray-600 text-sm">
-        Legal &amp; informational pages, rendered publicly at <code>/rooms/legal/[slug]</code>. Content is
-        Markdown. Unpublished pages return 404.
+        Legal &amp; informational pages, rendered publicly at <code>/rooms/legal/[slug]</code>. Use the
+        toolbar to format; the ⤢ button opens the editor full screen. Unpublished pages return 404.
       </p>
 
       {/* Create */}
@@ -97,7 +97,10 @@ export default function LegalPagesManager({ pages }: { pages: LegalPageRow[] }):
       </div>
 
       {/* Page editors */}
-      <div className="mt-6 grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+      {/* One column, not two. Side by side, each editor got half the screen for
+          a page of prose — which is what "edit it full screen" was asking to
+          escape. The button in the toolbar goes further when that is needed. */}
+      <div className="mt-6 grid grid-cols-1 items-start gap-4">
         {draft.map((r) => (
           <div key={r.id} className="@container rounded-xl border border-gray-200 bg-white p-5">
             <div className="grid grid-cols-1 gap-3 @lg:grid-cols-2">
@@ -127,6 +130,9 @@ export default function LegalPagesManager({ pages }: { pages: LegalPageRow[] }):
                 <MarkdownField
                   value={r.content}
                   onChange={(next) => setField(r.id, "content", next)}
+                  title={r.title}
+                  onSave={() => save(r)}
+                  saving={savingId === r.id}
                 />
               </div>
             </div>

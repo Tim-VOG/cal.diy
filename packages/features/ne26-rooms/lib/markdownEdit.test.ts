@@ -100,3 +100,30 @@ describe("link", () => {
     expect(edit.text.slice(edit.selectionStart, edit.selectionEnd)).toBe("https://");
   });
 });
+
+describe("whitespace in the selection", () => {
+  it("keeps the markers against the text, where Markdown needs them", () => {
+    // "** bold **" is not bold, it is four asterisks around a word — and a
+    // word selected by double-clicking or dragging very often carries a space.
+    expect(show(wrap(sel("make[ this ]bold"), "**"))).toBe("make **[this]** bold");
+  });
+
+  it("handles a space on one side only", () => {
+    expect(show(wrap(sel("make[ this]bold"), "**"))).toBe("make **[this]**bold");
+    expect(show(wrap(sel("make[this ]bold"), "**"))).toBe("make**[this]** bold");
+  });
+
+  it("still unwraps a selection that carries spaces", () => {
+    expect(show(wrap(sel("make[ **this** ]bold"), "**"))).toBe("make [this] bold");
+  });
+
+  it("does not choke on a selection that is only whitespace", () => {
+    const edit = wrap(sel("a[ ]b"), "**");
+    expect(edit.text).toBe("a** **b");
+  });
+
+  it("leaves newlines out of the markers too", () => {
+    // A paragraph selected by triple-clicking ends with the line break.
+    expect(wrap({ value: "one\ntwo\n", start: 4, end: 8 }, "**").text).toBe("one\n**two**\n");
+  });
+});

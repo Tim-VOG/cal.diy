@@ -35,7 +35,19 @@ export interface Selection {
  * button.
  */
 export function wrap(sel: Selection, before: string, after = before): Edit {
-  const { value, start, end } = sel;
+  const { value } = sel;
+
+  // Markdown's emphasis markers have to touch the text: "** bold **" is not
+  // bold, it is four literal asterisks around a word. Selecting a word by
+  // double-clicking or dragging very often takes a space with it, so the
+  // whitespace is pushed back OUTSIDE the markers rather than wrapped. This is
+  // what every editor does, and its absence is why the first bold anyone tried
+  // came out as "** xxx **".
+  const raw = value.slice(sel.start, sel.end);
+  const leading = raw.length - raw.trimStart().length;
+  const trailing = raw.length - raw.trimEnd().length;
+  const start = raw.trim() ? sel.start + leading : sel.start;
+  const end = raw.trim() ? sel.end - trailing : sel.end;
   const selected = value.slice(start, end);
 
   // Already wrapped, either inside the markers or around them.
