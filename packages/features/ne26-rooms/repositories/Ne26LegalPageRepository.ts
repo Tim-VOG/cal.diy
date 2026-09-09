@@ -11,6 +11,7 @@ const adminSelect = {
   externalUrl: true,
   footerColumn: true,
   footerOrder: true,
+  footerNewTab: true,
   published: true,
   updatedAt: true,
 } as const;
@@ -37,7 +38,7 @@ export class Ne26LegalPageRepository {
     return this.prismaClient.ne26LegalPage.findMany({
       where: { published: true, footerColumn: { not: null } },
       orderBy: [{ footerOrder: "asc" }, { title: "asc" }],
-      select: { slug: true, title: true, footerColumn: true },
+      select: { slug: true, title: true, footerColumn: true, footerNewTab: true },
     });
   }
 
@@ -64,6 +65,7 @@ export class Ne26LegalPageRepository {
     externalUrl?: string | null;
     footerColumn?: string | null;
     footerOrder?: number;
+    footerNewTab?: boolean;
     published?: boolean;
   }) {
     try {
@@ -85,6 +87,7 @@ export class Ne26LegalPageRepository {
       externalUrl?: string | null;
       footerColumn?: string | null;
       footerOrder?: number;
+      footerNewTab?: boolean;
       published?: boolean;
     }
   ) {

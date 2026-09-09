@@ -22,7 +22,19 @@ export interface FooterPage {
   slug: string;
   title: string;
   footerColumn: string | null;
+  footerNewTab: boolean;
 }
+
+/**
+ * A page that is really a document should not take the reader away from the
+ * site they were on. Off by default, so nothing about the existing links
+ * changes: no target, and therefore no rel either, exactly as before.
+ *
+ * rel goes with target and not without it — noopener denies the opened page a
+ * handle on this one, which is the whole reason target="_blank" needs guarding.
+ */
+const newTab = (page: FooterPage) =>
+  page.footerNewTab ? { target: "_blank" as const, rel: "noopener noreferrer" } : {};
 
 const linkClass = "block text-sm text-white/80 underline transition hover:text-white";
 
@@ -58,6 +70,7 @@ export default function Footer({ pages }: { pages: FooterPage[] }): JSX.Element 
               <Link
                 key={page.slug}
                 href={`/rooms/legal/${page.slug}`}
+                {...newTab(page)}
                 className={`${i === 0 ? "mt-3" : "mt-2"} ${linkClass}`}>
                 {page.title}
               </Link>
@@ -75,6 +88,7 @@ export default function Footer({ pages }: { pages: FooterPage[] }): JSX.Element 
               <Link
                 key={page.slug}
                 href={`/rooms/legal/${page.slug}`}
+                {...newTab(page)}
                 className={`${i === 0 ? "mt-3" : "mt-2"} ${linkClass}`}>
                 {page.title}
               </Link>

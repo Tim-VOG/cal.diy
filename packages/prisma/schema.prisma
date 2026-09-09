@@ -3140,6 +3140,10 @@ model Ne26LegalPage {
   // appearing in the footer the moment it is created is not what anybody wants.
   footerColumn String?
   footerOrder  Int     @default(0)
+  // NE26: open the footer link in a new tab. Off by default, because a site
+  // that steals tabs for its own pages is a nuisance; on is what you want for a
+  // page that is really a PDF somebody is about to read.
+  footerNewTab Boolean @default(false)
   published Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

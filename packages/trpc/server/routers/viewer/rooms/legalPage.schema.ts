@@ -35,6 +35,7 @@ export const ZCreateLegalPageInputSchema = z.object({
   externalUrl: externalUrl.optional(),
   footerColumn: footerColumn.optional(),
   footerOrder: footerOrder.optional(),
+  footerNewTab: z.boolean().optional(),
   published: z.boolean().default(false),
 });
 export type TCreateLegalPageInputSchema = z.infer<typeof ZCreateLegalPageInputSchema>;
@@ -47,6 +48,7 @@ export const ZUpdateLegalPageInputSchema = z.object({
   externalUrl: externalUrl.optional(),
   footerColumn: footerColumn.optional(),
   footerOrder: footerOrder.optional(),
+  footerNewTab: z.boolean().optional(),
   published: z.boolean().optional(),
 });
 export type TUpdateLegalPageInputSchema = z.infer<typeof ZUpdateLegalPageInputSchema>;

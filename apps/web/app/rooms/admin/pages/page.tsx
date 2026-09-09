@@ -30,6 +30,7 @@ export default async function ManageLegalPagesPage(): Promise<JSX.Element> {
         externalUrl: p.externalUrl ?? "",
         footerColumn: p.footerColumn ?? "",
         footerOrder: p.footerOrder,
+        footerNewTab: p.footerNewTab,
         published: p.published,
       }))}
     />

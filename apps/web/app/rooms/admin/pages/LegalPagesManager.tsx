@@ -13,6 +13,7 @@ export interface LegalPageRow {
   externalUrl: string;
   footerColumn: string;
   footerOrder: number;
+  footerNewTab: boolean;
   published: boolean;
 }
 
@@ -55,6 +56,7 @@ export default function LegalPagesManager({ pages }: { pages: LegalPageRow[] }):
       externalUrl: row.externalUrl.trim(),
       footerColumn: row.footerColumn as "" | "privacy" | "more",
       footerOrder: row.footerOrder,
+      footerNewTab: row.footerNewTab,
       published: row.published,
     });
   }
@@ -154,6 +156,26 @@ export default function LegalPagesManager({ pages }: { pages: LegalPageRow[] }):
                 />
               </label>
             </div>
+
+            {/* Only meaningful once the page is listed somewhere. Shown rather
+                than hidden when it is not, so the setting does not appear and
+                disappear as the column is chosen. */}
+            <label
+              className={`mt-2 flex items-center gap-2 text-sm ${
+                r.footerColumn ? "text-gray-700" : "text-gray-400"
+              }`}>
+              <input
+                type="checkbox"
+                disabled={!r.footerColumn}
+                checked={r.footerNewTab}
+                onChange={(e) => setField(r.id, "footerNewTab", e.target.checked)}
+                className="h-4 w-4 accent-[#000643]"
+              />
+              Open in a new tab
+              {r.externalUrl.trim() ? (
+                <span className="text-gray-400 text-xs">— usually what you want for a document</span>
+              ) : null}
+            </label>
 
             <label className="mt-3 block">
               <span className={label}>Link to a document instead (optional)</span>
