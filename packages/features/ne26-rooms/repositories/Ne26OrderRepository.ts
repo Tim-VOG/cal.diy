@@ -678,7 +678,31 @@ export class Ne26OrderRepository {
         data: { creditNoteNumber, creditNotePdfUrl, status: ResourceBookingStatus.CANCELLED },
       });
       if (result.count === 0) return 0;
-      await tx.resourceBooking.deleteMany({ where: { orderUid: uid } });
+
+      // The rooms go back on sale by losing their SLOTS, not by losing their
+      // bookings. Deleting the bookings did free the rooms — and made a refunded
+      // sale vanish from the admin, which is built from bookings. A refund is
+      // something the desk has to be able to look up afterwards: it is the one
+      // kind of cancellation that moved money in both directions.
+      //
+      // Two things have to happen and neither alone is enough. The slot rows
+      // carry the @@unique([resourceId, slotStart]) that makes double-booking
+      // impossible, so leaving them would show the room as free and then refuse
+      // the sale at the last moment. And findActiveSlotStarts only counts slots
+      // whose booking is CONFIRMED or still held, so the status is what stops a
+      // cancelled row from occupying anything.
+      const bookings = await tx.resourceBooking.findMany({
+        where: { orderUid: uid },
+        select: { id: true },
+      });
+      const ids = bookings.map((b) => b.id);
+      if (ids.length) {
+        await tx.resourceSlot.deleteMany({ where: { bookingId: { in: ids } } });
+        await tx.resourceBooking.updateMany({
+          where: { id: { in: ids } },
+          data: { status: ResourceBookingStatus.CANCELLED, holdExpiresAt: null },
+        });
+      }
       return result.count;
     };
     return outer ? run(outer) : this.prismaClient.$transaction(run);

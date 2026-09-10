@@ -34,14 +34,28 @@ export interface AdminBookingRow {
   addOns: { name: string; quantity: number; lineTotal: number }[];
 }
 
-const STATUS_FILTERS = ["ALL", "CONFIRMED", "PENDING", "CANCELLED"] as const;
+const STATUS_FILTERS = ["ALL", "CONFIRMED", "PENDING", "REFUNDED", "CANCELLED"] as const;
 type StatusFilter = (typeof STATUS_FILTERS)[number];
 
 const STATUS_BADGE: Record<string, string> = {
   CONFIRMED: "bg-green-100 text-green-700",
   PENDING: "bg-amber-100 text-amber-700",
+  REFUNDED: "bg-blue-100 text-blue-700",
   CANCELLED: "bg-gray-100 text-gray-500",
 };
+
+/**
+ * What the desk should read on the row, which is not always what the database
+ * stores.
+ *
+ * A refund and a cancellation are both CANCELLED in the schema, and they are
+ * not the same event: one moved money out again and left a numbered credit note
+ * behind, the other released a room nobody had paid for. Told apart by the
+ * credit note, because that is the thing that actually distinguishes them.
+ */
+function displayStatus(row: { status: string; creditNoteNumber: string | null }): string {
+  return row.status === "CANCELLED" && row.creditNoteNumber ? "REFUNDED" : row.status;
+}
 
 function fmtDate(iso: string): string {
   return new Intl.DateTimeFormat("en-GB", {
@@ -152,7 +166,7 @@ function exportRows(rows: AdminBookingRow[]): CellValue[][] {
     fmtTime(r.startUtc),
     fmtTime(r.endUtc),
     r.durationMinutes / 60,
-    r.status,
+    displayStatus(r),
     r.bookerName,
     r.bookerEmail,
     fmtDateTime(r.orderedAt),
@@ -260,7 +274,7 @@ export default function RoomsAdminView({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return rows.filter((r) => {
-      if (status !== "ALL" && r.status !== status) return false;
+      if (status !== "ALL" && displayStatus(r) !== status) return false;
       if (roomFilter !== "ALL" && r.roomName !== roomFilter) return false;
       if (dayFilter !== "ALL" && dayKey(r.startUtc) !== dayFilter) return false;
       if (q) {
@@ -285,7 +299,7 @@ export default function RoomsAdminView({
         case "room":
           return r.roomName;
         case "status":
-          return r.status;
+          return displayStatus(r);
         case "booker":
           return `${r.bookerName} ${r.bookerEmail}`;
         case "ordered":
@@ -491,8 +505,10 @@ export default function RoomsAdminView({
                     </td>
                     <td className="px-3 py-3">
                       <span
-                        className={`rounded-full px-2 py-0.5 font-medium text-xs ${STATUS_BADGE[r.status] ?? ""}`}>
-                        {r.status}
+                        className={`rounded-full px-2 py-0.5 font-medium text-xs ${
+                          STATUS_BADGE[displayStatus(r)] ?? ""
+                        }`}>
+                        {displayStatus(r)}
                       </span>
                     </td>
                     <td className="px-3 py-3">

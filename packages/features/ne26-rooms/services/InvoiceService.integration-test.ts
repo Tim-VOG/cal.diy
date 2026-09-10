@@ -144,15 +144,63 @@ describe("InvoiceService.issueInvoice", () => {
       expect(vi.mocked(sendInvoiceEmail).mock.calls[0][0].roomName).toMatch(/\+ 1 more$/);
     });
 
+    it("keeps the booking rows so a refund can still be looked up", async () => {
+      // Deleting them freed the rooms and made a refunded sale vanish from the
+      // admin, which is built from bookings. A refund is the one cancellation
+      // that moved money in both directions; it has to remain visible.
+      const uid = await confirmedOrder();
+      await service.issueInvoice(uid);
+      expect(await service.issueCreditNote(uid)).toBe(true);
+
+      expect((await orders.findByUid(uid))?.creditNoteNumber).toMatch(/^NE26-CN-/);
+      const bookings = await prisma.resourceBooking.findMany({
+        where: { orderUid: uid },
+        select: { status: true },
+      });
+      expect(bookings).toHaveLength(1);
+      expect(bookings[0]?.status).toBe(ResourceBookingStatus.CANCELLED);
+    });
+
+    it("still puts the room back on sale, which is what the SLOTS decide", async () => {
+      // Two things have to be true and neither alone is enough: the slot rows
+      // carry the unique index that makes double-booking impossible, so leaving
+      // them would show the room as free and refuse the sale at the last
+      // moment; and the availability query ignores a cancelled booking.
+      const startUtc = "2026-11-17T13:00:00.000Z";
+      const uid = await confirmedOrder([{ id: roomA, startUtc, price: 35000 }]);
+      await service.issueInvoice(uid);
+      await service.issueCreditNote(uid);
+
+      const booking = await prisma.resourceBooking.findFirst({
+        where: { orderUid: uid },
+        select: { id: true },
+      });
+      expect(booking).not.toBeNull();
+      expect(await prisma.resourceSlot.count({ where: { bookingId: booking?.id } })).toBe(0);
+
+      // And the proof that matters: the same slot can be sold again.
+      const resold = await confirmedOrder([{ id: roomA, startUtc, price: 35000 }]);
+      expect((await orders.findByUid(resold))?.status).toBe(ResourceBookingStatus.CONFIRMED);
+    });
+
     it("credits the whole order at once and frees every room", async () => {
       const uid = await confirmedOrder(TWO_ROOMS());
       await service.issueInvoice(uid);
       expect(await service.issueCreditNote(uid)).toBe(true);
 
-      // Both rooms back on sale: a room left holding its slots would be
-      // unsellable for the rest of the event.
-      const left = await prisma.resourceBooking.count({ where: { orderUid: uid } });
-      expect(left).toBe(0);
+      // Both rooms back on sale — by losing their SLOTS. The booking rows
+      // themselves stay, cancelled, so the refund can still be looked up.
+      const bookings = await prisma.resourceBooking.findMany({
+        where: { orderUid: uid },
+        select: { id: true, status: true },
+      });
+      expect(bookings).toHaveLength(2);
+      expect(bookings.every((b) => b.status === ResourceBookingStatus.CANCELLED)).toBe(true);
+      const slots = await prisma.resourceSlot.count({
+        where: { bookingId: { in: bookings.map((b) => b.id) } },
+      });
+      expect(slots).toBe(0);
+
       const order = await orders.findByUid(uid);
       expect(order?.creditNoteNumber).toMatch(/^NE26-CN-2026-\d{4}$/);
     });
