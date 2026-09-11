@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the NE26 backup every night
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 UTC
+RandomizedDelaySec=10m
+# Catches up after a reboot rather than skipping the night silently.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,8 @@
+[Unit]
+Description=Nightly backup of the NE26 database and invoice documents
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ne26-backup.sh

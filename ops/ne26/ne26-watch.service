@@ -1,0 +1,7 @@
+[Unit]
+Description=Check that NE26 Rooms is actually serving, and that the disk has room
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ne26-watch.sh
