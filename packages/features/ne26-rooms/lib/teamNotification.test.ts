@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { failureNotification, formatMoney, saleNotification } from "./teamNotification";
+import { failureNotification, formatMoney, refundNotification, saleNotification } from "./teamNotification";
 
 const SUITE_1 = {
   roomName: "Suite 1",
@@ -472,5 +472,63 @@ describe("a decline that overrules an earlier alert", () => {
     const { body, html } = failureNotification({ ...STOLEN, supersedesEarlierNotice: false });
     expect(body).not.toContain("Disregard");
     expect(html).not.toContain("Disregard");
+  });
+});
+
+describe("refundNotification", () => {
+  const REFUND = {
+    orderUid: "2fe0f775-7681-4cb1-a0c3-b21dac06219d",
+    rooms: [SUITE_1],
+    bookerName: "Jane Exhibitor",
+    bookerEmail: "jane@example.com",
+    amountRefunded: 87120,
+    currency: "EUR",
+    invoiceNumber: "NE26-2026-0007",
+    creditNoteNumber: "NE26-CN-2026-0001",
+    adminUrl: "https://rooms.vo-eu.be/rooms/admin",
+  };
+
+  it("says the rooms are back on sale, which is the part acted on", () => {
+    // The desk counted this room as sold. Without this line the first they hear
+    // of it is the room turning up free again, which during a three-day event
+    // is how one room gets promised twice.
+    const { body, html } = refundNotification(REFUND);
+    for (const text of [body, html]) {
+      expect(text).toContain("back on sale");
+    }
+  });
+
+  it("prints money as money", () => {
+    // The original team mails announced an 871.20 EUR sale as "87120 EUR".
+    const { subject, body } = refundNotification(REFUND);
+    expect(subject).toContain("871.20 EUR");
+    expect(body).toContain("871.20 EUR");
+    expect(body).not.toContain("87120");
+  });
+
+  it("names both documents, so the pair can be found in the accounts", () => {
+    const { body } = refundNotification(REFUND);
+    expect(body).toContain("NE26-2026-0007");
+    expect(body).toContain("NE26-CN-2026-0001");
+  });
+
+  it("names the room in the subject and counts them when there are several", () => {
+    expect(refundNotification(REFUND).subject).toContain("Suite 1");
+    const many = { ...REFUND, rooms: [SUITE_1, { ...SUITE_1, roomName: "Suite 2" }] };
+    expect(refundNotification(many).subject).toContain("2 rooms");
+  });
+
+  it("cannot be mistaken for the sale it cancels", () => {
+    const sold = saleNotification(BASE).subject;
+    const refunded = refundNotification(REFUND).subject;
+    expect(refunded).not.toBe(sold);
+    expect(refunded).toContain("Refunded");
+  });
+
+  it("copes with an exhibitor who gave no name", () => {
+    const { body, html } = refundNotification({ ...REFUND, bookerName: "  ", bookerEmail: null });
+    for (const text of [body, html]) {
+      expect(text).toContain("An exhibitor");
+    }
   });
 });

@@ -2,6 +2,10 @@ import process from "node:process";
 import { getResourceBookingService } from "@calcom/features/ne26-rooms/di/ResourceBookingService.container";
 import { getStripeCheckoutService } from "@calcom/features/ne26-rooms/di/StripeCheckoutService.container";
 import {
+  type NotificationAudience,
+  routeNotification,
+} from "@calcom/features/ne26-rooms/lib/notificationRouting";
+import {
   checkoutOutcome,
   isFullRefund,
   ne26OrderUid,
@@ -35,26 +39,86 @@ interface CustomField {
  * Email the NE26 team. Never throws: the webhook must still acknowledge the
  * delivery, or Stripe retries it forever.
  *
- * Recipients are the admin-configured notifyEmails list, falling back to
- * contactEmail, then to EMAIL_FROM — anything rather than a log line nobody
- * reads during a three-day event.
+ * The audience decides the envelope, and lib/notificationRouting holds the
+ * rules — including the fallbacks, which are the part worth testing. See
+ * notifySales and notifyOps below for which is which.
  */
-async function notifyTeam(subject: string, body: string, html?: string): Promise<void> {
+async function notify(
+  audience: NotificationAudience,
+  subject: string,
+  body: string,
+  html?: string
+): Promise<void> {
   try {
     const { getInvoiceSettingsRepository } = await import(
       "@calcom/features/ne26-rooms/di/InvoiceSettingsRepository.container"
     );
     const settings = await getInvoiceSettingsRepository().get();
-    const configured = settings.notifyEmails || settings.contactEmail || process.env.EMAIL_FROM || "";
-    const recipients = configured.split(",");
-    if (!recipients.some((a) => a.trim())) {
+    const envelope = routeNotification(audience, settings, process.env.EMAIL_FROM);
+    if (!envelope.to.length) {
       log.error(`Team notification has nowhere to go: ${subject} — ${body}`);
       return;
     }
     const { sendTeamEmail } = await import("@calcom/features/ne26-rooms/lib/mailer");
-    await sendTeamEmail({ to: recipients, subject, body, html });
+    await sendTeamEmail({ to: envelope.to, cc: envelope.cc, subject, body, html });
   } catch (e) {
     log.error(`Could not send the team notification "${subject}"`, e);
+  }
+}
+
+/** A booking changed hands: sold, declined, refunded. Sales, technical in copy. */
+const notifySales = (subject: string, body: string, html?: string) => notify("sales", subject, body, html);
+
+/**
+ * Something needs a human with Stripe or database access. Technical only —
+ * nobody on the sales desk can act on a capture with no matching order, and a
+ * desk that learns to skim these starts skimming the sales too.
+ */
+const notifyOps = (subject: string, body: string, html?: string) => notify("ops", subject, body, html);
+
+/**
+ * Tell the sales desk a booking has been refunded and its rooms are back on
+ * sale.
+ *
+ * Never throws. A refund that has already been credited and emailed to the
+ * buyer must not be reported to Stripe as a failed webhook because an internal
+ * mail could not be built.
+ */
+async function notifyRefunded(stripePaymentId: string, amountRefunded: number): Promise<void> {
+  try {
+    const { getNe26OrderRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
+    );
+    const found = await getNe26OrderRepository().findByStripePaymentId(stripePaymentId);
+    const order = found ? await getNe26OrderRepository().findByUid(found.uid) : null;
+    if (!order) {
+      log.warn(
+        `Refund on ${stripePaymentId} was credited but its order could not be read back for the mail.`
+      );
+      return;
+    }
+    const { refundNotification } = await import("@calcom/features/ne26-rooms/lib/teamNotification");
+    const { subject, body, html } = refundNotification({
+      orderUid: order.uid,
+      rooms: order.bookings.map((b) => ({
+        roomName: b.resource.name,
+        startUtc: b.startTime,
+        endUtc: b.endTime,
+        durationMinutes: b.durationMinutes,
+        addOns: b.addOns.map((a) => ({ name: a.addOn.name, quantity: a.quantity, lineTotal: a.lineTotal })),
+      })),
+      bookerName: order.bookerName,
+      bookerEmail: order.bookerEmail,
+      amountRefunded,
+      currency: order.currency,
+      invoiceNumber: order.invoiceNumber,
+      creditNoteNumber: order.creditNoteNumber,
+      stripeUrl: stripeUrlFor(stripePaymentId),
+      adminUrl: `${WEBAPP_URL}/rooms/admin`,
+    });
+    await notifySales(subject, body, html);
+  } catch (e) {
+    log.error(`Could not send the refund notification for ${stripePaymentId}`, e);
   }
 }
 
@@ -112,7 +176,7 @@ async function notifyReleased(
     stripeUrl,
     adminUrl: `${WEBAPP_URL}/rooms/admin`,
   });
-  await notifyTeam(subject, body, html);
+  await notifySales(subject, body, html);
 
   const first = rooms[0];
   if (!order.bookerEmail || !first) return;
@@ -172,13 +236,13 @@ async function notifySale(orderUid: string, session: Stripe.Checkout.Session): P
         stripeUrl: stripeUrlFor(paymentIdOf(session)),
         adminUrl,
       });
-      await notifyTeam(subject, body, html);
+      await notifySales(subject, body, html);
       return;
     }
   } catch (e) {
     log.error(`Could not build the sale notification for order ${orderUid}`, e);
   }
-  await notifyTeam(
+  await notifySales(
     "Room sold",
     `Order ${orderUid} is paid (${money(session.amount_total, session.currency)}).\n\n${adminUrl}`
   );
@@ -214,7 +278,7 @@ async function reportUnconfirmed(
   if (order?.status === "CONFIRMED") {
     const detail = `${trail}\n\nThis order was already paid by ${order.stripePaymentId}. Two payments exist for one order — refund this one in Stripe.`;
     log.error(`DOUBLE PAYMENT: ${detail.replace(/\n+/g, " ")}`);
-    await notifyTeam("Two payments for one order", detail);
+    await notifyOps("Two payments for one order", detail);
     return;
   }
 
@@ -233,13 +297,13 @@ async function reportUnconfirmed(
     }
     const detail = `${trail}\n\nThe order still exists but holds no rooms — they went back on sale before the payment landed, and may have been sold to someone else. Nothing was booked. Refund this payment in Stripe and tell the buyer.`;
     log.error(`PAID WITH NO ROOMS: ${detail.replace(/\n+/g, " ")}`);
-    await notifyTeam("Payment captured but the rooms were gone", detail);
+    await notifyOps("Payment captured but the rooms were gone", detail);
     return;
   }
 
   const detail = `${trail}\n\nNo matching order — it was cleared before the payment landed. Reconcile or refund this payment in Stripe.`;
   log.error(`UNRECONCILED PAYMENT: ${detail.replace(/\n+/g, " ")}`);
-  await notifyTeam("Payment captured with no matching order", detail);
+  await notifyOps("Payment captured with no matching order", detail);
 }
 
 // Stripe webhook for NE26 room payments. A settled payment flips the held
@@ -430,7 +494,7 @@ export async function POST(req: Request): Promise<Response> {
           log.warn(
             `Payment declined for order ${orderUid}: ${error?.code ?? "?"}/${error?.decline_code ?? "?"}`
           );
-          await notifyTeam(subject, body, html);
+          await notifySales(subject, body, html);
         }
       }
     }
@@ -448,7 +512,7 @@ export async function POST(req: Request): Promise<Response> {
       // freed), so a partial refund must not go through it.
       const detail = `Partial refund on payment ${paymentIntentId}: ${money(charge.amount_refunded, charge.currency)} of ${money(charge.amount, charge.currency)}.\n\nNo credit note was issued and the booking still holds its room, because our credit note is all-or-nothing (full amount, booking cancelled, slot freed). Issue the paperwork for the difference manually.`;
       log.warn(detail.replace(/\n+/g, " "));
-      await notifyTeam("Partial refund needs manual paperwork", detail);
+      await notifyOps("Partial refund needs manual paperwork", detail);
     } else if (paymentIntentId) {
       try {
         const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
@@ -457,6 +521,13 @@ export async function POST(req: Request): Promise<Response> {
           log.info(
             `No credit note issued for refunded payment ${paymentIntentId} (not eligible or already credited).`
           );
+        } else {
+          // The desk was told nothing at all about a refund until now: the
+          // credit note went to the buyer, the rooms went back on sale, and the
+          // first anyone here knew of it was a sold room turning up free again.
+          // Read back AFTER the credit note so the numbers in the mail are the
+          // ones actually written, not the ones we expected to write.
+          await notifyRefunded(paymentIntentId, charge.amount_refunded);
         }
       } catch (e) {
         log.error(`Credit note issuance failed for refunded payment ${paymentIntentId}`, e);

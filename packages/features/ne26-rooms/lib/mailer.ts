@@ -86,6 +86,12 @@ function transportOrThrow(): { transport: nodemailer.Transporter; from: string }
  */
 export async function sendTeamEmail(input: {
   to: string[];
+  /**
+   * Kept in the loop without being asked to act — the technical address on a
+   * sale, so it holds the full picture without the sales desk having to forward
+   * anything.
+   */
+  cc?: string[];
   subject: string;
   body: string;
   /**
@@ -98,12 +104,19 @@ export async function sendTeamEmail(input: {
 }): Promise<void> {
   const recipients = input.to.map((a) => a.trim()).filter(Boolean);
   if (!recipients.length) return;
+  const copies = (input.cc ?? []).map((a) => a.trim()).filter(Boolean);
 
   const { transport, from } = transportOrThrow();
 
+  // The staging redirect has to swallow the copies too. Sending "to" to a test
+  // inbox while the real technical address still got a cc would be a redirect
+  // that only half works, which is worse than none at all.
+  const redirect = process.env.NE26_EMAIL_REDIRECT_TO;
+
   await transport.sendMail({
     from,
-    to: process.env.NE26_EMAIL_REDIRECT_TO || recipients.join(", "),
+    to: redirect || recipients.join(", "),
+    ...(redirect || !copies.length ? {} : { cc: copies.join(", ") }),
     subject: `[NE26 Rooms] ${input.subject}`,
     text: input.body,
     html: input.html ?? emailShell(textToHtml(input.body)),

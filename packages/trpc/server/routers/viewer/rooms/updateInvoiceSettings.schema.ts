@@ -11,9 +11,12 @@ export const ZUpdateInvoiceSettingsInputSchema = z.object({
   iban: z.string().max(50),
   bic: z.string().max(20),
   contactEmail: z.string().max(200),
-  /** Comma-separated team notification recipients (a sale, an unmatched payment,
-   *  a partial refund). Empty falls back to contactEmail. */
+  /** Comma-separated sales recipients — a booking sold, declined or refunded.
+   *  Empty falls back to technicalEmails, then contactEmail. */
   notifyEmails: z.string().max(500),
+  /** Comma-separated recipients for the alerts only Stripe or database access
+   *  can resolve. Empty falls back to notifyEmails. */
+  technicalEmails: z.string().max(500),
   legalFooter: z.string().max(500),
   footerColumn1: z.string().max(500),
   footerColumn2: z.string().max(500),

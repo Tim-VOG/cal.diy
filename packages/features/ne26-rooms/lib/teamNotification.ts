@@ -12,10 +12,10 @@
  */
 
 import {
-  type EmailRoomLine,
   card,
   confidentialNote,
   correctionNote,
+  type EmailRoomLine,
   emailShell,
   escapeHtml,
   factRows,
@@ -333,6 +333,79 @@ export function failureNotification(input: FailureNotificationInput): TeamNotifi
       linkList([
         { label: "Open the order in the admin dashboard", href: input.adminUrl },
         ...(input.stripeUrl ? [{ label: "See the attempt in Stripe", href: input.stripeUrl }] : []),
+      ]) +
+      signOff()
+  );
+
+  return { subject, body: lines.join("\n"), html };
+}
+
+export interface RefundNotificationInput {
+  orderUid: string;
+  rooms: SaleNotificationRoom[];
+  bookerName?: string | null;
+  bookerEmail?: string | null;
+  /** What the credit note is for, incl. VAT — the figure actually refunded. */
+  amountRefunded: number;
+  currency: string;
+  /** The document being cancelled, and the one cancelling it. */
+  invoiceNumber?: string | null;
+  creditNoteNumber?: string | null;
+  stripeUrl?: string | null;
+  adminUrl: string;
+}
+
+/**
+ * The "a booking was refunded" mail.
+ *
+ * It did not exist: a full refund issued the credit note, emailed the buyer,
+ * put the rooms back on sale — and told the sales desk nothing. The first they
+ * would have known of it is a room they had counted as sold appearing free
+ * again, which during a three-day event is exactly the kind of surprise that
+ * ends in a double promise.
+ *
+ * Says the rooms are back on sale in as many words, because that is the part
+ * the desk acts on.
+ */
+export function refundNotification(input: RefundNotificationInput): TeamNotification {
+  const buyer = input.bookerName?.trim() || "An exhibitor";
+  const rooms = input.rooms;
+  const what =
+    rooms.length === 1 ? `${rooms[0].roomName}, ${rooms[0].durationMinutes / 60}h` : `${rooms.length} rooms`;
+  const subject = `Refunded — ${what} (${formatMoney(input.amountRefunded, input.currency)})`;
+
+  const lines: string[] = [];
+  for (const room of rooms) {
+    lines.push(`${room.roomName} — ${room.durationMinutes / 60}h`);
+    lines.push(`  ${formatSlotRange(room.startUtc, room.endUtc)}`);
+    lines.push("");
+  }
+
+  const buyerLine = input.bookerEmail ? `${buyer} <${input.bookerEmail}>` : buyer;
+  lines.push(field("Buyer", buyerLine));
+  lines.push(field("Refunded", formatMoney(input.amountRefunded, input.currency)));
+  if (input.invoiceNumber) lines.push(field("Invoice", input.invoiceNumber));
+  if (input.creditNoteNumber) lines.push(field("Credit note", input.creditNoteNumber));
+  lines.push("", field("Order", input.orderUid));
+  lines.push("", "These rooms are back on sale.", "", input.adminUrl);
+  if (input.stripeUrl) lines.push(input.stripeUrl);
+
+  const facts: { label: string; value: string; strong?: boolean }[] = [
+    { label: "Buyer", value: buyerLine },
+    { label: "Refunded", value: formatMoney(input.amountRefunded, input.currency), strong: true },
+    ...(input.invoiceNumber ? [{ label: "Invoice", value: input.invoiceNumber }] : []),
+    ...(input.creditNoteNumber ? [{ label: "Credit note", value: input.creditNoteNumber }] : []),
+    { label: "Order", value: input.orderUid },
+  ];
+
+  const html = emailShell(
+    `<p style="margin:0 0 14px">${escapeHtml(buyer)}'s booking of ${escapeHtml(what)} has been refunded.</p>` +
+      card(roomLines(rooms, input.currency).map(roomBlock).join("")) +
+      factRows(facts) +
+      correctionNote("These rooms are back on sale.") +
+      linkList([
+        { label: "Open the order in the admin dashboard", href: input.adminUrl },
+        ...(input.stripeUrl ? [{ label: "See the refund in Stripe", href: input.stripeUrl }] : []),
       ]) +
       signOff()
   );

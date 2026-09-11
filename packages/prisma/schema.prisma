@@ -3067,10 +3067,17 @@ model Ne26InvoiceSettings {
   iban                   String   @default("")
   bic                    String   @default("")
   contactEmail           String   @default("")
-  // Who the team notifications go to (a sale, an unmatched payment, a partial
-  // refund): comma-separated, admin-editable so sales can be added without a
-  // redeploy. Empty falls back to contactEmail.
+  // Who the SALES notifications go to — a room sold, a card declined, a booking
+  // refunded: comma-separated, admin-editable so sales can be added without a
+  // redeploy. The technical address is copied in on these. Empty falls back to
+  // technicalEmails, then contactEmail.
   notifyEmails           String   @default("")
+  // NE26: where the operational alerts go — a capture with no matching order, two
+  // payments for one order, a partial refund. Kept apart from notifyEmails
+  // because nobody on the sales desk can act on any of them, and burying "Room
+  // sold" under alerts is how the ones that matter stop being read. Empty falls
+  // back to notifyEmails: an alert nobody reads beats an alert nobody receives.
+  technicalEmails        String   @default("")
   // Legacy single-line footer; kept as a fallback when the columns are empty.
   legalFooter            String   @default("")
   // Footer printed as three columns at the bottom of invoices/credit notes.

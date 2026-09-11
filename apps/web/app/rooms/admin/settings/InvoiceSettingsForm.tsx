@@ -16,7 +16,8 @@ type StringSettingKey =
   | "iban"
   | "bic"
   | "contactEmail"
-  | "notifyEmails";
+  | "notifyEmails"
+  | "technicalEmails";
 
 const FIELDS: {
   key: StringSettingKey;
@@ -37,9 +38,15 @@ const FIELDS: {
   { key: "contactEmail", label: "Contact email" },
   {
     key: "notifyEmails",
-    label: "Team notifications (comma-separated)",
+    label: "Sales notifications (comma-separated)",
     full: true,
-    hint: "Who hears about a sale, a payment with no matching booking, or a partial refund needing manual paperwork. Falls back to the contact email above.",
+    hint: "Who hears when a booking is sold, declined or refunded. The technical address below is copied in on all three.",
+  },
+  {
+    key: "technicalEmails",
+    label: "Technical alerts (comma-separated)",
+    full: true,
+    hint: "Who hears about a payment with no matching booking, two payments for one order, or a partial refund needing manual paperwork — the ones only someone with Stripe or database access can act on. Left empty, these fall back to the sales list above.",
   },
 ];
 
@@ -113,9 +120,9 @@ export default function InvoiceSettingsForm({ initial }: { initial: InvoiceSetti
             <span>
               <span className="block font-medium text-sm">Charge VAT to Belgian buyers only</span>
               <span className="mt-0.5 block text-gray-500 text-xs">
-                Everyone else is zero-rated on their country alone — no VAT number is looked at, so a
-                buyer who mistypes one still pays the right amount. This overrides the two rules below,
-                which then only decide which legal mention is printed.
+                Everyone else is zero-rated on their country alone — no VAT number is looked at, so a buyer
+                who mistypes one still pays the right amount. This overrides the two rules below, which then
+                only decide which legal mention is printed.
               </span>
             </span>
           </label>
