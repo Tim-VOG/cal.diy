@@ -18,6 +18,12 @@ export interface OrderState {
   hasCreditNote: boolean;
   /** Rooms still attached. Zero is the case this module exists for. */
   roomCount: number;
+  /**
+   * Whether Stripe captured money for this order. Required rather than
+   * defaulted: a caller that forgot it would silently be offered "delete" on a
+   * paid order.
+   */
+  paid: boolean;
 }
 
 export interface OrderActions {
@@ -69,7 +75,15 @@ export function availableOrderActions(order: OrderState): OrderActions {
     // Never once a document refers to it: an invoice is undone with a credit
     // note, not by removing what it points at. Not offered for a live hold
     // either, where cancelPending says what it does and says it better.
-    deleteOrder: !order.hasInvoice && !order.hasCreditNote && !pending,
+    //
+    // And never once money is involved. "No invoice" was the only test, which
+    // offered delete on a CONFIRMED order whose invoice had failed — the very
+    // case "issue the missing invoice" exists to repair. One click would have
+    // erased the only record, on this side, of a payment Stripe still holds.
+    // A confirmed order without an invoice is always a sale owed its paperwork,
+    // and a captured payment on anything else is money to refund, not a row to
+    // tidy away.
+    deleteOrder: !order.hasInvoice && !order.hasCreditNote && !pending && !confirmed && !order.paid,
   };
 }
 

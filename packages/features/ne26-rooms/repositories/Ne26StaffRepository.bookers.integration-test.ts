@@ -170,6 +170,27 @@ describe("deleteBookerAccount", () => {
     expect(await prisma.ne26Order.findUnique({ where: { uid: gone } })).toBeNull();
   });
 
+  it("keeps a paid order whose invoice failed, and counts it as kept", async () => {
+    // Deleting the login must not take a payment with it just because the
+    // invoice never came out.
+    const id = await makeUser();
+    const paid = await makeOrder(id, false);
+    await prisma.ne26Order.update({
+      where: { uid: paid },
+      data: { status: "CONFIRMED", stripePaymentId: `pi_booker_paid_${Date.now()}` },
+    });
+
+    const listed = (await repo.listBookerAccounts()).find((a) => a.userId === id);
+    // The confirmation reads these counts, so they must match what happens.
+    expect(listed).toMatchObject({ undocumentedOrders: 0, documentedOrders: 1 });
+
+    const result = await repo.deleteBookerAccount(id);
+    expect(result).toMatchObject({ deleted: true, ordersDeleted: 0, ordersKept: 1 });
+    const order = await prisma.ne26Order.findUnique({ where: { uid: paid } });
+    expect(order).not.toBeNull();
+    expect(order?.bookerUserId).toBeNull();
+  });
+
   it("refuses an administrator", async () => {
     const id = await makeUser("admin");
     expect(await repo.deleteBookerAccount(id)).toMatchObject({ deleted: false, refusedBecause: "staff" });

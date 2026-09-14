@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@calcom/prisma";
+import { ResourceBookingStatus } from "@calcom/prisma/enums";
 
 export interface StaffMember {
   userId: number;
@@ -139,13 +140,28 @@ export class Ne26StaffRepository {
     // Two counts in one pass rather than a query per account.
     const orders = await this.prismaClient.ne26Order.findMany({
       where: { bookerUserId: { in: users.map((u) => u.id) } },
-      select: { bookerUserId: true, invoiceNumber: true, creditNoteNumber: true },
+      select: {
+        bookerUserId: true,
+        invoiceNumber: true,
+        creditNoteNumber: true,
+        stripePaymentId: true,
+        status: true,
+      },
     });
     const counts = new Map<number, { documented: number; undocumented: number }>();
     for (const order of orders) {
       if (order.bookerUserId === null) continue;
       const entry = counts.get(order.bookerUserId) ?? { documented: 0, undocumented: 0 };
-      if (order.invoiceNumber || order.creditNoteNumber) entry.documented += 1;
+      // "Documented" means "survives deletion", so it has to use the same rule
+      // deleteBookerAccount does, or the confirmation would promise to delete a
+      // paid order that is in fact kept.
+      if (
+        order.invoiceNumber ||
+        order.creditNoteNumber ||
+        order.stripePaymentId ||
+        order.status === ResourceBookingStatus.CONFIRMED
+      )
+        entry.documented += 1;
       else entry.undocumented += 1;
       counts.set(order.bookerUserId, entry);
     }
@@ -179,14 +195,24 @@ export class Ne26StaffRepository {
   async deleteBookerAccount(userId: number): Promise<DeleteBookerResult> {
     return this.prismaClient.$transaction(async (tx) => {
       const user = await tx.user.findUnique({ where: { id: userId }, select: { role: true } });
-      if (!user) return { deleted: false, refusedBecause: "missing" as const, ordersDeleted: 0, ordersKept: 0 };
+      if (!user)
+        return { deleted: false, refusedBecause: "missing" as const, ordersDeleted: 0, ordersKept: 0 };
       const staffRole = await tx.ne26StaffRole.findUnique({ where: { userId }, select: { id: true } });
       if (user.role === "ADMIN" || staffRole) {
         return { deleted: false, refusedBecause: "staff" as const, ordersDeleted: 0, ordersKept: 0 };
       }
 
       const removed = await tx.ne26Order.deleteMany({
-        where: { bookerUserId: userId, invoiceNumber: null, creditNoteNumber: null },
+        // Same line as deleteUndocumented: no document AND no money. A paid
+        // order whose invoice failed is kept with the account's other sales,
+        // detached below, rather than vanishing with the login.
+        where: {
+          bookerUserId: userId,
+          invoiceNumber: null,
+          creditNoteNumber: null,
+          stripePaymentId: null,
+          status: { not: ResourceBookingStatus.CONFIRMED },
+        },
       });
       // Detach what survives. There is no foreign key here — which is what lets
       // the invoiced orders outlive the account at all — so nothing would clear

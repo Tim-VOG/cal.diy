@@ -1,5 +1,6 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { getResourceBookingRepository } from "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container";
+import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
@@ -8,7 +9,6 @@ import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { requireNotDeskMode } from "../requireNotDeskMode";
 import BookingActions from "./BookingActions";
-import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 
 export const metadata: Metadata = {
   title: "Booking · NATO Edge 26 admin",
@@ -162,6 +162,7 @@ export default async function AdminBookingDetailPage({
             hasInvoice={Boolean(order.invoiceNumber)}
             hasCreditNote={Boolean(order.creditNoteNumber)}
             roomCount={order.bookings.length}
+            paid={Boolean(order.stripePaymentId)}
           />
         ) : (
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-800 text-sm">

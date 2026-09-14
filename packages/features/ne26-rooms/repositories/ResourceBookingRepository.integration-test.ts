@@ -238,9 +238,7 @@ describe("ResourceBookingRepository — the welcome desk", () => {
   });
 
   async function booking(startTime: Date, over: Record<string, unknown> = {}) {
-    const created = await repo.createWithSlots(
-      bookingArgs(startTime, 60, "desk@test.com", resourceId)
-    );
+    const created = await repo.createWithSlots(bookingArgs(startTime, 60, "desk@test.com", resourceId));
     if (Object.keys(over).length) {
       await prisma.resourceBooking.update({ where: { uid: created.uid }, data: over });
     }

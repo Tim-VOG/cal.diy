@@ -125,7 +125,12 @@ describe("ResourceBookingRepository.createWithSlots — expired hold reclaim", (
   // PAID booking and reselling its slot. This drives that exact interleaving.
   it("does NOT delete a hold that gets confirmed while a reclaim is in flight", async () => {
     const stale = await repo.createWithSlots(
-      args("2026-11-18T09:00:00.000Z", ResourceBookingStatus.PENDING, new Date(Date.now() - MS_PER_MINUTE), "paid-late@test.com")
+      args(
+        "2026-11-18T09:00:00.000Z",
+        ResourceBookingStatus.PENDING,
+        new Date(Date.now() - MS_PER_MINUTE),
+        "paid-late@test.com"
+      )
     );
     const { id: staleId } = await prisma.resourceBooking.findUniqueOrThrow({
       where: { uid: stale.uid },
@@ -150,7 +155,12 @@ describe("ResourceBookingRepository.createWithSlots — expired hold reclaim", (
     // hold as PENDING (the UPDATE is uncommitted), then its DELETE blocks.
     const competing = repo
       .createWithSlots(
-        args("2026-11-18T09:00:00.000Z", ResourceBookingStatus.PENDING, new Date(Date.now() + 15 * MS_PER_MINUTE), "second@test.com")
+        args(
+          "2026-11-18T09:00:00.000Z",
+          ResourceBookingStatus.PENDING,
+          new Date(Date.now() + 15 * MS_PER_MINUTE),
+          "second@test.com"
+        )
       )
       .then(() => null)
       .catch((e: unknown) => e);

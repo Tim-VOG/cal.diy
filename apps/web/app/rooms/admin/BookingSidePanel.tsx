@@ -1,10 +1,10 @@
 "use client";
 
+import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import BookingActions from "./[uid]/BookingActions";
 import type { AdminBookingRow } from "./RoomsAdminView";
-import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 
 const TZ = EVENT_TIME_ZONE;
 
@@ -122,6 +122,7 @@ export default function BookingSidePanel({
               hasInvoice={Boolean(booking.invoiceNumber)}
               hasCreditNote={Boolean(booking.creditNoteNumber)}
               roomCount={booking.orderRoomCount}
+              paid={Boolean(booking.stripePaymentId)}
             />
           ) : (
             <p className="text-amber-700 text-sm">

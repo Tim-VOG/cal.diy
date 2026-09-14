@@ -6,6 +6,7 @@ const order = (over: Partial<OrderState> = {}): OrderState => ({
   hasInvoice: false,
   hasCreditNote: false,
   roomCount: 1,
+  paid: false,
   ...over,
 });
 
@@ -28,15 +29,14 @@ describe("an order that still holds rooms", () => {
   });
 
   it("cannot be credited twice", () => {
-    const a = availableOrderActions(
-      order({ status: "CONFIRMED", hasInvoice: true, hasCreditNote: true })
-    );
+    const a = availableOrderActions(order({ status: "CONFIRMED", hasInvoice: true, hasCreditNote: true }));
     expect(a.issueCreditNote).toBe(false);
   });
 });
 
 describe("an order that holds no rooms", () => {
-  const roomless = (over: Partial<OrderState> = {}) => availableOrderActions(order({ roomCount: 0, ...over }));
+  const roomless = (over: Partial<OrderState> = {}) =>
+    availableOrderActions(order({ roomCount: 0, ...over }));
 
   it("is closable while pending, and that is the only thing on offer", () => {
     const a = roomless();
@@ -89,9 +89,10 @@ describe("closing is never offered where it would strand a room", () => {
   it("is refused for every state that still holds one", () => {
     for (const status of ["PENDING", "CONFIRMED", "CANCELLED"]) {
       for (const roomCount of [1, 2, 3]) {
-        expect(availableOrderActions(order({ status, roomCount })).closeSettled, `${status}/${roomCount}`).toBe(
-          false
-        );
+        expect(
+          availableOrderActions(order({ status, roomCount })).closeSettled,
+          `${status}/${roomCount}`
+        ).toBe(false);
       }
     }
   });
@@ -120,10 +121,37 @@ describe("every combination stays coherent", () => {
 });
 
 describe("deleting", () => {
-  it("is offered for a booking that never became a document", () => {
-    expect(availableOrderActions(order({ status: "CONFIRMED" })).deleteOrder).toBe(true);
+  it("is offered for a booking that never became anything", () => {
     expect(availableOrderActions(order({ status: "CANCELLED" })).deleteOrder).toBe(true);
     expect(availableOrderActions(order({ status: "CANCELLED", roomCount: 0 })).deleteOrder).toBe(true);
+  });
+
+  it("is never offered on a paid order whose invoice failed", () => {
+    // The case "issue the missing invoice" exists for. It has no number yet, so
+    // "no document" alone offered delete — and one click would have erased the
+    // only record here of money Stripe still holds.
+    const recovering = availableOrderActions(order({ status: "CONFIRMED", paid: true }));
+    expect(recovering.issueInvoice).toBe(true);
+    expect(recovering.deleteOrder).toBe(false);
+  });
+
+  it("is never offered on a confirmed order, even one settled outside Stripe", () => {
+    // Marked paid by hand after a bank transfer: no payment id, still a sale
+    // owed its invoice.
+    expect(availableOrderActions(order({ status: "CONFIRMED", paid: false })).deleteOrder).toBe(false);
+  });
+
+  it("is never offered while captured money is attached, whatever the status", () => {
+    // A payment that landed after its rooms went back on sale sits on a closed
+    // order. That is a refund to make, not a row to tidy away.
+    for (const status of ["PENDING", "CONFIRMED", "CANCELLED"]) {
+      for (const roomCount of [0, 1]) {
+        expect(
+          availableOrderActions(order({ status, roomCount, paid: true })).deleteOrder,
+          `${status}/${roomCount}`
+        ).toBe(false);
+      }
+    }
   });
 
   it("is never offered once an invoice or a credit note exists", () => {
@@ -133,11 +161,13 @@ describe("deleting", () => {
     for (const status of ["PENDING", "CONFIRMED", "CANCELLED"]) {
       for (const roomCount of [0, 1, 2]) {
         expect(
-          availableOrderActions({ status, roomCount, hasInvoice: true, hasCreditNote: false }).deleteOrder,
+          availableOrderActions({ status, roomCount, hasInvoice: true, hasCreditNote: false, paid: true })
+            .deleteOrder,
           `invoice ${status}/${roomCount}`
         ).toBe(false);
         expect(
-          availableOrderActions({ status, roomCount, hasInvoice: true, hasCreditNote: true }).deleteOrder,
+          availableOrderActions({ status, roomCount, hasInvoice: true, hasCreditNote: true, paid: true })
+            .deleteOrder,
           `credited ${status}/${roomCount}`
         ).toBe(false);
       }

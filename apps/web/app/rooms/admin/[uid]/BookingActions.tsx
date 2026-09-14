@@ -28,15 +28,19 @@ export default function BookingActions({
   hasInvoice,
   hasCreditNote,
   roomCount,
-  paid = false,
+  paid,
 }: {
   orderUid: string;
   status: string;
   hasInvoice: boolean;
   hasCreditNote: boolean;
   roomCount: number;
-  /** Whether Stripe captured money for this order. Only asked when roomCount is 0. */
-  paid?: boolean;
+  /**
+   * Whether Stripe captured money for this order. Required: it decides whether
+   * delete is offered at all, and a forgotten prop defaulting to "unpaid" is how
+   * a paid order gets a delete button.
+   */
+  paid: boolean;
 }): JSX.Element {
   const router = useRouter();
   const refresh = { onSuccess: () => router.refresh() };
@@ -54,7 +58,7 @@ export default function BookingActions({
     },
   });
 
-  const can = availableOrderActions({ status, hasInvoice, hasCreditNote, roomCount });
+  const can = availableOrderActions({ status, hasInvoice, hasCreditNote, roomCount, paid });
 
   const busy =
     confirmManually.isPending ||

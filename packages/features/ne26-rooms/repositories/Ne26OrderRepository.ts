@@ -474,10 +474,22 @@ export class Ne26OrderRepository {
    * counted in a VAT return; it is undone with a credit note, never by deleting
    * the thing it refers to. The admin screen hides the button in that case and
    * this refuses it anyway, because the screen is not the boundary.
+   *
+   * Refused as well once money is involved, which "no document" alone did not
+   * cover: a CONFIRMED order whose invoice failed has no number yet, and was
+   * deletable — the exact order "issue the missing invoice" exists to repair.
+   * Deleting it erased the only record here of a payment Stripe still held. A
+   * captured payment on any other status is money to refund first.
    */
   async deleteUndocumented(uid: string): Promise<boolean> {
     const result = await this.prismaClient.ne26Order.deleteMany({
-      where: { uid, invoiceNumber: null, creditNoteNumber: null },
+      where: {
+        uid,
+        invoiceNumber: null,
+        creditNoteNumber: null,
+        stripePaymentId: null,
+        status: { not: ResourceBookingStatus.CONFIRMED },
+      },
     });
     return result.count > 0;
   }
@@ -548,9 +560,7 @@ export class Ne26OrderRepository {
           // address, they change no amount — they are printed so the buyer's
           // finance department can match the invoice to their own paperwork.
           ...(data.poNumber?.trim() ? { bookerPoNumber: data.poNumber } : {}),
-          ...(data.internalReference?.trim()
-            ? { bookerInternalReference: data.internalReference }
-            : {}),
+          ...(data.internalReference?.trim() ? { bookerInternalReference: data.internalReference } : {}),
         },
       });
 

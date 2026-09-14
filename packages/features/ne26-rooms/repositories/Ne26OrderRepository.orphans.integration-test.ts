@@ -284,6 +284,34 @@ describe("deleting an order outright", () => {
     expect(await prisma.ne26Order.findUnique({ where: { uid } })).not.toBeNull();
   });
 
+  it("refuses a paid order whose invoice failed", async () => {
+    // The order "issue the missing invoice" exists to repair: confirmed, money
+    // captured, no number yet. "No document" alone let it be deleted, erasing
+    // the only record here of a payment Stripe still holds.
+    const uid = await makeOrder({
+      status: "CONFIRMED",
+      stripePaymentId: `pi_paid_no_invoice_${Date.now()}`,
+      withRoom: true,
+    });
+
+    expect(await repo.deleteUndocumented(uid)).toBe(false);
+    expect(await prisma.ne26Order.findUnique({ where: { uid } })).not.toBeNull();
+    expect(await prisma.resourceBooking.count({ where: { orderUid: uid } })).toBe(1);
+  });
+
+  it("refuses a confirmed order settled outside Stripe", async () => {
+    // Marked paid by hand after a bank transfer: no payment id, still a sale.
+    const uid = await makeOrder({ status: "CONFIRMED", withRoom: true });
+    expect(await repo.deleteUndocumented(uid)).toBe(false);
+    expect(await prisma.ne26Order.findUnique({ where: { uid } })).not.toBeNull();
+  });
+
+  it("refuses a closed order that still carries a captured payment", async () => {
+    const uid = await makeOrder({ status: "CANCELLED", stripePaymentId: `pi_closed_${Date.now()}` });
+    expect(await repo.deleteUndocumented(uid)).toBe(false);
+    expect(await prisma.ne26Order.findUnique({ where: { uid } })).not.toBeNull();
+  });
+
   it("says false rather than throwing for an order that is already gone", async () => {
     expect(await repo.deleteUndocumented("00000000-0000-0000-0000-000000000000")).toBe(false);
   });
