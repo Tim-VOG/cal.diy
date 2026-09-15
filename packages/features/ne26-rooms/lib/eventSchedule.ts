@@ -48,9 +48,17 @@ export type EventDayDefinition = {
   closeHour: number;
 };
 
-/** Built-in NE26 opening hours, used when no admin override is stored. */
+/**
+ * Built-in NE26 opening hours, used when no admin override is stored.
+ *
+ * Must match what the admin has actually set. The stored schedule wins at
+ * runtime, so a stale default is invisible — until the setting is cleared or
+ * fails to parse, and the site silently reopens at hours nobody chose. It said
+ * Tuesday 14:00 for weeks while the live schedule, and every booking taken,
+ * said 09:00.
+ */
 export const DEFAULT_EVENT_DAYS: readonly EventDayDefinition[] = [
-  { date: "2026-11-17", openHour: 14, closeHour: 17 },
+  { date: "2026-11-17", openHour: 9, closeHour: 17 },
   { date: "2026-11-18", openHour: 9, closeHour: 17 },
   { date: "2026-11-19", openHour: 9, closeHour: 11 },
 ];

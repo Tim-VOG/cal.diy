@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { computeAvailability } from "./availability";
+import { buildEventSchedule, DEFAULT_EVENT_DAYS } from "./eventSchedule";
 
 /**
  * Event-local time as a UTC instant.
@@ -21,6 +22,20 @@ const THU = "2026-11-19";
 
 /** Fixed instant before the event, so the "past start" rule never interferes. */
 const BEFORE_EVENT = new Date("2026-11-01T00:00:00.000Z");
+
+/**
+ * A three-hour Tuesday, stated here rather than borrowed from the default.
+ *
+ * These tests are about how starts chain, and a short window keeps the
+ * expected lists readable. They used to lean on the built-in hours, which
+ * meant correcting the real opening time broke tests that had nothing to say
+ * about opening times.
+ */
+const SHORT_TUESDAY = buildEventSchedule([
+  { date: TUE, openHour: 14, closeHour: 17 },
+  { date: WED, openHour: 9, closeHour: 17 },
+  { date: THU, openHour: 9, closeHour: 11 },
+]);
 
 type Result = ReturnType<typeof computeAvailability>;
 
@@ -48,12 +63,22 @@ describe("computeAvailability", () => {
 
   it("offers hourly starts when no cleaning gap is configured", () => {
     // Degenerate case of the chain: nothing to leave between bookings, so the
-    // chain and the clock agree. Tuesday opens 14:00-17:00 local.
-    expect(startsFor(computeAvailability([], 0, BEFORE_EVENT), TUE, 1)).toEqual([
+    // chain and the clock agree. This Tuesday opens 14:00-17:00 local.
+    expect(startsFor(computeAvailability([], 0, BEFORE_EVENT, SHORT_TUESDAY), TUE, 1)).toEqual([
       at(TUE, 14),
       at(TUE, 15),
       at(TUE, 16),
     ]);
+  });
+
+  it("opens Tuesday at 09:00 by default, as the live schedule does", () => {
+    // The default only matters when the stored schedule is missing or broken —
+    // which is exactly when nobody is looking. It said 14:00 while every
+    // booking taken said 09:00.
+    expect(DEFAULT_EVENT_DAYS[0]).toEqual({ date: TUE, openHour: 9, closeHour: 17 });
+    const days = computeAvailability([], 0, BEFORE_EVENT);
+    expect(startsFor(days, TUE, 1)).toHaveLength(8);
+    expect(startsFor(days, TUE, 1)[0]).toBe(at(TUE, 9));
   });
 
   it("opens the full Wednesday window (09:00-17:00 = 8 hourly starts)", () => {
@@ -107,7 +132,7 @@ describe("computeAvailability — offered times chain, cleaning gap included", (
       new Date(at(TUE, 14, 45)),
       new Date(at(TUE, 15)), // cleaning
     ];
-    expect(startsFor(computeAvailability(sold, 15, BEFORE_EVENT), TUE, 1)).toEqual([
+    expect(startsFor(computeAvailability(sold, 15, BEFORE_EVENT, SHORT_TUESDAY), TUE, 1)).toEqual([
       at(TUE, 15, 15), // the moment the room is clean
     ]);
   });
@@ -121,7 +146,7 @@ describe("computeAvailability — offered times chain, cleaning gap included", (
       new Date(at(TUE, 15, 30)),
       new Date(at(TUE, 15, 45)),
     ];
-    const offered = startsFor(computeAvailability(at3pm, 15, BEFORE_EVENT), TUE, 1);
+    const offered = startsFor(computeAvailability(at3pm, 15, BEFORE_EVENT, SHORT_TUESDAY), TUE, 1);
     expect(offered).not.toContain(at(TUE, 14));
     // The hour after it is still fine — the gap belongs to whoever comes first.
     expect(offered).toContain(at(TUE, 16));
@@ -129,7 +154,9 @@ describe("computeAvailability — offered times chain, cleaning gap included", (
 
   it("offers nothing at all once the room is full", () => {
     const wholeTuesday = Array.from({ length: 12 }, (_, i) => new Date(at(TUE, 14, i * 15)));
-    expect(findDay(computeAvailability(wholeTuesday, 15, BEFORE_EVENT), TUE).starts).toEqual([]);
+    expect(findDay(computeAvailability(wholeTuesday, 15, BEFORE_EVENT, SHORT_TUESDAY), TUE).starts).toEqual(
+      []
+    );
   });
 });
 
