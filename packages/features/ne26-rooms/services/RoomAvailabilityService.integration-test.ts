@@ -1,4 +1,5 @@
 import { prisma } from "@calcom/prisma";
+import { Prisma } from "@calcom/prisma/client";
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { getResourceBookingRepository } from "../di/ResourceBookingRepository.container";
@@ -9,6 +10,12 @@ const service = getRoomAvailabilityService();
 const bookingRepo = getResourceBookingRepository();
 
 const SLUG = `test-availability-${Date.now()}`;
+
+const SHORT_TUESDAY = [
+  { date: "2026-11-17", openHour: 14, closeHour: 17 },
+  { date: "2026-11-18", openHour: 9, closeHour: 17 },
+  { date: "2026-11-19", openHour: 9, closeHour: 11 },
+];
 const MS_PER_MINUTE = 60 * 1000;
 
 function dayStarts(days: Awaited<ReturnType<typeof service.getAvailabilityBySlug>>["days"], date: string) {
@@ -73,12 +80,15 @@ describe("RoomAvailabilityService.getAvailabilityBySlug", () => {
     });
     resourceId = room.id;
 
-    // Pin the cleaning gap: it is a shared admin setting, so leaving it to
-    // whatever another suite last wrote makes the offered times non-deterministic.
+    // Pin the cleaning gap and the opening hours: both are shared admin
+    // settings, so leaving them to whatever another suite last wrote — or to the
+    // built-in default, which changes when the real hours do — makes the offered
+    // times non-deterministic. The expectations below are written against a
+    // Tuesday that opens at 14:00 local (11:00Z).
     await prisma.ne26RoomSettings.upsert({
       where: { id: 1 },
-      update: { bufferMinutes: 0 },
-      create: { id: 1, bufferMinutes: 0 },
+      update: { bufferMinutes: 0, eventDays: SHORT_TUESDAY },
+      create: { id: 1, bufferMinutes: 0, eventDays: SHORT_TUESDAY },
     });
   });
 
@@ -88,6 +98,8 @@ describe("RoomAvailabilityService.getAvailabilityBySlug", () => {
 
   afterAll(async () => {
     await prisma.resource.delete({ where: { id: resourceId } });
+    // Hand the hours back, so a suite running after this one gets the default.
+    await prisma.ne26RoomSettings.update({ where: { id: 1 }, data: { eventDays: Prisma.DbNull } });
   });
 
   it("returns the room and all three event days fully open when nothing is booked", async () => {
