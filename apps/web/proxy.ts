@@ -1,8 +1,10 @@
 import process from "node:process";
+import { confineRoute } from "@calcom/features/ne26-rooms/lib/routeConfinement";
 import { getCspHeader, getCspNonce } from "@lib/csp";
 import { get } from "@vercel/edge-config";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { getToken } from "next-auth/jwt";
 
 const safeGet = async <T = any>(key: string): Promise<T | undefined> => {
   try {
@@ -65,8 +67,36 @@ const shouldEnforceCsp = (url: URL) => {
   return url.pathname.startsWith("/auth/login") || url.pathname.startsWith("/login");
 };
 
+/**
+ * NE26: keep a signed-in exhibitor inside /rooms. The rule itself lives in
+ * lib/routeConfinement, where it is tested; this only reads the session.
+ *
+ * Fails OPEN. This is navigation, not a security boundary — every Cal screen
+ * still checks its own permissions — so a token that cannot be read must not
+ * turn into a site nobody can use.
+ */
+const ne26Confinement = async (req: NextRequest): Promise<NextResponse | null> => {
+  if (!isPagePathRequest(req.nextUrl)) return null;
+  try {
+    const token = await getToken({ req });
+    const decision = confineRoute({
+      pathname: req.nextUrl.pathname,
+      role: typeof token?.role === "string" ? token.role : null,
+    });
+    if (decision.action === "redirect") {
+      return NextResponse.redirect(new URL(decision.to, req.url));
+    }
+  } catch {
+    // See above: fail open.
+  }
+  return null;
+};
+
 const proxy = async (req: NextRequest): Promise<NextResponse<unknown>> => {
   const url = req.nextUrl;
+
+  const confined = await ne26Confinement(req);
+  if (confined) return confined;
   const reqWithEnrichedHeaders = enrichRequestWithHeaders({ req });
   const requestHeaders = new Headers(reqWithEnrichedHeaders.headers);
 
@@ -163,7 +193,18 @@ function enrichRequestWithHeaders({ req }: { req: NextRequest }) {
 }
 
 export const config = {
-  matcher: ["/auth/login", "/login", "/apps/installed", "/auth/logout", "/:path*/embed", "/availability", "/api/auth/signup"],
+  matcher: [
+    "/auth/login",
+    "/login",
+    "/apps/installed",
+    "/auth/logout",
+    "/:path*/embed",
+    "/availability",
+    "/api/auth/signup",
+    // NE26: every page, so a signed-in exhibitor cannot open Cal's screens.
+    // Assets, API routes and files are excluded here as well as in the rule.
+    "/((?!_next/static|_next/image|api/|.*\\..*).*)",
+  ],
 };
 
 export default proxy;
