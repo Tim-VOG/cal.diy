@@ -1,13 +1,14 @@
 "use client";
 
 import type { EventDayDefinition } from "@calcom/features/ne26-rooms/lib/eventSchedule";
+import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
+import { orderRef } from "@calcom/features/ne26-rooms/lib/orderRef";
+import { buildXlsx, type CellValue } from "@calcom/features/ne26-rooms/lib/xlsx";
 import { trpc } from "@calcom/trpc/react";
 import { useRouter } from "next/navigation";
-import { buildXlsx, type CellValue } from "@calcom/features/ne26-rooms/lib/xlsx";
 import { useMemo, useState } from "react";
 import BookingCalendar from "./BookingCalendar";
 import BookingSidePanel from "./BookingSidePanel";
-import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 
 const TZ = EVENT_TIME_ZONE;
 
@@ -279,7 +280,7 @@ export default function RoomsAdminView({
       if (dayFilter !== "ALL" && dayKey(r.startUtc) !== dayFilter) return false;
       if (q) {
         const hay =
-          `${r.bookerName} ${r.bookerEmail} ${r.roomName} ${r.invoiceNumber ?? ""} ${r.creditNoteNumber ?? ""}`.toLowerCase();
+          `${r.bookerName} ${r.bookerEmail} ${r.roomName} ${r.invoiceNumber ?? ""} ${r.creditNoteNumber ?? ""} ${r.orderUid ? orderRef(r.orderUid) : ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -533,6 +534,16 @@ export default function RoomsAdminView({
                           rel="noreferrer"
                           className="text-[#000643] underline hover:opacity-80">
                           {r.invoiceNumber}
+                        </a>
+                      ) : r.orderUid ? (
+                        // No invoice yet: still say which order this is, so two
+                        // rooms of one order read as one, and a paid order whose
+                        // invoice failed can actually be found.
+                        <a
+                          href={`/rooms/admin/order/${r.orderUid}`}
+                          title="Order reference — no invoice issued yet"
+                          className="font-mono text-gray-400 text-xs hover:text-[#000643] hover:underline">
+                          {orderRef(r.orderUid)}
                         </a>
                       ) : (
                         <span className="text-gray-300">—</span>
