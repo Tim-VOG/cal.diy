@@ -4,6 +4,7 @@ import { getNe26OrderRepository } from "@calcom/features/ne26-rooms/di/Ne26Order
 import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
 import { getResourceBookingRepository } from "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container";
 import { getResourceRepository } from "@calcom/features/ne26-rooms/di/ResourceRepository.container";
+import { bookingDocuments } from "@calcom/features/ne26-rooms/lib/bookingDocuments";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
@@ -58,8 +59,8 @@ export default async function RoomsAdminPage(): Promise<JSX.Element> {
     orderRoomCount: b.order?._count.bookings ?? 1,
     orderedAt: (b.order?.createdAt ?? b.createdAt).toISOString(),
     paidAt: b.order?.paidAt?.toISOString() ?? null,
-    invoiceNumber: b.order?.invoiceNumber ?? b.invoiceNumber,
-    creditNoteNumber: b.order?.creditNoteNumber ?? b.creditNoteNumber,
+    invoiceNumber: bookingDocuments(b).invoiceNumber,
+    creditNoteNumber: bookingDocuments(b).creditNoteNumber,
     addOns: b.addOns.map((a) => ({ name: a.addOn.name, quantity: a.quantity, lineTotal: a.lineTotal })),
   }));
 

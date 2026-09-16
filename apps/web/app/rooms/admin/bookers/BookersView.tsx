@@ -14,6 +14,8 @@ export interface BookerBooking {
   status: string;
   amountTotal: number;
   currency: string;
+  /** The uid the invoice and credit-note PDFs are stored under — the order's. */
+  documentUid: string;
   invoiceNumber: string | null;
   creditNoteNumber: string | null;
   addOns: { name: string; quantity: number }[];
@@ -217,7 +219,7 @@ export default function BookersView({ bookers }: { bookers: Booker[] }): JSX.Ele
                             <td className="py-2 text-right">
                               {bk.creditNoteNumber ? (
                                 <a
-                                  href={`/rooms/credit-note/${bk.uid}`}
+                                  href={`/rooms/credit-note/${bk.documentUid}`}
                                   target="_blank"
                                   rel="noreferrer"
                                   className="text-[#000643] underline">
@@ -225,7 +227,7 @@ export default function BookersView({ bookers }: { bookers: Booker[] }): JSX.Ele
                                 </a>
                               ) : bk.invoiceNumber ? (
                                 <a
-                                  href={`/rooms/invoice/${bk.uid}`}
+                                  href={`/rooms/invoice/${bk.documentUid}`}
                                   target="_blank"
                                   rel="noreferrer"
                                   className="text-[#000643] underline">

@@ -1,12 +1,13 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { getResourceBookingRepository } from "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container";
+import { bookingDocuments } from "@calcom/features/ne26-rooms/lib/bookingDocuments";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import { requireNotDeskMode } from "../requireNotDeskMode";
 import BookerAccounts from "./BookerAccounts";
 import BookersView, { type Booker } from "./BookersView";
-import { requireNotDeskMode } from "../requireNotDeskMode";
 
 export const metadata: Metadata = {
   title: "Bookers · NATO Edge 26 admin",
@@ -42,8 +43,9 @@ export default async function BookersPage(): Promise<JSX.Element> {
       status: b.status,
       amountTotal: b.amountTotal,
       currency: b.currency,
-      invoiceNumber: b.invoiceNumber,
-      creditNoteNumber: b.creditNoteNumber,
+      // The order's documents, not the room's: read from the room alone, every
+      // sale made through an order showed no invoice here.
+      ...bookingDocuments(b),
       addOns: b.addOns.map((a) => ({ name: a.addOn.name, quantity: a.quantity })),
     });
     byEmail.set(b.bookerEmail, booker);
