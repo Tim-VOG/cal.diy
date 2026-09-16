@@ -7,8 +7,8 @@ import { getStripeCheckoutService } from "../di/StripeCheckoutService.container"
 import { isBillingProfileComplete } from "../lib/billing";
 import { buildInvoiceModel, ROOM_VAT_RATE_BP } from "../lib/invoice";
 import { resolveVatTreatment } from "../lib/vat";
-import { checkoutExpiresAtSeconds } from "./StripeCheckoutService";
 import { Ne26OrderService, type OrderRoomSelection } from "./Ne26OrderService";
+import { checkoutExpiresAtSeconds } from "./StripeCheckoutService";
 
 /**
  * How long an order's rooms may stay held, counting from when it was placed.
@@ -167,31 +167,34 @@ export async function startOrderCheckout(input: StartOrderCheckoutInput) {
     .filter((v) => v.vat > 0)
     .map((v) => ({ name: `VAT ${v.vatRate / 100}%`, quantity: 1, unitAmount: v.vat }));
 
-  // Mirror the profile onto a Stripe Customer. It does not pre-fill Checkout —
-  // Stripe only does that from a saved card — but it is the tax location and it
-  // keeps the dashboard legible next to our invoices.
-  const existingCustomerId = atTheCounter
-    ? null
-    : await billingRepo.findStripeCustomerId(input.buyer.userId as number);
-  const customerId = await getStripeCheckoutService().ensureCustomer({
-    customerId: existingCustomerId,
-    email: input.buyer.email,
-    name: contactName || input.buyer.name,
-    legalName: profile?.legalName,
-    country: profile?.country,
-    addressLine1: profile?.addressLine1,
-    addressLine2: profile?.addressLine2,
-    postalCode: profile?.postalCode,
-    city: profile?.city,
-  });
-  if (!atTheCounter && customerId !== existingCustomerId) {
-    await billingRepo.setStripeCustomerId(input.buyer.userId as number, customerId);
-  }
-
-  // The rooms are held by this point. If Stripe cannot give us a URL, release
-  // them now: otherwise the buyer sees a raw SDK error AND several rooms stay
-  // locked for the length of the hold, unbookable by anyone.
+  // The rooms are held by this point. If Stripe fails at ANY step — the
+  // Customer mirror included — release them now: otherwise the buyer sees a raw
+  // SDK error AND several rooms stay locked for the length of the hold,
+  // unbookable by anyone. The Customer step used to sit above this block, so a
+  // refused Customer ("No such customer" on the first live checkout) left the
+  // room held for 35 minutes.
   try {
+    // Mirror the profile onto a Stripe Customer. It does not pre-fill Checkout —
+    // Stripe only does that from a saved card — but it is the tax location and it
+    // keeps the dashboard legible next to our invoices.
+    const existingCustomerId = atTheCounter
+      ? null
+      : await billingRepo.findStripeCustomerId(input.buyer.userId as number);
+    const customerId = await getStripeCheckoutService().ensureCustomer({
+      customerId: existingCustomerId,
+      email: input.buyer.email,
+      name: contactName || input.buyer.name,
+      legalName: profile?.legalName,
+      country: profile?.country,
+      addressLine1: profile?.addressLine1,
+      addressLine2: profile?.addressLine2,
+      postalCode: profile?.postalCode,
+      city: profile?.city,
+    });
+    if (!atTheCounter && customerId !== existingCustomerId) {
+      await billingRepo.setStripeCustomerId(input.buyer.userId as number, customerId);
+    }
+
     const checkout = await getStripeCheckoutService().createCheckoutSession({
       orderUid: order.uid,
       currency: order.currency,
@@ -219,7 +222,6 @@ export async function startOrderCheckout(input: StartOrderCheckoutInput) {
     );
   }
 }
-
 
 /**
  * Rebuild a Checkout session for an order that was held but never paid.
@@ -324,16 +326,22 @@ export async function resumeOrderCheckout(input: {
     cancelUrl: `${input.webappUrl}/rooms/bookings`,
   });
 
+  // Record the new page FIRST, then close the old one. Closing the old page
+  // makes Stripe send checkout.session.expired for it, and the webhook releases
+  // an order only when the expired session is the order's current one — so the
+  // new id has to be in place before that message can arrive.
+  const previousSessionId = order.stripeSessionId;
+  await orders.setStripeSessionId(order.uid, checkout.id);
+
   // One payment page per order. The previous one still pointed at this order and
   // could be paid from a tab left open, which is a second charge waiting to
   // happen.
-  if (order.stripeSessionId && order.stripeSessionId !== checkout.id) {
+  if (previousSessionId && previousSessionId !== checkout.id) {
     await getStripeCheckoutService()
-      .expireSession(order.stripeSessionId)
+      .expireSession(previousSessionId)
       .catch(() => {
         // Already completed or already expired: nothing to close.
       });
   }
-  await orders.setStripeSessionId(order.uid, checkout.id);
   return { checkoutUrl: checkout.url };
 }

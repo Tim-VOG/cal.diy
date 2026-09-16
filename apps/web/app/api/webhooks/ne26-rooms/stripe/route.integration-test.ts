@@ -87,6 +87,8 @@ interface SessionOptions {
   amountTotal?: number;
   /** What the buyer typed into Checkout's optional custom fields, if anything. */
   customFields?: { key: string; type: string; text: { value: string | null } }[];
+  /** The Checkout session id; defaults to cs_test_webhook. */
+  sessionId?: string;
 }
 
 function sessionEvent(type: string, options: SessionOptions = {}): string {
@@ -96,7 +98,7 @@ function sessionEvent(type: string, options: SessionOptions = {}): string {
     type,
     data: {
       object: {
-        id: "cs_test_webhook",
+        id: options.sessionId ?? "cs_test_webhook",
         object: "checkout.session",
         payment_status: options.paymentStatus ?? "paid",
         payment_intent: options.paymentIntent ?? "pi_test_webhook",
@@ -675,6 +677,48 @@ describe("NE26 Stripe webhook", () => {
     it("releases the hold when the session expires", async () => {
       const { uid, startTimes } = await heldOrder();
       await deliver(sessionEvent("checkout.session.expired", { orderUid: uid, paymentStatus: "unpaid" }));
+      expect(await orders.findByUid(uid)).toBeNull();
+      expect(await slotsHeld(roomA, startTimes[0])).toBe(0);
+    });
+
+    it("keeps the order when the expired session is one the buyer already replaced", async () => {
+      // The first live payment: the buyer reopened the payment page, the app
+      // closed the old page, Stripe reported it expired, and the webhook deleted
+      // the order while the buyer paid on the new page.
+      const { uid, startTimes } = await heldOrder();
+      await orders.setStripeSessionId(uid, "cs_current_page");
+
+      await deliver(
+        sessionEvent("checkout.session.expired", {
+          orderUid: uid,
+          paymentStatus: "unpaid",
+          sessionId: "cs_old_page",
+        })
+      );
+
+      expect(await orders.findByUid(uid)).not.toBeNull();
+      expect(await slotsHeld(roomA, startTimes[0])).toBeGreaterThan(0);
+      expect(sendHoldReleasedEmail).not.toHaveBeenCalled();
+
+      // And the payment on the current page then confirms normally.
+      await deliver(
+        sessionEvent("checkout.session.completed", { orderUid: uid, sessionId: "cs_current_page" })
+      );
+      expect((await orders.findByUid(uid))?.status).toBe(ResourceBookingStatus.CONFIRMED);
+    });
+
+    it("still releases the order when its current session expires", async () => {
+      const { uid, startTimes } = await heldOrder();
+      await orders.setStripeSessionId(uid, "cs_current_page");
+
+      await deliver(
+        sessionEvent("checkout.session.expired", {
+          orderUid: uid,
+          paymentStatus: "unpaid",
+          sessionId: "cs_current_page",
+        })
+      );
+
       expect(await orders.findByUid(uid)).toBeNull();
       expect(await slotsHeld(roomA, startTimes[0])).toBe(0);
     });

@@ -454,9 +454,23 @@ export class Ne26OrderRepository {
    * destroy the only record that a capture needs refunding. Those are closed,
    * not deleted — closeSettledOrder keeps the row.
    */
-  async cancelPending(uid: string): Promise<boolean> {
+  async cancelPending(uid: string, options: { onlyIfSessionId?: string } = {}): Promise<boolean> {
     const result = await this.prismaClient.ne26Order.deleteMany({
-      where: { uid, status: ResourceBookingStatus.PENDING, stripePaymentId: null },
+      where: {
+        uid,
+        status: ResourceBookingStatus.PENDING,
+        stripePaymentId: null,
+        // When the release comes from a Stripe session ending, it must be the
+        // order's CURRENT payment page that ended. Resuming a payment opens a
+        // new page and closes the old one on purpose; Stripe then reports the
+        // old one as expired, and releasing on that report deleted the order
+        // while the buyer was paying on the new page — money captured, no
+        // booking left (16 Sep 2026, first live payment). An order with no
+        // session recorded still releases, as it always did.
+        ...(options.onlyIfSessionId
+          ? { OR: [{ stripeSessionId: null }, { stripeSessionId: options.onlyIfSessionId }] }
+          : {}),
+      },
     });
     return result.count > 0;
   }

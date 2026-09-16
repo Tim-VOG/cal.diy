@@ -393,7 +393,10 @@ export async function POST(req: Request): Promise<Response> {
       const doomed = await orders.findByUid(orderUid);
       // Payment failed or the session expired: free every room in the order now
       // rather than leaving dead holds until something else clears them.
-      const released = await orders.cancelPending(orderUid);
+      // Only if THIS session is the order's current one. A session closed
+      // because the buyer reopened the payment page is not an abandoned
+      // checkout, and the buyer may be paying on its replacement right now.
+      const released = await orders.cancelPending(orderUid, { onlyIfSessionId: session.id });
       log.info(`Released order ${orderUid} after ${event.type} (released=${released}).`);
 
       // Only when this delivery is what released it. A replayed event, or one
