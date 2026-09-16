@@ -105,7 +105,22 @@ function Countdown({
  * showing what is being bought and what it costs, rather than two that could
  * disagree.
  */
-export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): JSX.Element | null {
+export interface PendingHold {
+  uid: string;
+  holdExpiresAt: string;
+  amountTotal: number;
+  currency: string;
+  rooms: number;
+}
+
+export default function ShortlistPanel({
+  eventDays,
+  initialPending = null,
+}: {
+  eventDays: string[];
+  /** The live hold as the server saw it when the page was rendered, so the clock shows at once. */
+  initialPending?: PendingHold | null;
+}): JSX.Element | null {
   const pathname = usePathname();
   const [selections, setSelections] = useState<RoomSelection[] | null>(null);
   const refresh = useCallback(() => setSelections(listSelections()), []);
@@ -128,6 +143,8 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
   }, [bookedDays.data, selections]);
   const pending = trpc.viewer.rooms.myPendingOrder.useQuery(undefined, {
     enabled: !hidden,
+    // Shown immediately; the query still refetches on mount to stay current.
+    initialData: initialPending,
     // The hold is a clock: a stale answer here is worse than none.
     refetchInterval: 60_000,
   });

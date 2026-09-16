@@ -1,5 +1,6 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { getNe26LegalPageRepository } from "@calcom/features/ne26-rooms/di/Ne26LegalPageRepository.container";
+import { getNe26OrderRepository } from "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container";
 import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
 import { deskSessionFromCookieHeader } from "@calcom/features/ne26-rooms/lib/deskSession";
 import { attentionCount } from "@calcom/features/ne26-rooms/lib/needsAttention";
@@ -44,6 +45,24 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
           .then((data) => attentionCount(data.attention))
           .catch(() => 0)
       : 0;
+  // The exhibitor's live hold, read with the page rather than fetched after it:
+  // returning from Stripe reloads everything, and the panel's clock used to
+  // appear seconds after the page's own hold banner, as if nothing were held.
+  const liveHold =
+    isLoggedIn && session?.user?.id
+      ? await getNe26OrderRepository()
+          .findLiveHoldForUser(session.user.id, new Date())
+          .catch(() => null)
+      : null;
+  const initialPending = liveHold?.holdExpiresAt
+    ? {
+        uid: liveHold.uid,
+        holdExpiresAt: liveHold.holdExpiresAt.toISOString(),
+        amountTotal: liveHold.amountTotal,
+        currency: liveHold.currency,
+        rooms: liveHold._count.bookings,
+      }
+    : null;
   const eventDays = isLoggedIn
     ? (await getNe26RoomSettingsRepository().get()).eventDays.map((d) => d.date)
     : [];
@@ -108,7 +127,7 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
           room and back. On a wide screen it parks to the right of the content;
           below that it pins to the bottom. Nothing at all when there is
           neither a shortlist nor an unpaid hold. */}
-      {isLoggedIn ? <ShortlistPanel eventDays={eventDays} /> : null}
+      {isLoggedIn ? <ShortlistPanel eventDays={eventDays} initialPending={initialPending} /> : null}
       <Footer pages={footerPages} />
     </div>
   );
