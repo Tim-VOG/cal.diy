@@ -1,9 +1,16 @@
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
+import { PDFDocument } from "pdf-lib";
 import { buildOrderIcs } from "../lib/ics";
 import { buildInvoiceModel, ROOM_VAT_RATE_BP } from "../lib/invoice";
 import type { InvoiceMeta } from "../lib/invoicePdf";
 import { renderInvoicePdf } from "../lib/invoicePdf";
 import { readInvoicePdf, saveInvoicePdf } from "../lib/invoiceStorage";
+import {
+  type BillingCorrection,
+  correctionColumns,
+  describeCorrection,
+  resolveBillTo,
+} from "../lib/billingCorrection";
 import { sendInvoiceEmail } from "../lib/mailer";
 import { formatSlotRange } from "../lib/teamNotification";
 import { resolveVatTreatment } from "../lib/vat";
@@ -52,14 +59,39 @@ export class InvoiceService {
     const profile = order.bookerUserId
       ? await this.deps.ne26BillingProfileRepository.findByUserId(order.bookerUserId)
       : null;
+    return resolveBillTo(order, profile);
+  }
+
+  /**
+   * Everything printed on an invoice or a credit note besides its lines. One
+   * builder for issuing and for re-rendering after a billing correction, so a
+   * corrected document differs from the original in its "Bill to" and nowhere
+   * else.
+   */
+  private documentMeta(
+    order: Order,
+    kind: "invoice" | "credit_note",
+    number: string,
+    issueDate: Date,
+    billTo: NonNullable<InvoiceMeta["billTo"]>
+  ): InvoiceMeta {
+    const first = order.bookings[0];
     return {
-      legalName: order.bookerLegalName || profile?.legalName || null,
-      addressLine1: order.bookerAddressLine1 || profile?.addressLine1 || null,
-      addressLine2: order.bookerAddressLine2 || profile?.addressLine2 || null,
-      postalCode: order.bookerPostalCode || profile?.postalCode || null,
-      city: order.bookerCity || profile?.city || null,
-      country: order.bookerCountry || profile?.country || null,
-      vatNumber: order.bookerVatNumber || profile?.vatNumber || null,
+      invoiceNumber: number,
+      ...(kind === "credit_note"
+        ? { kind: "credit_note" as const, relatedInvoiceNumber: order.invoiceNumber ?? undefined }
+        : // An order with no Stripe payment id was settled offline (bank transfer).
+          { paidViaStripe: Boolean(order.stripePaymentId) }),
+      issueDate,
+      bookerName: order.bookerName,
+      bookerEmail: order.bookerEmail,
+      orderRef: orderRef(order.orderNumber),
+      poNumber: order.bookerPoNumber,
+      internalReference: order.bookerInternalReference,
+      billTo,
+      roomName: this.roomLabel(order),
+      startUtc: first?.startTime ?? issueDate,
+      endUtc: first?.endTime ?? issueDate,
     };
   }
 
@@ -143,7 +175,6 @@ export class InvoiceService {
     // January 2027 was being stamped 2026.
     const issueDate = new Date();
     const billTo = await this.resolveBillTo(order);
-    const first = order.bookings[0];
 
     // The number, the PDF and the record of it are one operation. Drawn from a
     // sequence beforehand, a number was spent whether or not a document ever
@@ -154,21 +185,7 @@ export class InvoiceService {
       async (invoiceNumber, tx) => {
         const pdf = await renderInvoicePdf(
           model,
-          {
-            invoiceNumber,
-            issueDate,
-            // An order with no Stripe payment id was settled offline (bank transfer).
-            paidViaStripe: Boolean(order.stripePaymentId),
-            bookerName: order.bookerName,
-            bookerEmail: order.bookerEmail,
-            orderRef: orderRef(order.orderNumber),
-            poNumber: order.bookerPoNumber,
-            internalReference: order.bookerInternalReference,
-            billTo,
-            roomName: this.roomLabel(order),
-            startUtc: first?.startTime ?? issueDate,
-            endUtc: first?.endTime ?? issueDate,
-          },
+          this.documentMeta(order, "invoice", invoiceNumber, issueDate, billTo),
           issuer
         );
 
@@ -182,7 +199,8 @@ export class InvoiceService {
           invoiceNumber,
           `/rooms/invoice/${uid}`,
           { roomVatRate, zeroRated: vat.zeroRated, mention: vat.mention },
-          tx
+          tx,
+          issueDate
         );
         return { invoiceNumber, pdf };
       }
@@ -265,10 +283,6 @@ export class InvoiceService {
 
     const issueDate = new Date();
     const billTo = await this.resolveBillTo(order);
-    const first = order.bookings[0];
-    // Captured here because the guard above narrowed it; TypeScript does not
-    // carry that narrowing into the callback below.
-    const relatedInvoiceNumber = order.invoiceNumber;
 
     // Same shape as the invoice: number, cancellation, PDF and record commit
     // together or not at all. An order credited by a concurrent refund throws
@@ -280,27 +294,14 @@ export class InvoiceService {
           uid,
           creditNoteNumber,
           `/rooms/credit-note/${uid}`,
-          tx
+          tx,
+          issueDate
         );
         if (count === 0) throw new AlreadyCredited();
 
         const pdf = await renderInvoicePdf(
           model,
-          {
-            invoiceNumber: creditNoteNumber,
-            relatedInvoiceNumber,
-            kind: "credit_note",
-            issueDate,
-            bookerName: order.bookerName,
-            bookerEmail: order.bookerEmail,
-            orderRef: orderRef(order.orderNumber),
-            poNumber: order.bookerPoNumber,
-            internalReference: order.bookerInternalReference,
-            billTo,
-            roomName: this.roomLabel(order),
-            startUtc: first?.startTime ?? issueDate,
-            endUtc: first?.endTime ?? issueDate,
-          },
+          this.documentMeta(order, "credit_note", creditNoteNumber, issueDate, billTo),
           issuer
         );
         await saveInvoicePdf(uid, pdf, "credit_note");
@@ -325,6 +326,79 @@ export class InvoiceService {
       documentKind: "credit_note",
     });
     return true;
+  }
+
+  /**
+   * An admin's correction of who an order is billed to: company, contact and
+   * address. Nothing else on the order moves.
+   *
+   * Documents already issued are rendered again under the SAME number, with the
+   * SAME issue date, rooms, amounts and the VAT frozen when they were first
+   * issued — only the "Bill to" block reads differently. A document not issued
+   * yet simply picks the corrected block up when it is.
+   *
+   * Returns null when there is no such order.
+   */
+  async correctBilling(
+    uid: string,
+    input: BillingCorrection
+  ): Promise<{ changes: string; regenerated: ("invoice" | "credit_note")[] } | null> {
+    const columns = correctionColumns(input);
+    const before = await this.deps.ne26OrderRepository.correctBilling(uid, columns);
+    if (!before) return null;
+    const changes = describeCorrection(before, columns);
+
+    const order = await this.deps.ne26OrderRepository.findByUid(uid);
+    if (!order) return null;
+    const regenerated: ("invoice" | "credit_note")[] = [];
+    if (!order.invoiceNumber && !order.creditNoteNumber) return { changes, regenerated };
+
+    const issuer = await this.deps.invoiceSettingsRepository.get();
+    const billTo = await this.resolveBillTo(order);
+    const model = buildInvoiceModel(
+      {
+        currency: order.currency,
+        roomVatRate: order.roomVatRate ?? ROOM_VAT_RATE_BP,
+        rooms: this.invoiceRooms(order),
+      },
+      { zeroRated: order.vatZeroRated, mention: order.vatMention }
+    );
+
+    const documents = [
+      { kind: "invoice" as const, number: order.invoiceNumber, issuedAt: order.invoiceIssuedAt },
+      { kind: "credit_note" as const, number: order.creditNoteNumber, issuedAt: order.creditNoteIssuedAt },
+    ];
+    for (const doc of documents) {
+      if (!doc.number) continue;
+      const issueDate = doc.issuedAt ?? (await this.originalIssueDate(order, doc.kind));
+      const pdf = await renderInvoicePdf(
+        model,
+        this.documentMeta(order, doc.kind, doc.number, issueDate, billTo),
+        issuer
+      );
+      await saveInvoicePdf(uid, pdf, doc.kind);
+      if (!doc.issuedAt) await this.deps.ne26OrderRepository.backfillIssuedAt(uid, doc.kind, issueDate);
+      regenerated.push(doc.kind);
+    }
+    return { changes, regenerated };
+  }
+
+  /**
+   * The date a document was first issued, for one issued before that date was
+   * recorded: read from the stored PDF, which was created at that moment. The
+   * payment date is the last resort — invoices are issued on payment.
+   */
+  private async originalIssueDate(order: Order, kind: "invoice" | "credit_note"): Promise<Date> {
+    const stored = await readInvoicePdf(order.uid, kind);
+    if (stored) {
+      try {
+        const created = (await PDFDocument.load(stored.toString("base64"), { updateMetadata: false })).getCreationDate();
+        if (created) return created;
+      } catch {
+        // Unreadable: fall through.
+      }
+    }
+    return order.paidAt ?? order.createdAt;
   }
 
   /** Credit from a Stripe refund webhook, resolving the order by payment intent. */

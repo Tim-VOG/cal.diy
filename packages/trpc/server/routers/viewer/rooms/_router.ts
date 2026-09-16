@@ -3,6 +3,7 @@ import { z } from "zod";
 import authedProcedure, { authedAdminProcedure } from "../../../procedures/authedProcedure";
 import { router } from "../../../trpc";
 import { ZBookingUidInputSchema } from "./bookingUid.schema";
+import { ZCorrectBillingInputSchema } from "./correctBilling.schema";
 import { ZCreateBlockInputSchema } from "./createBlock.schema";
 import { ZCreateBookingInputSchema, ZCreateOrderInputSchema } from "./createBooking.schema";
 import {
@@ -540,6 +541,35 @@ export const roomsRouter = router({
   }),
 
   // Admin-only: re-send an already-issued invoice email to the booker.
+  // Admin-only: correct who an order is billed to (company, contact, address).
+  // Issued documents are re-rendered under the same number and date; nothing
+  // else on the order changes. Logged with what it was and what it became.
+  correctBilling: ne26AdminProcedure.input(ZCorrectBillingInputSchema).mutation(async ({ ctx, input }) => {
+    const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
+    const { uid, emailBuyer, ...correction } = input;
+    const result = await getInvoiceService().correctBilling(uid, correction);
+    if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "No such order." });
+
+    const { getNe26StaffRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26StaffRepository.container"
+    );
+    await getNe26StaffRepository().recordAction({
+      actorUserId: ctx.user.id,
+      actorEmail: ctx.user.email,
+      actorRole: "ADMIN",
+      action: "order.billing.correct",
+      targetType: "order",
+      targetId: uid,
+      detail: result.changes || "Saved with no change",
+    });
+
+    let emailed = false;
+    if (emailBuyer && result.regenerated.includes("invoice")) {
+      emailed = await getInvoiceService().resendInvoice(uid);
+    }
+    return { regenerated: result.regenerated, changed: Boolean(result.changes), emailed };
+  }),
+
   resendInvoice: ne26AdminProcedure.input(ZBookingUidInputSchema).mutation(async ({ input }) => {
     const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
     const sent = await getInvoiceService().resendInvoice(input.uid);

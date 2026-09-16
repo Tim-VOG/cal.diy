@@ -1,5 +1,7 @@
 import { prisma } from "@calcom/prisma";
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
+import { inflateSync } from "node:zlib";
+import { PDFArray, PDFDocument, type PDFRawStream, type PDFRef } from "pdf-lib";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { getInvoiceService } from "../di/InvoiceService.container";
 import { getNe26OrderRepository } from "../di/Ne26OrderRepository.container";
@@ -328,6 +330,137 @@ describe("InvoiceService.issueInvoice", () => {
           data: { nonEuExemptEnabled: false },
         });
       }
+    });
+  });
+
+  // An admin correcting who an order is billed to. The one promise: only the
+  // "Bill to" moves. Number, date, rooms, amounts, VAT and status do not.
+  describe("correctBilling", () => {
+    const CORRECTION = {
+      companyName: "ACME Defence SA",
+      firstName: "Jane",
+      lastName: "Doe",
+      addressLine1: "Rue Neuve 12",
+      addressLine2: "",
+      postalCode: "1000",
+      city: "Brussels",
+      region: "Brussels-Capital",
+    };
+    // pdf-lib writes standard-font text as hex strings inside deflated page streams.
+    const hex = (text: string) => Buffer.from(text, "latin1").toString("hex").toUpperCase();
+    const pdfText = async (bytes: Buffer | null): Promise<string> => {
+      const doc = await PDFDocument.load(bytes!.toString("base64"));
+      return doc
+        .getPages()
+        .flatMap((page) => {
+          const contents = page.node.Contents();
+          const streams = contents instanceof PDFArray ? contents.asArray() : [contents];
+          return streams.map((ref) => {
+            const stream = doc.context.lookup(ref as PDFRef) as PDFRawStream;
+            return inflateSync(stream.getContents()).toString("latin1");
+          });
+        })
+        .join("\n")
+        .toUpperCase();
+    };
+
+    it("re-renders the invoice under the same number and date, and changes nothing else", async () => {
+      const uid = await confirmedOrder();
+      await service.issueInvoice(uid);
+      const before = await orders.findByUid(uid);
+      const bookingsBefore = await prisma.resourceBooking.findMany({
+        where: { orderUid: uid },
+        select: { uid: true, startTime: true, endTime: true, amountTotal: true, status: true },
+      });
+      vi.clearAllMocks();
+
+      const result = await service.correctBilling(uid, CORRECTION);
+
+      expect(result?.regenerated).toEqual(["invoice"]);
+      expect(result?.changes).toContain("Company: — → ACME Defence SA");
+      const after = await orders.findByUid(uid);
+      expect(after).toMatchObject({
+        invoiceNumber: before?.invoiceNumber,
+        invoiceIssuedAt: before?.invoiceIssuedAt,
+        orderNumber: before?.orderNumber,
+        amountTotal: before?.amountTotal,
+        status: before?.status,
+        stripePaymentId: before?.stripePaymentId,
+        roomVatRate: before?.roomVatRate,
+        vatZeroRated: before?.vatZeroRated,
+        bookerEmail: before?.bookerEmail,
+        bookerCountry: before?.bookerCountry,
+        bookerVatNumber: before?.bookerVatNumber,
+        bookerName: "Jane Doe",
+        bookerLegalName: "ACME Defence SA",
+        bookerRegion: "Brussels-Capital",
+      });
+      expect(
+        await prisma.resourceBooking.findMany({
+          where: { orderUid: uid },
+          select: { uid: true, startTime: true, endTime: true, amountTotal: true, status: true },
+        })
+      ).toEqual(bookingsBefore);
+
+      const pdf = await pdfText(await readInvoicePdf(uid));
+      expect(pdf).toContain(hex("ACME Defence SA"));
+      expect(pdf).toContain(hex(before!.invoiceNumber!));
+      // A correction never mails anyone by itself.
+      expect(sendInvoiceEmail).not.toHaveBeenCalled();
+    });
+
+    it("keeps a cleared field cleared instead of refilling it from the profile", async () => {
+      await prisma.ne26BillingProfile.upsert({
+        where: { userId },
+        create: { userId, legalName: "Profile Co", addressLine2: "Floor 3", country: "BE" },
+        update: { legalName: "Profile Co", addressLine2: "Floor 3" },
+      });
+      const uid = await confirmedOrder();
+      await service.issueInvoice(uid);
+      expect(await pdfText(await readInvoicePdf(uid))).toContain(hex("Floor 3"));
+
+      await service.correctBilling(uid, CORRECTION);
+
+      expect(await pdfText(await readInvoicePdf(uid))).not.toContain(hex("Floor 3"));
+      await prisma.ne26BillingProfile.delete({ where: { userId } });
+    });
+
+    it("re-renders a credit note too, and only saves the details when nothing is issued yet", async () => {
+      const credited = await confirmedOrder();
+      await service.issueInvoice(credited);
+      await service.issueCreditNote(credited);
+      const before = await orders.findByUid(credited);
+      const result = await service.correctBilling(credited, CORRECTION);
+      expect(result?.regenerated).toEqual(["invoice", "credit_note"]);
+      const after = await orders.findByUid(credited);
+      expect(after?.creditNoteNumber).toBe(before?.creditNoteNumber);
+      expect(after?.creditNoteIssuedAt).toEqual(before?.creditNoteIssuedAt);
+      expect(after?.status).toBe(before?.status);
+      expect(await pdfText(await readInvoicePdf(credited, "credit_note"))).toContain(hex("ACME Defence SA"));
+
+      const notInvoiced = await confirmedOrder([
+        { id: roomB, startUtc: "2026-11-19T07:00:00.000Z", price: 35000 },
+      ]);
+      expect((await service.correctBilling(notInvoiced, CORRECTION))?.regenerated).toEqual([]);
+      expect(await readInvoicePdf(notInvoiced)).toBeNull();
+    });
+
+    it("recovers the issue date of an invoice issued before dates were recorded, from its PDF", async () => {
+      const uid = await confirmedOrder();
+      const issuedAround = Date.now();
+      await service.issueInvoice(uid);
+      await prisma.ne26Order.update({ where: { uid }, data: { invoiceIssuedAt: null } });
+
+      await service.correctBilling(uid, CORRECTION);
+
+      const recovered = (await orders.findByUid(uid))?.invoiceIssuedAt;
+      expect(recovered).toBeInstanceOf(Date);
+      // PDF dates are to the second.
+      expect(Math.abs(recovered!.getTime() - issuedAround)).toBeLessThan(5000);
+    });
+
+    it("returns null for an order that does not exist", async () => {
+      expect(await service.correctBilling("00000000-0000-0000-0000-000000000000", CORRECTION)).toBeNull();
     });
   });
 });

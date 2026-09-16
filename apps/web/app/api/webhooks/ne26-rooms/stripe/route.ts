@@ -366,6 +366,7 @@ export async function POST(req: Request): Promise<Response> {
         addressLine2: details?.address?.line2 ?? null,
         postalCode: details?.address?.postal_code ?? null,
         city: details?.address?.city ?? null,
+        region: details?.address?.state ?? null,
         poNumber: customField("poNumber"),
         internalReference: customField("internalReference"),
       });

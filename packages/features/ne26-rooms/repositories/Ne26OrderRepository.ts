@@ -223,6 +223,8 @@ export class Ne26OrderRepository {
         bookerAddressLine2: true,
         bookerPostalCode: true,
         bookerCity: true,
+        bookerRegion: true,
+        billingCorrectedAt: true,
         bookerPoNumber: true,
         bookerInternalReference: true,
         amountTotal: true,
@@ -234,8 +236,10 @@ export class Ne26OrderRepository {
         paidAt: true,
         invoiceNumber: true,
         invoicePdfUrl: true,
+        invoiceIssuedAt: true,
         creditNoteNumber: true,
         creditNotePdfUrl: true,
+        creditNoteIssuedAt: true,
         roomVatRate: true,
         vatZeroRated: true,
         vatMention: true,
@@ -553,6 +557,7 @@ export class Ne26OrderRepository {
       addressLine2?: string | null;
       postalCode?: string | null;
       city?: string | null;
+      region?: string | null;
       poNumber?: string | null;
       internalReference?: string | null;
     }
@@ -570,6 +575,7 @@ export class Ne26OrderRepository {
           ...(data.addressLine2?.trim() ? { bookerAddressLine2: data.addressLine2 } : {}),
           ...(data.postalCode?.trim() ? { bookerPostalCode: data.postalCode } : {}),
           ...(data.city?.trim() ? { bookerCity: data.city } : {}),
+          ...(data.region?.trim() ? { bookerRegion: data.region } : {}),
           // Asked for at Checkout rather than kept on a profile: the same
           // company can have a different purchase order per booking. Like the
           // address, they change no amount — they are printed so the buyer's
@@ -615,13 +621,15 @@ export class Ne26OrderRepository {
     invoiceNumber: string,
     invoicePdfUrl: string,
     vat: { roomVatRate: number; zeroRated: boolean; mention: string | null },
-    client: { ne26Order: PrismaClient["ne26Order"] } = this.prismaClient
+    client: { ne26Order: PrismaClient["ne26Order"] } = this.prismaClient,
+    issuedAt: Date = new Date()
   ): Promise<void> {
     await client.ne26Order.update({
       where: { uid },
       data: {
         invoiceNumber,
         invoicePdfUrl,
+        invoiceIssuedAt: issuedAt,
         roomVatRate: vat.roomVatRate,
         vatZeroRated: vat.zeroRated,
         vatMention: vat.mention,
@@ -690,7 +698,8 @@ export class Ne26OrderRepository {
     // number, the cancellation and the freed rooms commit or fail together.
     // Prisma has no nested interactive transactions, so it must be passed in
     // rather than opened again here.
-    outer?: TransactionClient
+    outer?: TransactionClient,
+    issuedAt: Date = new Date()
   ): Promise<number> {
     const run = async (tx: TransactionClient) => {
       const result = await tx.ne26Order.updateMany({
@@ -700,7 +709,12 @@ export class Ne26OrderRepository {
           invoiceNumber: { not: null },
           creditNoteNumber: null,
         },
-        data: { creditNoteNumber, creditNotePdfUrl, status: ResourceBookingStatus.CANCELLED },
+        data: {
+          creditNoteNumber,
+          creditNotePdfUrl,
+          creditNoteIssuedAt: issuedAt,
+          status: ResourceBookingStatus.CANCELLED,
+        },
       });
       if (result.count === 0) return 0;
 
@@ -935,6 +949,56 @@ export class Ne26OrderRepository {
    * that does not exist for an order whose rooms are gone: the case someone
    * most needs to open.
    */
+  /**
+   * Write an admin's correction of the billing block — the contact, company and
+   * address, and nothing else. The contact name is copied onto the order's
+   * rooms, which is where the admin lists read it from. Returns what was there
+   * before, for the audit trail, or null when there is no such order.
+   */
+  async correctBilling(
+    uid: string,
+    columns: {
+      bookerName: string;
+      bookerLegalName: string | null;
+      bookerAddressLine1: string | null;
+      bookerAddressLine2: string | null;
+      bookerPostalCode: string | null;
+      bookerCity: string | null;
+      bookerRegion: string | null;
+    },
+    now: Date = new Date()
+  ) {
+    return this.prismaClient.$transaction(async (tx) => {
+      const before = await tx.ne26Order.findUnique({
+        where: { uid },
+        select: {
+          bookerName: true,
+          bookerLegalName: true,
+          bookerAddressLine1: true,
+          bookerAddressLine2: true,
+          bookerPostalCode: true,
+          bookerCity: true,
+          bookerRegion: true,
+        },
+      });
+      if (!before) return null;
+      await tx.ne26Order.update({ where: { uid }, data: { ...columns, billingCorrectedAt: now } });
+      await tx.resourceBooking.updateMany({
+        where: { orderUid: uid },
+        data: { bookerName: columns.bookerName },
+      });
+      return before;
+    });
+  }
+
+  /** Record a document date that was only known from the stored PDF. */
+  async backfillIssuedAt(uid: string, kind: "invoice" | "credit_note", issuedAt: Date): Promise<void> {
+    await this.prismaClient.ne26Order.updateMany({
+      where: kind === "invoice" ? { uid, invoiceIssuedAt: null } : { uid, creditNoteIssuedAt: null },
+      data: kind === "invoice" ? { invoiceIssuedAt: issuedAt } : { creditNoteIssuedAt: issuedAt },
+    });
+  }
+
   findForAdmin(uid: string) {
     return this.prismaClient.ne26Order.findUnique({
       where: { uid },

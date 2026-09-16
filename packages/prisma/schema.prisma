@@ -3243,6 +3243,8 @@ model Ne26Order {
   bookerAddressLine2      String?
   bookerPostalCode        String?
   bookerCity              String?
+  // NE26: state / province / region, when there is one.
+  bookerRegion            String?
   bookerPoNumber          String?
   bookerInternalReference String?
   // Sum of every room and add-on in the order, excl. VAT.
@@ -3270,6 +3272,14 @@ model Ne26Order {
   invoicePdfUrl           String?
   creditNoteNumber        String?               @unique
   creditNotePdfUrl        String?
+  // NE26: when each document was issued. Kept so a document re-rendered after a
+  // billing correction keeps the date it was first issued on.
+  invoiceIssuedAt         DateTime?
+  creditNoteIssuedAt      DateTime?
+  // NE26: set when an admin corrected the billing block. From then on the order
+  // alone is the invoice's "Bill to": a field cleared on purpose must not be
+  // filled back in from the buyer's saved profile.
+  billingCorrectedAt      DateTime?
   // VAT frozen when the invoice is issued, so a later settings change can never
   // make the credit note contradict the document already sent.
   roomVatRate             Int?

@@ -1,5 +1,7 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
+import { getNe26BillingProfileRepository } from "@calcom/features/ne26-rooms/di/Ne26BillingProfileRepository.container";
 import { getNe26OrderRepository } from "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container";
+import { resolveBillTo, splitContactName } from "@calcom/features/ne26-rooms/lib/billingCorrection";
 import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
 import { buildEventSchedule, SLOT_GRANULARITY_MS } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { availableOrderActions } from "@calcom/features/ne26-rooms/lib/orderActions";
@@ -15,6 +17,7 @@ import BookingActions from "../../[uid]/BookingActions";
 import { displayStatus, fmtDay, fmtMoment, fmtMoney, fmtTime } from "../../format";
 import { requireNotDeskMode } from "../../requireNotDeskMode";
 import { HATCH, StatusPill } from "../../ui";
+import BillToEditor from "./BillToEditor";
 import HoldCountdownText from "./HoldCountdownText";
 
 export const metadata: Metadata = {
@@ -88,13 +91,13 @@ export default async function AdminOrderPage({
     paid,
   };
   const can = availableOrderActions(state);
-  const billTo = [
-    order.bookerLegalName,
-    order.bookerAddressLine1,
-    order.bookerAddressLine2,
-    [order.bookerPostalCode, order.bookerCity].filter(Boolean).join(" "),
-    order.bookerCountry,
-  ].filter(Boolean);
+  // What the documents print, profile fallback included — the form starts from
+  // that, not from the bare order columns.
+  const profile = order.bookerUserId
+    ? await getNe26BillingProfileRepository().findByUserId(order.bookerUserId)
+    : null;
+  const billTo = resolveBillTo(order, profile);
+  const contact = splitContactName(order.bookerName);
 
   // The one thing to do, if there is one. Ordered like the dashboard's list.
   type Next = { tone: "critical" | "warning" | "info"; title: string; body: ReactNode };
@@ -340,15 +343,26 @@ export default async function AdminOrderPage({
                 ) : null}
               </dl>
             </Section>
-            <Section title="Bill to">
-              {billTo.length === 0 ? (
-                <p className="text-gray-400 text-sm">Nothing was collected at checkout.</p>
-              ) : (
-                <p className="whitespace-pre-line text-gray-900 text-sm leading-relaxed">
-                  {billTo.join("\n")}
-                </p>
-              )}
-            </Section>
+            <BillToEditor
+              uid={order.uid}
+              values={{
+                companyName: billTo.legalName ?? "",
+                firstName: contact.firstName,
+                lastName: contact.lastName,
+                addressLine1: billTo.addressLine1 ?? "",
+                addressLine2: billTo.addressLine2 ?? "",
+                postalCode: billTo.postalCode ?? "",
+                city: billTo.city ?? "",
+                region: billTo.region ?? "",
+              }}
+              country={billTo.country}
+              vatNumber={billTo.vatNumber}
+              hasInvoice={Boolean(order.invoiceNumber)}
+              hasCreditNote={Boolean(order.creditNoteNumber)}
+              correctedAt={
+                order.billingCorrectedAt ? fmtMoment(order.billingCorrectedAt.toISOString()) : null
+              }
+            />
           </div>
         </div>
 

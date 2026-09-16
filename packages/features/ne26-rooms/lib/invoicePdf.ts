@@ -33,6 +33,7 @@ export interface InvoiceMeta {
     addressLine2?: string | null;
     postalCode?: string | null;
     city?: string | null;
+    region?: string | null;
     country?: string | null;
     vatNumber?: string | null;
   };
@@ -211,6 +212,7 @@ export async function renderInvoicePdf(
     b?.legalName && meta.bookerName !== b.legalName ? meta.bookerName : "",
     [b?.addressLine1, b?.addressLine2].filter(Boolean).join(", "),
     [b?.postalCode, b?.city].filter(Boolean).join(" "),
+    b?.region || "",
     b?.country || "",
     b?.vatNumber ? `VAT ${b.vatNumber}` : "",
     meta.bookerEmail,
