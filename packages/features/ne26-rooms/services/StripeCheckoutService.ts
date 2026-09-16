@@ -59,7 +59,6 @@ export interface CreateCheckoutSessionInput {
    * buyer can never pay against a hold that has already been released.
    */
   holdExpiresAt: Date;
-
 }
 
 /**
@@ -143,8 +142,16 @@ export class StripeCheckoutService {
     }
 
     if (input.customerId) {
-      const updated = await this.stripe.customers.update(input.customerId, params);
-      return updated.id;
+      try {
+        const updated = await this.stripe.customers.update(input.customerId, params);
+        return updated.id;
+      } catch (e) {
+        // A Customer this Stripe account does not know — created in test mode
+        // before the switch to live keys, or deleted from the dashboard. It is a
+        // mirror, not a record: make a new one rather than refusing the payment.
+        // That refusal is exactly what the first live checkout hit.
+        if ((e as { code?: string })?.code !== "resource_missing") throw e;
+      }
     }
     const created = await this.stripe.customers.create(params);
     return created.id;
