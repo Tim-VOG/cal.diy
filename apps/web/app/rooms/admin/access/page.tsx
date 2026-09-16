@@ -3,8 +3,8 @@ import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
-import AccessView from "./AccessView";
 import { requireNotDeskMode } from "../requireNotDeskMode";
+import AccessView from "./AccessView";
 
 export const metadata: Metadata = {
   title: "Access · Rooms admin · NATO Edge 26",

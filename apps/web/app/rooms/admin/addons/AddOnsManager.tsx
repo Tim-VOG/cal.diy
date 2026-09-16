@@ -1,8 +1,8 @@
 "use client";
 
 import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
-import { List } from "lucide-react";
 import { trpc } from "@calcom/trpc/react";
+import { List } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -65,11 +65,7 @@ export default function AddOnsManager({ addOns }: { addOns: AddOnRow[] }): JSX.E
   const [newPrice, setNewPrice] = useState(0);
   const [newVat, setNewVat] = useState(21);
 
-  function setField(
-    id: number,
-    field: keyof AddOnRow,
-    value: number | boolean | string | null
-  ): void {
+  function setField(id: number, field: keyof AddOnRow, value: number | boolean | string | null): void {
     setDraft((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
   }
 
@@ -271,11 +267,7 @@ export default function AddOnsManager({ addOns }: { addOns: AddOnRow[] }): JSX.E
               <button
                 type="button"
                 onClick={() =>
-                  setField(
-                    r.id,
-                    "description",
-                    `${r.description.replace(/\s*$/, "")}\n- `.replace(/^\n/, "")
-                  )
+                  setField(r.id, "description", `${r.description.replace(/\s*$/, "")}\n- `.replace(/^\n/, ""))
                 }
                 className="rounded-md border border-gray-200 px-2 py-1 font-medium text-[#000643] text-xs transition hover:border-[#000643]">
                 <List className="mr-1 inline h-3 w-3" aria-hidden />
@@ -285,8 +277,8 @@ export default function AddOnsManager({ addOns }: { addOns: AddOnRow[] }): JSX.E
                   anything richer would mean storing HTML from the admin and
                   rendering it on the public page. */}
               <p className="text-gray-400 text-xs">
-                A line starting with <code className="text-gray-500">-</code> becomes a bullet.
-                Everything else is a paragraph. Blank lines are ignored.
+                A line starting with <code className="text-gray-500">-</code> becomes a bullet. Everything
+                else is a paragraph. Blank lines are ignored.
               </p>
             </div>
 

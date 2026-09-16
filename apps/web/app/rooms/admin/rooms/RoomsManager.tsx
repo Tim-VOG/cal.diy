@@ -1,10 +1,10 @@
 "use client";
 
 import type { EventDayDefinition } from "@calcom/features/ne26-rooms/lib/eventSchedule";
+import type { RoomIconName } from "@calcom/features/ne26-rooms/lib/roomIcons";
 import { trpc } from "@calcom/trpc/react";
 import { CalendarClock, Check, EyeOff, Ruler, Users } from "lucide-react";
 import { useState } from "react";
-import type { RoomIconName } from "@calcom/features/ne26-rooms/lib/roomIcons";
 import { ROOM_ICON_CHOICE_GROUPS, roomIconFor } from "../../roomIcon";
 import EventDaysForm from "./EventDaysForm";
 import GalleryStrip from "./GalleryStrip";
@@ -60,8 +60,7 @@ function IconPicker({
 }): JSX.Element {
   const [open, setOpen] = useState(false);
   const Current = roomIconFor(category, value || null);
-  const cell =
-    "flex aspect-square items-center justify-center rounded-lg border transition";
+  const cell = "flex aspect-square items-center justify-center rounded-lg border transition";
   const chosen = "border-[#000643] bg-[#000643]/5 text-[#000643]";
   const unchosen = "border-gray-200 text-gray-400 hover:border-[#000643]/40 hover:text-[#000643]";
 
@@ -76,9 +75,7 @@ function IconPicker({
         <span className="min-w-0 flex-1 truncate text-gray-600 text-xs">
           {value === "" ? "Default for this category" : value}
         </span>
-        <span className="shrink-0 font-medium text-[#000643] text-xs">
-          {open ? "Close" : "Change"}
-        </span>
+        <span className="shrink-0 font-medium text-[#000643] text-xs">{open ? "Close" : "Change"}</span>
       </button>
 
       {open ? (
@@ -94,9 +91,7 @@ function IconPicker({
           </button>
           {ROOM_ICON_CHOICE_GROUPS.map((group) => (
             <div key={group.label} className="mb-2 last:mb-0">
-              <p className="mb-1 font-medium text-gray-400 text-xs uppercase tracking-wide">
-                {group.label}
-              </p>
+              <p className="mb-1 font-medium text-gray-400 text-xs uppercase tracking-wide">{group.label}</p>
               <div className="grid grid-cols-6 gap-1 @md:grid-cols-8">
                 {group.icons.map(({ name, Icon }) => (
                   <button
@@ -271,8 +266,8 @@ function RoomRowCard({
       </div>
       {priceLooksWrong ? (
         <p className="mt-1.5 rounded-md bg-amber-50 px-2 py-1.5 text-amber-800 text-xs leading-snug">
-          The 2h price sits outside the 1h and 3h prices. Check it before saving — a room went on
-          sale at €650,540 this way.
+          The 2h price sits outside the 1h and 3h prices. Check it before saving — a room went on sale at
+          €650,540 this way.
         </p>
       ) : (
         <p className="mt-1 text-gray-400 text-xs">Excl. VAT. The discount shown is worked out.</p>

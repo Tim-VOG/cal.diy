@@ -5,9 +5,9 @@ import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import { requireNotDeskMode } from "../requireNotDeskMode";
 import InvoiceSettingsForm from "./InvoiceSettingsForm";
 import LandingContentForm from "./LandingContentForm";
-import { requireNotDeskMode } from "../requireNotDeskMode";
 
 export const metadata: Metadata = {
   title: "Settings · NATO Edge 26",

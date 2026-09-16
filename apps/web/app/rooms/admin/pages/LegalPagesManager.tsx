@@ -1,9 +1,9 @@
 "use client";
 
 import { trpc } from "@calcom/trpc/react";
-import MarkdownField from "./MarkdownField";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import MarkdownField from "./MarkdownField";
 
 export interface LegalPageRow {
   id: number;

@@ -118,7 +118,7 @@ export function needsAttention(input: AttentionInput): AttentionItem[] {
   }
 
   const runningHolds: { name: string; expiresAt: string }[] = [];
-  for (const [uid, rooms] of orders) {
+  for (const [uid, rooms] of Array.from(orders.entries())) {
     const first = rooms[0];
     const total = rooms.reduce((sum, r) => sum + r.amountTotal, 0);
     const what = rooms.length === 1 ? first.roomName : `${rooms.length} rooms`;

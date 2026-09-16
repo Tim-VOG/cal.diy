@@ -145,7 +145,11 @@ export default function MarkdownField({
         aria-label={expanded ? "Close full screen" : "Edit full screen"}
         onClick={() => setExpanded((v) => !v)}
         className="ml-auto rounded p-1.5 text-gray-600 transition hover:bg-white hover:text-[#000643]">
-        {expanded ? <Minimize2 className="h-4 w-4" aria-hidden /> : <Maximize2 className="h-4 w-4" aria-hidden />}
+        {expanded ? (
+          <Minimize2 className="h-4 w-4" aria-hidden />
+        ) : (
+          <Maximize2 className="h-4 w-4" aria-hidden />
+        )}
       </button>
     </div>
   );

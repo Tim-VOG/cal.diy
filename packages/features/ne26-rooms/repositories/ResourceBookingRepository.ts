@@ -570,6 +570,9 @@ export class ResourceBookingRepository {
         invoiceNumber: true,
         creditNoteNumber: true,
         createdAt: true,
+        // When a live hold lapses, so the dashboard can count it down and warn
+        // before the room goes back on sale.
+        holdExpiresAt: true,
         // The invoice lives on the order, not the room: one payment can cover
         // several rooms and issues one document. Projected here so a booking row
         // can still say which invoice it belongs to.

@@ -1,14 +1,14 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
 import { getResourceRepository } from "@calcom/features/ne26-rooms/di/ResourceRepository.container";
-import { normalizeGalleryImages } from "@calcom/features/ne26-rooms/lib/roomImages";
 import { isRoomIconName } from "@calcom/features/ne26-rooms/lib/roomIcons";
+import { normalizeGalleryImages } from "@calcom/features/ne26-rooms/lib/roomImages";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
-import RoomsManager from "./RoomsManager";
 import { requireNotDeskMode } from "../requireNotDeskMode";
+import RoomsManager from "./RoomsManager";
 
 export const metadata: Metadata = {
   title: "Manage rooms · NATO Edge 26 admin",

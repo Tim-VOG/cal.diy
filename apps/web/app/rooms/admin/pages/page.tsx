@@ -4,8 +4,8 @@ import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
-import LegalPagesManager from "./LegalPagesManager";
 import { requireNotDeskMode } from "../requireNotDeskMode";
+import LegalPagesManager from "./LegalPagesManager";
 
 export const metadata: Metadata = {
   title: "Pages · NATO Edge 26 admin",

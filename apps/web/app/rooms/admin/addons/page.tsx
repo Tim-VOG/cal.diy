@@ -4,8 +4,8 @@ import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
-import AddOnsManager from "./AddOnsManager";
 import { requireNotDeskMode } from "../requireNotDeskMode";
+import AddOnsManager from "./AddOnsManager";
 
 export const metadata: Metadata = {
   title: "Manage add-ons · NATO Edge 26 admin",

@@ -1,11 +1,11 @@
 "use client";
 
 import type { EventDayDefinition } from "@calcom/features/ne26-rooms/lib/eventSchedule";
+import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { trpc } from "@calcom/trpc/react";
 import { CalendarClock, Check, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 
 const TZ = EVENT_TIME_ZONE;
 
@@ -117,20 +117,17 @@ export default function EventDaysForm({
             <option value={60}>1 hour</option>
           </select>
           <span className="mt-1 block text-gray-500 text-xs">
-            Held after every booking so the next one cannot start inside it. This takes the time off sale,
-            so an hour of cleaning across nine rooms is real inventory.
+            Held after every booking so the next one cannot start inside it. This takes the time off sale, so
+            an hour of cleaning across nine rooms is real inventory.
           </span>
         </label>
-
       </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <button
           type="button"
           disabled={save.isPending || Boolean(invalid)}
-          onClick={() =>
-            save.mutate({ eventDays: days, bufferMinutes: buffer })
-          }
+          onClick={() => save.mutate({ eventDays: days, bufferMinutes: buffer })}
           className="rounded-lg bg-[#000643] px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90 disabled:opacity-40">
           {save.isPending ? "Saving…" : "Save"}
         </button>

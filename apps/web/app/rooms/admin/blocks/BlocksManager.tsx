@@ -3,13 +3,13 @@
 import {
   buildEventSchedule,
   type DurationHours,
+  EVENT_TIME_ZONE,
   type EventDayDefinition,
   SELECTABLE_DURATIONS,
 } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { trpc } from "@calcom/trpc/react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 
 const TZ = EVENT_TIME_ZONE;
 
@@ -87,97 +87,97 @@ export default function BlocksManager({
       </p>
 
       <div className="mt-5 grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(320px,26rem)_1fr]">
-      <div className="rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="font-semibold text-gray-500 text-xs uppercase tracking-wide">New block</h2>
-        <div className="mt-3 flex flex-wrap items-end gap-3">
-          <label className="text-sm">
-            <span className="block font-medium text-gray-700">Room</span>
-            <select className={`${inputClass} mt-1`} value={slug} onChange={(e) => setSlug(e.target.value)}>
-              {rooms.map((r) => (
-                <option key={r.slug} value={r.slug}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="block font-medium text-gray-700">Start (Istanbul)</span>
-            <select
-              className={`${inputClass} mt-1`}
-              value={startUtc}
-              onChange={(e) => setStartUtc(e.target.value)}>
-              {startOptions.map((o) => (
-                <option key={o.iso} value={o.iso}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="block font-medium text-gray-700">Duration</span>
-            <select
-              className={`${inputClass} mt-1`}
-              value={durationHours}
-              onChange={(e) => setDurationHours(Number(e.target.value) as DurationHours)}>
-              {SELECTABLE_DURATIONS.map((d) => (
-                <option key={d} value={d}>
-                  {d}h
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            disabled={create.isPending || !slug || !startUtc}
-            onClick={() => create.mutate({ slug, startUtc, durationHours })}
-            className="rounded-lg bg-[#000643] px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90 disabled:opacity-40">
-            {create.isPending ? "Blocking…" : "Block slot"}
-          </button>
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="font-semibold text-gray-500 text-xs uppercase tracking-wide">New block</h2>
+          <div className="mt-3 flex flex-wrap items-end gap-3">
+            <label className="text-sm">
+              <span className="block font-medium text-gray-700">Room</span>
+              <select className={`${inputClass} mt-1`} value={slug} onChange={(e) => setSlug(e.target.value)}>
+                {rooms.map((r) => (
+                  <option key={r.slug} value={r.slug}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm">
+              <span className="block font-medium text-gray-700">Start (Istanbul)</span>
+              <select
+                className={`${inputClass} mt-1`}
+                value={startUtc}
+                onChange={(e) => setStartUtc(e.target.value)}>
+                {startOptions.map((o) => (
+                  <option key={o.iso} value={o.iso}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm">
+              <span className="block font-medium text-gray-700">Duration</span>
+              <select
+                className={`${inputClass} mt-1`}
+                value={durationHours}
+                onChange={(e) => setDurationHours(Number(e.target.value) as DurationHours)}>
+                {SELECTABLE_DURATIONS.map((d) => (
+                  <option key={d} value={d}>
+                    {d}h
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              disabled={create.isPending || !slug || !startUtc}
+              onClick={() => create.mutate({ slug, startUtc, durationHours })}
+              className="rounded-lg bg-[#000643] px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90 disabled:opacity-40">
+              {create.isPending ? "Blocking…" : "Block slot"}
+            </button>
+          </div>
+          {create.error ? <p className="mt-2 text-red-600 text-sm">{create.error.message}</p> : null}
         </div>
-        {create.error ? <p className="mt-2 text-red-600 text-sm">{create.error.message}</p> : null}
-      </div>
 
-      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-        <table className="w-full text-left text-sm">
-          <thead className="border-gray-100 border-b bg-gray-50 text-gray-500 text-xs uppercase">
-            <tr>
-              <th className="px-3 py-2">Room</th>
-              <th className="px-3 py-2">When (Istanbul)</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {blocks.length === 0 ? (
+        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+          <table className="w-full text-left text-sm">
+            <thead className="border-gray-100 border-b bg-gray-50 text-gray-500 text-xs uppercase">
               <tr>
-                <td className="px-3 py-6 text-center text-gray-400" colSpan={3}>
-                  No blocked slots
-                </td>
+                <th className="px-3 py-2">Room</th>
+                <th className="px-3 py-2">When (Istanbul)</th>
+                <th className="px-3 py-2" />
               </tr>
-            ) : (
-              blocks.map((b) => (
-                <tr key={b.uid} className="border-gray-50 border-b last:border-0">
-                  <td className="px-3 py-2 font-medium">{b.roomName}</td>
-                  <td className="px-3 py-2">
-                    {fmtDateTime(b.startUtc)} – {fmtDateTime(b.endUtc)} ({b.durationMinutes / 60}h)
-                  </td>
-                  <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      disabled={remove.isPending}
-                      onClick={() => {
-                        if (window.confirm("Remove this block and free the slot?"))
-                          remove.mutate({ uid: b.uid });
-                      }}
-                      className="rounded-md border border-red-200 px-2 py-1 font-medium text-red-600 text-xs transition hover:border-red-400 disabled:opacity-50">
-                      Remove
-                    </button>
+            </thead>
+            <tbody>
+              {blocks.length === 0 ? (
+                <tr>
+                  <td className="px-3 py-6 text-center text-gray-400" colSpan={3}>
+                    No blocked slots
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ) : (
+                blocks.map((b) => (
+                  <tr key={b.uid} className="border-gray-50 border-b last:border-0">
+                    <td className="px-3 py-2 font-medium">{b.roomName}</td>
+                    <td className="px-3 py-2">
+                      {fmtDateTime(b.startUtc)} – {fmtDateTime(b.endUtc)} ({b.durationMinutes / 60}h)
+                    </td>
+                    <td className="px-3 py-2">
+                      <button
+                        type="button"
+                        disabled={remove.isPending}
+                        onClick={() => {
+                          if (window.confirm("Remove this block and free the slot?"))
+                            remove.mutate({ uid: b.uid });
+                        }}
+                        className="rounded-md border border-red-200 px-2 py-1 font-medium text-red-600 text-xs transition hover:border-red-400 disabled:opacity-50">
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

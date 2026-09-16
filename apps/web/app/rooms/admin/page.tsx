@@ -1,16 +1,11 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
-import { getInvoiceSettingsRepository } from "@calcom/features/ne26-rooms/di/InvoiceSettingsRepository.container";
-import { getNe26OrderRepository } from "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container";
-import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
-import { getResourceBookingRepository } from "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container";
-import { getResourceRepository } from "@calcom/features/ne26-rooms/di/ResourceRepository.container";
-import { bookingDocuments } from "@calcom/features/ne26-rooms/lib/bookingDocuments";
+import { dayStats } from "@calcom/features/ne26-rooms/lib/dayStats";
+import { buildEventSchedule, EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
-import ConfigHealth from "./ConfigHealth";
-import OrphanOrders from "./OrphanOrders";
+import { loadAdminBookings } from "./adminData";
 import RoomsAdminView from "./RoomsAdminView";
 import { requireNotDeskMode } from "./requireNotDeskMode";
 
@@ -19,6 +14,34 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+/** "Wednesday 16 September · 10:45 TRT · 62 days to the event" */
+function todayLabel(now: Date, firstDay: string | undefined): string {
+  const date = new Intl.DateTimeFormat("en-GB", {
+    timeZone: EVENT_TIME_ZONE,
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(now);
+  const time = new Intl.DateTimeFormat("en-GB", {
+    timeZone: EVENT_TIME_ZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(now);
+  if (!firstDay) return `${date} · ${time} TRT`;
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: EVENT_TIME_ZONE }).format(now);
+  const days = Math.round((Date.parse(firstDay) - Date.parse(today)) / 86_400_000);
+  const until =
+    days > 1
+      ? `${days} days to the event`
+      : days === 1
+        ? "The event starts tomorrow"
+        : days === 0
+          ? "Event day"
+          : "";
+  return [date, `${time} TRT`, until].filter(Boolean).join(" · ");
+}
+
 export default async function RoomsAdminPage(): Promise<JSX.Element> {
   // Page-level authorization (never in a layout): admins only.
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
@@ -26,67 +49,24 @@ export default async function RoomsAdminPage(): Promise<JSX.Element> {
   if (session.user.role !== "ADMIN") notFound();
   await requireNotDeskMode();
 
-  // Drop abandoned, unpaid bookings whose hold expired before listing.
-  await getResourceBookingRepository().deleteExpiredHolds(new Date());
-  const [bookings, allRooms, roomSettings, settings, orphanOrders] = await Promise.all([
-    getResourceBookingRepository().findAllWithDetails(),
-    getResourceRepository().findAllForAdmin(),
-    getNe26RoomSettingsRepository().get(),
-    getInvoiceSettingsRepository().get(),
-    // An order whose rooms are gone appears nowhere in a list of rooms.
-    getNe26OrderRepository().findOrdersWithoutRooms(),
-  ]);
-  const roomNames = allRooms.filter((r) => r.isActive).map((r) => r.name);
-  const rows = bookings.map((b) => ({
-    uid: b.uid,
-    status: b.status,
-    roomName: b.resource.name,
-    category: b.resource.category,
-    startUtc: b.startTime.toISOString(),
-    endUtc: b.endTime.toISOString(),
-    durationMinutes: b.durationMinutes,
-    // The order's booker, falling back to the room's: what the invoice says.
-    bookerName: b.order?.bookerName || b.bookerName,
-    bookerEmail: b.order?.bookerEmail || b.bookerEmail,
-    amountTotal: b.amountTotal,
-    currency: b.currency,
-    stripePaymentId: b.order?.stripePaymentId ?? b.stripePaymentId,
-    // The document belongs to the order this room was paid for. Bookings taken
-    // before orders existed carry theirs on the row instead, and those are real
-    // invoices — falling through to them keeps the admin honest rather than
-    // showing a dash next to a document that was issued and emailed.
-    orderUid: b.order?.uid ?? null,
-    orderRoomCount: b.order?._count.bookings ?? 1,
-    orderedAt: (b.order?.createdAt ?? b.createdAt).toISOString(),
-    paidAt: b.order?.paidAt?.toISOString() ?? null,
-    invoiceNumber: bookingDocuments(b).invoiceNumber,
-    creditNoteNumber: bookingDocuments(b).creditNoteNumber,
-    addOns: b.addOns.map((a) => ({ name: a.addOn.name, quantity: a.quantity, lineTotal: a.lineTotal })),
-  }));
+  const data = await loadAdminBookings();
+  const schedule = buildEventSchedule(data.roomSettings.eventDays);
+  const days = dayStats({
+    schedule,
+    roomNames: data.roomNames,
+    bookings: data.rows,
+    blocks: data.blocks,
+  });
 
   return (
-    <>
-      {/* Two narrow status panels, side by side. Stacked full-width they pushed
-          the bookings table — the thing this page exists for — below the fold on
-          every screen. The table itself keeps the width: it is a table. */}
-      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
-        <ConfigHealth
-          settings={{ notifyEmails: settings.notifyEmails, contactEmail: settings.contactEmail }}
-        />
-        <OrphanOrders
-          rows={orphanOrders.map((o) => ({
-            ...o,
-            holdExpiresAt: o.holdExpiresAt?.toISOString() ?? null,
-            createdAt: o.createdAt.toISOString(),
-          }))}
-        />
-      </div>
-      <RoomsAdminView
-        rows={rows}
-        roomNames={roomNames}
-        slotGranularityMinutes={roomSettings.slotGranularityMinutes}
-        eventDays={roomSettings.eventDays}
-      />
-    </>
+    <RoomsAdminView
+      rows={data.rows}
+      rooms={data.rooms}
+      blocks={data.blocks}
+      days={days}
+      attention={data.attention}
+      bufferMinutes={data.roomSettings.bufferMinutes}
+      todayLabel={todayLabel(new Date(), data.roomSettings.eventDays[0]?.date)}
+    />
   );
 }

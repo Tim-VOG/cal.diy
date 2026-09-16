@@ -6,8 +6,8 @@ import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
-import BlocksManager from "./BlocksManager";
 import { requireNotDeskMode } from "../requireNotDeskMode";
+import BlocksManager from "./BlocksManager";
 
 export const metadata: Metadata = {
   title: "Blocked slots · NATO Edge 26 admin",
