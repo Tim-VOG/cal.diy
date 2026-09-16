@@ -256,23 +256,32 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                       {fmtMoney(b.amountTotal, b.currency)}
                     </td>
                     <td className="px-4 py-3">
-                      {b.order?.creditNoteNumber ? (
-                        <a
-                          href={`/rooms/credit-note/${b.documentUid}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className={link}>
-                          Credit note {b.order.creditNoteNumber}
-                        </a>
-                      ) : b.order?.invoiceNumber ? (
-                        <a
-                          href={`/rooms/invoice/${b.documentUid}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className={`inline-flex items-center gap-1 ${link}`}>
-                          <FileText className="h-3.5 w-3.5" aria-hidden />
-                          Invoice {b.order.invoiceNumber}
-                        </a>
+                      {/* Both documents once a booking is credited. The invoice
+                          does not stop existing when a credit note cancels it —
+                          the pair is what reconciles in the exhibitor's accounts,
+                          and this page is where they come back for it when the
+                          emails are gone. */}
+                      {b.order?.invoiceNumber ? (
+                        <div className="grid gap-1">
+                          <a
+                            href={`/rooms/invoice/${b.documentUid}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={`inline-flex items-center gap-1 whitespace-nowrap ${link}`}>
+                            <FileText className="h-3.5 w-3.5" aria-hidden />
+                            Invoice {b.order.invoiceNumber}
+                          </a>
+                          {b.order.creditNoteNumber ? (
+                            <a
+                              href={`/rooms/credit-note/${b.documentUid}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className={`inline-flex items-center gap-1 whitespace-nowrap ${link}`}>
+                              <FileText className="h-3.5 w-3.5" aria-hidden />
+                              Credit note {b.order.creditNoteNumber}
+                            </a>
+                          ) : null}
+                        </div>
                       ) : b.status === "PENDING" ? (
                         <span className="text-amber-800 text-xs">Awaiting payment</span>
                       ) : (
@@ -345,6 +354,15 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                     </div>
                   ) : null}
                   <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-gray-100 border-t pt-3 text-sm">
+                    {b.order?.invoiceNumber ? (
+                      <a
+                        href={`/rooms/invoice/${b.documentUid}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={link}>
+                        Invoice {b.order.invoiceNumber}
+                      </a>
+                    ) : null}
                     {b.order?.creditNoteNumber ? (
                       <a
                         href={`/rooms/credit-note/${b.documentUid}`}
@@ -352,14 +370,6 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                         rel="noreferrer"
                         className={link}>
                         Credit note {b.order.creditNoteNumber}
-                      </a>
-                    ) : b.order?.invoiceNumber ? (
-                      <a
-                        href={`/rooms/invoice/${b.documentUid}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className={link}>
-                        Invoice {b.order.invoiceNumber}
                       </a>
                     ) : null}
                     {b.status === "CONFIRMED" ? (
