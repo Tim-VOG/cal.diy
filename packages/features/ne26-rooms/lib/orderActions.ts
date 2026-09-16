@@ -91,3 +91,61 @@ export function availableOrderActions(order: OrderState): OrderActions {
 export function hasNoActions(actions: OrderActions): boolean {
   return !Object.values(actions).some(Boolean);
 }
+
+export interface UnavailableAction {
+  label: string;
+  reason: string;
+}
+
+/**
+ * Why each action that is NOT offered is missing, in the desk's words.
+ *
+ * A button that is simply absent makes people hunt for it — "where did Delete
+ * go?" — and the answer is always the same few rules. Saying them next to the
+ * actions that are offered ends the hunt. The reasons mirror the conditions in
+ * availableOrderActions one for one, so they can never describe a rule the
+ * buttons do not follow.
+ */
+export function explainUnavailableActions(order: OrderState): UnavailableAction[] {
+  const can = availableOrderActions(order);
+  const pending = order.status === "PENDING";
+  const confirmed = order.status === "CONFIRMED";
+  const holdsRooms = order.roomCount > 0;
+  const out: UnavailableAction[] = [];
+
+  if (!can.confirmManually) {
+    out.push({
+      label: "Mark as paid manually",
+      reason: !pending ? "only for an order awaiting payment" : "no room left to confirm",
+    });
+  }
+  if (!can.issueInvoice && !order.hasInvoice) {
+    out.push({
+      label: "Issue the missing invoice",
+      reason: !confirmed ? "the order is not paid" : "no room left to invoice",
+    });
+  }
+  if (!can.resendInvoice) {
+    out.push({ label: "Resend invoice email", reason: "needs an invoice" });
+  }
+  if (!can.issueCreditNote && !order.hasCreditNote) {
+    out.push({
+      label: "Issue credit note",
+      reason: !order.hasInvoice ? "needs an invoice" : "only for a confirmed order",
+    });
+  }
+  if (!can.deleteOrder) {
+    out.push({
+      label: "Delete order",
+      reason:
+        order.hasInvoice || order.hasCreditNote
+          ? "a document refers to it"
+          : order.paid || confirmed
+            ? "never for a paid order"
+            : pending && holdsRooms
+              ? "cancel the hold instead"
+              : "not available",
+    });
+  }
+  return out;
+}

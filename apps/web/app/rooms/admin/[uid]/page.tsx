@@ -70,6 +70,10 @@ export default async function AdminBookingDetailPage({
 
   const booking = await getResourceBookingRepository().findByUidForAdmin(uid);
   if (!booking) notFound();
+  // Everything that can be done to a room is done to its order, and the order
+  // page shows every room on it. Links from emails and bookmarks to a room still
+  // work; they land where the actions are.
+  if (booking.order) redirect(`/rooms/admin/order/${booking.order.uid}`);
 
   // Money lives on the order: one payment, one invoice, however many rooms.
   // A booking taken before orders existed has none, and its own columns still

@@ -924,7 +924,11 @@ export class Ne26OrderRepository {
       where: { uid },
       include: {
         bookings: {
-          include: { resource: { select: { name: true } } },
+          include: {
+            resource: { select: { name: true, category: true, capacity: true } },
+            // What was ordered with each room, for the order page's line items.
+            addOns: { select: { quantity: true, lineTotal: true, addOn: { select: { name: true } } } },
+          },
           orderBy: { startTime: "asc" },
         },
       },

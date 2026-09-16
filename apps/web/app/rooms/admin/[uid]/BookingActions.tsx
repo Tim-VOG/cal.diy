@@ -1,10 +1,15 @@
 "use client";
 
-import { availableOrderActions, hasNoActions } from "@calcom/features/ne26-rooms/lib/orderActions";
+import {
+  availableOrderActions,
+  explainUnavailableActions,
+  hasNoActions,
+} from "@calcom/features/ne26-rooms/lib/orderActions";
 import { trpc } from "@calcom/trpc/react";
 import { useRouter } from "next/navigation";
 
-const btnBase = "rounded-lg px-4 py-2 font-semibold text-sm transition disabled:opacity-40";
+const btnBase =
+  "inline-flex w-full items-center justify-center rounded-lg px-3 py-2 font-semibold text-[13px] transition disabled:opacity-40";
 
 /**
  * Every action here addresses the ORDER, never the room: one payment can cover
@@ -29,6 +34,7 @@ export default function BookingActions({
   hasCreditNote,
   roomCount,
   paid,
+  variant = "panel",
 }: {
   orderUid: string;
   status: string;
@@ -41,6 +47,11 @@ export default function BookingActions({
    * a paid order gets a delete button.
    */
   paid: boolean;
+  /**
+   * "panel" sits inside the booking panel beside the plan; "rail" is the order
+   * page's own column, which has room to say why the other actions are missing.
+   */
+  variant?: "panel" | "rail";
 }): JSX.Element {
   const router = useRouter();
   const refresh = { onSuccess: () => router.refresh() };
@@ -59,6 +70,10 @@ export default function BookingActions({
   });
 
   const can = availableOrderActions({ status, hasInvoice, hasCreditNote, roomCount, paid });
+  const unavailable =
+    variant === "rail"
+      ? explainUnavailableActions({ status, hasInvoice, hasCreditNote, roomCount, paid })
+      : [];
 
   const busy =
     confirmManually.isPending ||
@@ -81,9 +96,9 @@ export default function BookingActions({
   const rooms = roomCount === 0 ? "this order" : roomCount > 1 ? `these ${roomCount} rooms` : "this room";
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5">
-      <h2 className="font-semibold text-gray-500 text-xs uppercase tracking-wide">Actions</h2>
-      <div className="mt-3 flex flex-wrap gap-2">
+    <div className={variant === "rail" ? "rounded-xl border border-gray-200 bg-white p-4" : ""}>
+      <h2 className="font-semibold text-[11px] text-gray-500 uppercase tracking-[0.07em]">Actions</h2>
+      <div className="mt-2.5 grid gap-2">
         {can.confirmManually ? (
           <button
             type="button"
@@ -111,7 +126,7 @@ export default function BookingActions({
                 cancelPending.mutate({ uid: orderUid });
               }
             }}
-            className={`${btnBase} border border-red-200 text-red-600 hover:border-red-400`}>
+            className={`${btnBase} border border-red-200 bg-white text-red-600 hover:border-red-400`}>
             {cancelPending.isPending ? "Cancelling…" : `Cancel order (${rooms})`}
           </button>
         ) : null}
@@ -136,7 +151,7 @@ export default function BookingActions({
                 closeOrder.mutate({ uid: orderUid });
               }
             }}
-            className={`${btnBase} border border-gray-300 text-gray-700 hover:border-gray-500`}>
+            className={`${btnBase} border border-gray-300 bg-white text-gray-700 hover:border-gray-500`}>
             {closeOrder.isPending ? "Closing…" : paid ? "Refunded in Stripe — close order" : "Close order"}
           </button>
         ) : null}
@@ -170,7 +185,7 @@ export default function BookingActions({
             type="button"
             disabled={busy}
             onClick={() => resend.mutate({ uid: orderUid })}
-            className={`${btnBase} border border-gray-200 text-[#000643] hover:border-[#000643]`}>
+            className={`${btnBase} border border-gray-200 bg-white text-[#000643] hover:border-[#000643]`}>
             {resend.isPending ? "Sending…" : "Resend invoice email"}
           </button>
         ) : null}
@@ -188,7 +203,7 @@ export default function BookingActions({
                 creditNote.mutate({ uid: orderUid });
               }
             }}
-            className={`${btnBase} border border-red-200 text-red-600 hover:border-red-400`}>
+            className={`${btnBase} border border-red-200 bg-white text-red-600 hover:border-red-400`}>
             {creditNote.isPending ? "Issuing…" : "Issue credit note"}
           </button>
         ) : null}
@@ -196,6 +211,7 @@ export default function BookingActions({
         {/* For a test booking, or one that never became anything. Kept away
             from the other buttons and worded so it cannot be misread: this
             removes the record, where every other action here preserves it. */}
+        {can.deleteOrder ? <div className="my-1 h-px bg-gray-100" aria-hidden /> : null}
         {can.deleteOrder ? (
           <button
             type="button"
@@ -226,6 +242,19 @@ export default function BookingActions({
           </p>
         ) : null}
       </div>
+
+      {unavailable.length ? (
+        <div className="mt-3 border-gray-100 border-t pt-3">
+          <p className="text-gray-500 text-xs">Not available for this order</p>
+          <ul className="mt-1.5 grid gap-1 text-gray-400 text-xs">
+            {unavailable.map((u) => (
+              <li key={u.label}>
+                <span className="text-gray-500">{u.label}</span> — {u.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {closeOrder.isSuccess ? (
         <p className="mt-2 text-green-600 text-sm">

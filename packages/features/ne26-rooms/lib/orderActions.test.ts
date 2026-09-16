@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { availableOrderActions, hasNoActions, type OrderState } from "./orderActions";
+import {
+  availableOrderActions,
+  explainUnavailableActions,
+  hasNoActions,
+  type OrderState,
+} from "./orderActions";
 
 const order = (over: Partial<OrderState> = {}): OrderState => ({
   status: "PENDING",
@@ -194,5 +199,47 @@ describe("deleting", () => {
         }
       }
     }
+  });
+});
+
+describe("explaining what is not offered", () => {
+  const labels = (o: Partial<OrderState>) => explainUnavailableActions(order(o)).map((x) => x.label);
+
+  it("never explains an action that is actually offered", () => {
+    for (const status of ["PENDING", "CONFIRMED", "CANCELLED"]) {
+      for (const roomCount of [0, 1]) {
+        for (const hasInvoice of [false, true]) {
+          for (const paid of [false, true]) {
+            const state = order({ status, roomCount, hasInvoice, paid });
+            const offered = availableOrderActions(state);
+            const explained = new Set(explainUnavailableActions(state).map((x) => x.label));
+            const byLabel: Record<string, boolean> = {
+              "Mark as paid manually": offered.confirmManually,
+              "Issue the missing invoice": offered.issueInvoice,
+              "Resend invoice email": offered.resendInvoice,
+              "Issue credit note": offered.issueCreditNote,
+              "Delete order": offered.deleteOrder,
+            };
+            for (const [label, isOffered] of Object.entries(byLabel)) {
+              if (isOffered)
+                expect(explained.has(label), `${label} ${status}/${roomCount}/${hasInvoice}/${paid}`).toBe(
+                  false
+                );
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it("says why a paid order cannot be deleted", () => {
+    const reasons = explainUnavailableActions(order({ status: "CONFIRMED", paid: true }));
+    expect(reasons.find((r) => r.label === "Delete order")?.reason).toBe("never for a paid order");
+  });
+
+  it("does not offer to explain a missing invoice on an invoiced order", () => {
+    expect(labels({ status: "CONFIRMED", hasInvoice: true, paid: true })).not.toContain(
+      "Issue the missing invoice"
+    );
   });
 });
