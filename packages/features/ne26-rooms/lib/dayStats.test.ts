@@ -96,4 +96,23 @@ describe("dayStats", () => {
     expect(tue.soldHours).toBe(0);
     expect(tue.confirmedRevenue).toBe(0);
   });
+
+  it("gives each room its own hours, to the minute", () => {
+    const [tue] = run(
+      [
+        b({ startUtc: at("2026-11-17", 10, 15), endUtc: at("2026-11-17", 11, 45) }),
+        b({
+          status: "PENDING",
+          roomName: "Small Room 2",
+          startUtc: at("2026-11-17", 9),
+          endUtc: at("2026-11-17", 10),
+        }),
+      ],
+      [{ roomName: "Suite 1", startUtc: at("2026-11-17", 16), endUtc: at("2026-11-17", 17) }]
+    );
+    expect(tue.perRoom).toEqual([
+      { roomName: "Suite 1", soldHours: 1.5, heldHours: 0, blockedHours: 1, capacityHours: 8 },
+      { roomName: "Small Room 2", soldHours: 0, heldHours: 1, blockedHours: 0, capacityHours: 8 },
+    ]);
+  });
 });

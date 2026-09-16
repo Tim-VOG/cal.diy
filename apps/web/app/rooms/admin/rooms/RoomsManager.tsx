@@ -3,12 +3,13 @@
 import type { EventDayDefinition } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import type { RoomIconName } from "@calcom/features/ne26-rooms/lib/roomIcons";
 import { trpc } from "@calcom/trpc/react";
-import { CalendarClock, Check, EyeOff, Ruler, Users } from "lucide-react";
-import { useState } from "react";
+import { CalendarClock, Check, EyeOff, LayoutGrid, Ruler, Users } from "lucide-react";
+import { useEffect, useState } from "react";
 import { ROOM_ICON_CHOICE_GROUPS, roomIconFor } from "../../roomIcon";
 import EventDaysForm from "./EventDaysForm";
 import GalleryStrip from "./GalleryStrip";
 import ImagePicker from "./ImagePicker";
+import RoomsOverview, { type RoomDayOccupancy } from "./RoomsOverview";
 
 const CATEGORIES = ["PREMIUM", "INTERMEDIATE", "ENTRY"] as const;
 type Category = (typeof CATEGORIES)[number];
@@ -139,7 +140,7 @@ function discountPct(hourly: number, total: number, hours: number): number | nul
   return Math.round(((undiscounted - total) / undiscounted) * 100);
 }
 
-type Tab = "schedule" | Category;
+type Tab = "overview" | "schedule" | Category;
 
 /**
  * One room's editor.
@@ -183,7 +184,8 @@ function RoomRowCard({
 
   return (
     <div
-      className={`@container rounded-xl border border-gray-200 p-4 transition ${
+      id={`room-${r.id}`}
+      className={`@container scroll-mt-6 rounded-xl border border-gray-200 p-4 transition ${
         r.isActive ? "bg-white" : "bg-gray-50/70"
       }`}>
       <div className="flex items-start gap-3">
@@ -323,17 +325,28 @@ export default function RoomsManager({
   rooms,
   bufferMinutes,
   eventDays,
+  occupancy,
 }: {
   rooms: RoomRow[];
   bufferMinutes: number;
   eventDays: EventDayDefinition[];
+  /** Hours booked per room per event day, for the overview. */
+  occupancy: Record<string, RoomDayOccupancy[]>;
 }): JSX.Element {
   const [draft, setDraft] = useState<RoomRow[]>(rooms);
   const [savingId, setSavingId] = useState<number | null>(null);
   const [savedId, setSavedId] = useState<number | null>(null);
   // One section at a time. All nine rooms plus the schedule on a single page
   // meant scrolling past everything to reach anything.
-  const [tab, setTab] = useState<Tab>("PREMIUM");
+  const [tab, setTab] = useState<Tab>("overview");
+  // "Edit room" on the overview opens the room's category and brings its card
+  // into view, once that tab has rendered it.
+  const [focusId, setFocusId] = useState<number | null>(null);
+  useEffect(() => {
+    if (focusId === null) return;
+    document.getElementById(`room-${focusId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setFocusId(null);
+  }, [focusId, tab]);
 
   const update = trpc.viewer.rooms.updateResource.useMutation({
     onSettled: () => setSavingId(null),
@@ -384,6 +397,7 @@ export default function RoomsManager({
    */
 
   const tabs: { key: Tab; label: string; count?: number }[] = [
+    { key: "overview", label: "Overview" },
     { key: "schedule", label: "Schedule" },
     ...CATEGORIES.map((c) => ({
       key: c as Tab,
@@ -392,7 +406,7 @@ export default function RoomsManager({
     })).filter((t) => (t.count ?? 0) > 0),
   ];
 
-  const inTab = tab === "schedule" ? [] : draft.filter((r) => r.category === tab);
+  const inTab = tab === "schedule" || tab === "overview" ? [] : draft.filter((r) => r.category === tab);
 
   return (
     <div>
@@ -414,6 +428,7 @@ export default function RoomsManager({
                 : "border-transparent text-gray-500 hover:text-[#000643]"
             }`}>
             {t.key === "schedule" ? <CalendarClock className="h-4 w-4 shrink-0" aria-hidden /> : null}
+            {t.key === "overview" ? <LayoutGrid className="h-4 w-4 shrink-0" aria-hidden /> : null}
             {t.label}
             {t.count ? <span className="text-gray-400 text-xs">{t.count}</span> : null}
           </button>
@@ -421,14 +436,23 @@ export default function RoomsManager({
       </nav>
 
       <div className="mt-5">
-        {tab === "schedule" ? (
+        {tab === "overview" ? (
+          <RoomsOverview
+            rooms={draft}
+            occupancy={occupancy}
+            onEdit={(room) => {
+              setTab(room.category as Category);
+              setFocusId(room.id);
+            }}
+          />
+        ) : tab === "schedule" ? (
           <EventDaysForm initial={eventDays} bufferMinutes={bufferMinutes} />
         ) : (
           <>
             <p className="text-gray-600 text-sm">{CATEGORY_META[tab as Category].blurb}</p>
-            {/* Two to four across: cards land in the 300-380px band the guidance
-                for data-dense admin grids recommends, with 16px gutters. */}
-            <div className="mt-4 grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-3 min-[1800px]:grid-cols-4">
+            {/* Never more than three across, at any width: an explicit rule for
+                every tile grid in this admin. */}
+            <div className="mt-4 grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
               {inTab.map((r) => (
                 <RoomRowCard
                   key={r.id}

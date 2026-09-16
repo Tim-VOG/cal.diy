@@ -42,6 +42,14 @@ export interface DayStats {
   blockedHours: number;
   /** One row per room, one cell per opening hour. */
   grid: { roomName: string; cells: CellState[] }[];
+  /** Hours per room, to the minute rather than rounded to the grid's cells. */
+  perRoom: {
+    roomName: string;
+    soldHours: number;
+    heldHours: number;
+    blockedHours: number;
+    capacityHours: number;
+  }[];
   /** Portions to prepare, confirmed and still on hold, in first-seen order. */
   catering: { name: string; confirmed: number; held: number }[];
   /** Confirmed booking amounts starting that day, excl. VAT. */
@@ -78,6 +86,7 @@ export function dayStats(input: {
       cells: Array.from({ length: hoursInWindow }, () => "free" as CellState),
     }));
     const rowOf = new Map(grid.map((row) => [row.roomName, row]));
+    const roomMs = new Map(input.roomNames.map((name) => [name, { sold: 0, held: 0, blocked: 0 }]));
 
     const mark = (roomName: string, start: number, end: number, state: CellState) => {
       const row = rowOf.get(roomName);
@@ -103,12 +112,15 @@ export function dayStats(input: {
       // otherwise push a day past 100%.
       if (!rowOf.has(b.roomName)) continue;
 
+      const perRoom = roomMs.get(b.roomName);
       if (b.status === "CONFIRMED") {
         soldMs += inDay;
+        if (perRoom) perRoom.sold += inDay;
         confirmedRevenue += b.amountTotal;
         mark(b.roomName, start, end, "sold");
       } else if (b.status === "PENDING") {
         heldMs += inDay;
+        if (perRoom) perRoom.held += inDay;
         mark(b.roomName, start, end, "held");
       } else {
         continue; // released: neither sold nor prepared for
@@ -128,6 +140,8 @@ export function dayStats(input: {
       const inDay = overlapMs(start, end, open, close);
       if (inDay === 0 || !rowOf.has(block.roomName)) continue;
       blockedMs += inDay;
+      const perRoomBlocked = roomMs.get(block.roomName);
+      if (perRoomBlocked) perRoomBlocked.blocked += inDay;
       mark(block.roomName, start, end, "blocked");
     }
 
@@ -141,6 +155,16 @@ export function dayStats(input: {
       heldHours: round(heldMs),
       blockedHours: round(blockedMs),
       grid,
+      perRoom: input.roomNames.map((roomName) => {
+        const ms = roomMs.get(roomName) ?? { sold: 0, held: 0, blocked: 0 };
+        return {
+          roomName,
+          soldHours: round(ms.sold),
+          heldHours: round(ms.held),
+          blockedHours: round(ms.blocked),
+          capacityHours: hoursInWindow,
+        };
+      }),
       catering: Array.from(catering.values()),
       confirmedRevenue,
     };
