@@ -8,7 +8,6 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { requireNotDeskMode } from "../requireNotDeskMode";
-import BookingActions from "./BookingActions";
 
 export const metadata: Metadata = {
   title: "Booking · NATO Edge 26 admin",
@@ -75,15 +74,12 @@ export default async function AdminBookingDetailPage({
   // work; they land where the actions are.
   if (booking.order) redirect(`/rooms/admin/order/${booking.order.uid}`);
 
-  // Money lives on the order: one payment, one invoice, however many rooms.
-  // A booking taken before orders existed has none, and its own columns still
-  // hold the invoice that was issued for it — shown, but not actionable, since
-  // every action now works through an order.
-  const order = booking.order;
-  const invoiceNumber = order?.invoiceNumber ?? booking.invoiceNumber;
-  const creditNoteNumber = order?.creditNoteNumber ?? booking.creditNoteNumber;
-  const documentUid = order?.uid ?? booking.uid;
-  const siblings = order?.bookings.filter((b) => b.uid !== booking.uid) ?? [];
+  // Only a room taken before orders existed reaches this point. Its own columns
+  // hold the invoice issued for it — shown, but not actionable, since every
+  // action now works through an order.
+  const invoiceNumber = booking.invoiceNumber;
+  const creditNoteNumber = booking.creditNoteNumber;
+  const documentUid = booking.uid;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -119,10 +115,7 @@ export default async function AdminBookingDetailPage({
 
         <Card title="Payment">
           <Row label="This room">{fmtMoney(booking.amountTotal, booking.currency)}</Row>
-          {order && order.bookings.length > 1 ? (
-            <Row label="Order total">{fmtMoney(order.amountTotal, order.currency)}</Row>
-          ) : null}
-          <Row label="Stripe payment">{order?.stripePaymentId ?? booking.stripePaymentId ?? "—"}</Row>
+          <Row label="Stripe payment">{booking.stripePaymentId ?? "—"}</Row>
           {booking.status === "PENDING" ? (
             <Row label="Hold expires">{booking.holdExpiresAt ? fmtDateTime(booking.holdExpiresAt) : "—"}</Row>
           ) : null}
@@ -159,39 +152,11 @@ export default async function AdminBookingDetailPage({
       </div>
 
       <div className="mt-4">
-        {order ? (
-          <BookingActions
-            orderUid={order.uid}
-            status={order.status}
-            hasInvoice={Boolean(order.invoiceNumber)}
-            hasCreditNote={Boolean(order.creditNoteNumber)}
-            roomCount={order.bookings.length}
-            paid={Boolean(order.stripePaymentId)}
-          />
-        ) : (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-800 text-sm">
-            This room is not attached to an order, so it has no payment to act on. It predates the order model
-            — handle it directly in the database.
-          </div>
-        )}
-      </div>
-
-      {siblings.length > 0 ? (
-        <div className="mt-4">
-          <Card title={`Also in this order (${siblings.length})`}>
-            <p className="mb-2 text-gray-500 text-sm">
-              These rooms were paid for together. A credit note cancels all of them.
-            </p>
-            {siblings.map((s) => (
-              <Row key={s.uid} label={s.resource.name}>
-                <Link href={`/rooms/admin/${s.uid}`} className="text-[#000643] underline hover:opacity-80">
-                  {fmtDateTime(s.startTime)}
-                </Link>
-              </Row>
-            ))}
-          </Card>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-800 text-sm">
+          This room is not attached to an order, so it has no payment to act on. It predates the order model —
+          handle it directly in the database.
         </div>
-      ) : null}
+      </div>
 
       <div className="mt-4">
         <Card title="Add-ons">
