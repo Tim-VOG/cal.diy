@@ -37,6 +37,24 @@ const CHECKOUT_CUSTOM_FIELDS = {
   ],
 } as unknown as Partial<Stripe.Checkout.SessionCreateParams>;
 
+/**
+ * The company name, asked on every payment and required.
+ *
+ * Stripe's "I'm purchasing as a business" block only appears the first time a
+ * Customer pays: once a VAT number is saved on that Customer it is skipped. The
+ * second live test therefore invoiced the cardholder name the buyer typed
+ * ("xx") instead of the company. Every exhibitor here buys as a company, so the
+ * business name is collected explicitly and cannot be left out; the VAT number
+ * stays optional, since not every exhibitor has one.
+ *
+ * Verified against Stripe's API on 2020-08-27 — accepted, and kept with an
+ * existing Customer and customer_update — before being relied on. Cast for the
+ * same reason as the custom fields: the pinned SDK predates the parameter.
+ */
+const CHECKOUT_BUSINESS_NAME = {
+  name_collection: { business: { enabled: true, optional: false } },
+} as unknown as Partial<Stripe.Checkout.SessionCreateParams>;
+
 /** Stripe rejects a Checkout session expiring sooner than this. */
 const STRIPE_MIN_SESSION_LIFETIME_SECONDS = 30 * 60;
 
@@ -190,6 +208,7 @@ export class StripeCheckoutService {
       // cost, and it is smaller than the registration form it replaces.
       billing_address_collection: "required",
       ...CHECKOUT_CUSTOM_FIELDS,
+      ...CHECKOUT_BUSINESS_NAME,
       tax_id_collection: { enabled: true },
       // Stripe forbids customer + customer_email together; prefer the Customer.
       // With an existing Customer, tax_id/address collection requires

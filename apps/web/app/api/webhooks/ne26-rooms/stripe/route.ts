@@ -345,14 +345,19 @@ export async function POST(req: Request): Promise<Response> {
       const customFields = (session as unknown as { custom_fields?: CustomField[] }).custom_fields ?? [];
       const customField = (key: string): string | null =>
         customFields.find((f) => f.key === key)?.text?.value ?? null;
+      // The company, when Checkout collected one (it is required — see
+      // CHECKOUT_BUSINESS_NAME). With a company, `name` carries that same
+      // company name, so it must not overwrite the person on the order: the
+      // invoice is made out to the company, the emails still greet the person.
+      const businessName = (details as { business_name?: string | null } | null)?.business_name ?? null;
       await orders.applyCheckoutBilling(orderUid, {
         country: details?.address?.country ?? null,
         vatNumber: details?.tax_ids?.[0]?.value ?? null,
-        name: details?.name ?? null,
+        name: businessName ? null : (details?.name ?? null),
         // A counter sale has no billing profile behind it, so this is the only
         // address the invoice will ever have. Kept for web orders too: what the
         // buyer confirmed at payment beats what they saved months earlier.
-        legalName: details?.name ?? null,
+        legalName: businessName ?? details?.name ?? null,
         addressLine1: details?.address?.line1 ?? null,
         addressLine2: details?.address?.line2 ?? null,
         postalCode: details?.address?.postal_code ?? null,

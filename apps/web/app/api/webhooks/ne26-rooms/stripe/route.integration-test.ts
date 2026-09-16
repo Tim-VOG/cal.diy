@@ -89,6 +89,8 @@ interface SessionOptions {
   customFields?: { key: string; type: string; text: { value: string | null } }[];
   /** The Checkout session id; defaults to cs_test_webhook. */
   sessionId?: string;
+  /** The company name Checkout collected; Stripe also puts it in `name`. */
+  businessName?: string;
 }
 
 function sessionEvent(type: string, options: SessionOptions = {}): string {
@@ -105,7 +107,8 @@ function sessionEvent(type: string, options: SessionOptions = {}): string {
         amount_total: options.amountTotal ?? 35000,
         currency: "eur",
         customer_details: {
-          name: "Webhook Buyer BV",
+          name: options.businessName ?? "Webhook Buyer BV",
+          ...(options.businessName ? { business_name: options.businessName } : {}),
           address: {
             country: "NL",
             line1: "Keizersgracht 1",
@@ -292,6 +295,9 @@ describe("NE26 Stripe webhook", () => {
         bookerVatNumber: "NL123456789B01",
         bookerName: "Webhook Buyer BV",
       });
+
+      // Without a company name, the name Checkout collected is used for both.
+      expect(order?.bookerLegalName).toBe("Webhook Buyer BV");
 
       // Also proves the SMTP mock is really in play: the real mailer throws
       // without EMAIL_SERVER_*, so a silently unmocked module would leave this
@@ -679,6 +685,24 @@ describe("NE26 Stripe webhook", () => {
       await deliver(sessionEvent("checkout.session.expired", { orderUid: uid, paymentStatus: "unpaid" }));
       expect(await orders.findByUid(uid)).toBeNull();
       expect(await slotsHeld(roomA, startTimes[0])).toBe(0);
+    });
+
+    it("invoices the company Checkout collected, and keeps the person's name", async () => {
+      // The second live test: the business block was skipped, the invoice said
+      // "xx". The company name is now required at Checkout and read from
+      // business_name, where Stripe puts it; `name` repeats the company and must
+      // not replace the person who booked.
+      const { uid } = await heldOrder();
+      await deliver(
+        sessionEvent("checkout.session.completed", {
+          orderUid: uid,
+          businessName: "Aurora Space Dynamics S.r.l.",
+        })
+      );
+
+      const order = await orders.findByUid(uid);
+      expect(order?.bookerLegalName).toBe("Aurora Space Dynamics S.r.l.");
+      expect(order?.bookerName).toBe("Webhook Tester");
     });
 
     it("keeps the order when the expired session is one the buyer already replaced", async () => {
