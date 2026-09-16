@@ -58,6 +58,13 @@ describe("dayStats", () => {
     expect(tue.grid[0].cells).toEqual(["free", "sold", "sold", "sold", "free", "free", "free", "free"]);
   });
 
+  it("draws a booking as one span to the minute, not as the cells it touches", () => {
+    // A one-hour booking at 10:15 touched two cells and read as two hours sold.
+    const [tue] = run([b({ startUtc: at("2026-11-17", 10, 15), endUtc: at("2026-11-17", 11, 15) })]);
+    expect(tue.grid[0].spans).toEqual([{ from: 1.25 / 8, to: 2.25 / 8, state: "sold" }]);
+    expect(tue.grid[1].spans).toEqual([]);
+  });
+
   it("lets a sale outrank a hold or a block in the same cell", () => {
     const [tue] = run(
       [

@@ -10,6 +10,8 @@ const CELL: Record<CellState, React.CSSProperties> = {
   held: { background: HATCH.held },
   blocked: { background: "#cbd0db" },
 };
+/** Drawn in this order, so a sale always shows over a block it overlaps. */
+const LAYER: Record<CellState, number> = { free: 0, blocked: 1, held: 2, sold: 3 };
 const CELL_LABEL: Record<CellState, string> = {
   free: "free",
   sold: "sold",
@@ -91,18 +93,36 @@ export default function DayCards({
                   <span className="text-[10px] text-gray-500 leading-[9px]" title={row.roomName}>
                     {roomShort(row.roomName)}
                   </span>
-                  <span
-                    className="grid gap-[2px]"
-                    style={{ gridTemplateColumns: `repeat(${hours}, minmax(0, 1fr))` }}>
-                    {row.cells.map((cell, i) => (
-                      <i
-                        // biome-ignore lint/suspicious/noArrayIndexKey: an hour's position is its identity
-                        key={i}
-                        className="block h-[9px] rounded-[2px]"
-                        style={CELL[cell]}
-                        title={`${row.roomName}, hour ${i + 1}: ${CELL_LABEL[cell]}`}
-                      />
-                    ))}
+                  <span className="relative block">
+                    {/* The hours are the ruler; the bookings are drawn over it
+                        to the minute, so a 10:15–11:15 hour reads as one. */}
+                    <span
+                      className="grid gap-[2px]"
+                      style={{ gridTemplateColumns: `repeat(${hours}, minmax(0, 1fr))` }}>
+                      {row.cells.map((_, i) => (
+                        <i
+                          // biome-ignore lint/suspicious/noArrayIndexKey: an hour's position is its identity
+                          key={i}
+                          className="block h-[9px] rounded-[2px]"
+                          style={CELL.free}
+                        />
+                      ))}
+                    </span>
+                    {[...row.spans]
+                      .sort((x, y) => LAYER[x.state] - LAYER[y.state])
+                      .map((span, i) => (
+                        <i
+                          // biome-ignore lint/suspicious/noArrayIndexKey: spans do not move within a render
+                          key={i}
+                          className="absolute inset-y-0 block rounded-[2px]"
+                          style={{
+                            ...CELL[span.state],
+                            left: `${span.from * 100}%`,
+                            width: `${(span.to - span.from) * 100}%`,
+                          }}
+                          title={`${row.roomName}: ${CELL_LABEL[span.state]}`}
+                        />
+                      ))}
                   </span>
                 </div>
               ))}

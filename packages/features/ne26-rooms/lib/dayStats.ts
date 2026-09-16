@@ -16,6 +16,13 @@ const HOUR_MS = 60 * 60 * 1000;
 
 export type CellState = "free" | "sold" | "held" | "blocked";
 
+/** A stretch of a room's day, as fractions of the opening window (0 = open, 1 = close). */
+export interface DaySpan {
+  from: number;
+  to: number;
+  state: Exclude<CellState, "free">;
+}
+
 export interface DayStatsBooking {
   roomName: string;
   status: string;
@@ -40,8 +47,12 @@ export interface DayStats {
   soldHours: number;
   heldHours: number;
   blockedHours: number;
-  /** One row per room, one cell per opening hour. */
-  grid: { roomName: string; cells: CellState[] }[];
+  /**
+   * One row per room, one cell per opening hour — and the bookings themselves
+   * as spans, to the minute. A 10:15–11:15 booking touches two hour cells, and
+   * drawn as cells it read as two hours sold.
+   */
+  grid: { roomName: string; cells: CellState[]; spans: DaySpan[] }[];
   /** Hours per room, to the minute rather than rounded to the grid's cells. */
   perRoom: {
     roomName: string;
@@ -84,6 +95,7 @@ export function dayStats(input: {
     const grid = input.roomNames.map((roomName) => ({
       roomName,
       cells: Array.from({ length: hoursInWindow }, () => "free" as CellState),
+      spans: [] as DaySpan[],
     }));
     const rowOf = new Map(grid.map((row) => [row.roomName, row]));
     const roomMs = new Map(input.roomNames.map((name) => [name, { sold: 0, held: 0, blocked: 0 }]));
@@ -91,6 +103,11 @@ export function dayStats(input: {
     const mark = (roomName: string, start: number, end: number, state: CellState) => {
       const row = rowOf.get(roomName);
       if (!row) return;
+      const from = Math.max(start, open);
+      const to = Math.min(end, close);
+      if (state !== "free" && to > from) {
+        row.spans.push({ from: (from - open) / (close - open), to: (to - open) / (close - open), state });
+      }
       for (let h = 0; h < hoursInWindow; h++) {
         const cellStart = open + h * HOUR_MS;
         if (
