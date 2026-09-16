@@ -64,6 +64,8 @@ export interface SaleNotificationInput {
   orderRef: string;
   /** One payment can cover several rooms; the mail lists them all. */
   rooms: SaleNotificationRoom[];
+  /** The company on the invoice. Shown first, in bold: it is who the desk knows. */
+  bookerCompany?: string | null;
   bookerName?: string | null;
   bookerEmail?: string | null;
   bookerCountry?: string | null;
@@ -140,6 +142,8 @@ export function saleNotification(input: SaleNotificationInput): TeamNotification
   const vat = [input.bookerVatNumber, input.bookerCountry].filter(Boolean).join(" · ") || "-";
   const buyerLine = input.bookerEmail ? `${buyer} <${input.bookerEmail}>` : buyer;
 
+  const company = input.bookerCompany?.trim() || null;
+  if (company) lines.push(field("Company", company));
   lines.push(field("Buyer", buyerLine));
   if (input.bookerCountry || input.bookerVatNumber) {
     lines.push(field("VAT", vat));
@@ -153,6 +157,7 @@ export function saleNotification(input: SaleNotificationInput): TeamNotification
   if (input.stripeUrl) lines.push(input.stripeUrl);
 
   const facts: { label: string; value: string; strong?: boolean }[] = [
+    ...(company ? [{ label: "Company", value: company, strong: true }] : []),
     { label: "Buyer", value: buyerLine },
     ...(input.bookerCountry || input.bookerVatNumber ? [{ label: "VAT", value: vat }] : []),
     // The card above shows what Stripe captured; accounting works in the other
@@ -205,6 +210,8 @@ export interface FailureNotificationInput {
   orderRef: string;
   reason: FailureReason;
   rooms: SaleNotificationRoom[];
+  /** The company on the invoice. Shown first, in bold: it is who the desk knows. */
+  bookerCompany?: string | null;
   bookerName?: string | null;
   bookerEmail?: string | null;
   /** Order total excl. VAT — the sale that did not happen. */
@@ -303,12 +310,15 @@ export function failureNotification(input: FailureNotificationInput): TeamNotifi
   const buyerLine = input.bookerEmail ? `${buyer} <${input.bookerEmail}>` : buyer;
   const stakeLabel = input.reason === "payment_attempt_failed" ? "At stake (excl. VAT)" : "Lost (excl. VAT)";
 
+  const company = input.bookerCompany?.trim() || null;
+  if (company) lines.push(field("Company", company));
   lines.push(field("Buyer", buyerLine));
   lines.push(field(stakeLabel, formatMoney(input.amountHt, input.currency)));
   lines.push("", field("Order", input.orderRef), "", input.adminUrl);
   if (input.stripeUrl) lines.push(input.stripeUrl);
 
   const facts: { label: string; value: string; strong?: boolean }[] = [
+    ...(company ? [{ label: "Company", value: company, strong: true }] : []),
     { label: "Buyer", value: buyerLine },
     ...(input.declineMessage ? [{ label: "Bank said", value: input.declineMessage }] : []),
     ...(decline
@@ -344,6 +354,8 @@ export function failureNotification(input: FailureNotificationInput): TeamNotifi
 export interface RefundNotificationInput {
   orderRef: string;
   rooms: SaleNotificationRoom[];
+  /** The company on the invoice. Shown first, in bold: it is who the desk knows. */
+  bookerCompany?: string | null;
   bookerName?: string | null;
   bookerEmail?: string | null;
   /** What the credit note is for, incl. VAT — the figure actually refunded. */
@@ -383,6 +395,8 @@ export function refundNotification(input: RefundNotificationInput): TeamNotifica
   }
 
   const buyerLine = input.bookerEmail ? `${buyer} <${input.bookerEmail}>` : buyer;
+  const company = input.bookerCompany?.trim() || null;
+  if (company) lines.push(field("Company", company));
   lines.push(field("Buyer", buyerLine));
   lines.push(field("Refunded", formatMoney(input.amountRefunded, input.currency)));
   if (input.invoiceNumber) lines.push(field("Invoice", input.invoiceNumber));
@@ -392,6 +406,7 @@ export function refundNotification(input: RefundNotificationInput): TeamNotifica
   if (input.stripeUrl) lines.push(input.stripeUrl);
 
   const facts: { label: string; value: string; strong?: boolean }[] = [
+    ...(company ? [{ label: "Company", value: company, strong: true }] : []),
     { label: "Buyer", value: buyerLine },
     { label: "Refunded", value: formatMoney(input.amountRefunded, input.currency), strong: true },
     ...(input.invoiceNumber ? [{ label: "Invoice", value: input.invoiceNumber }] : []),

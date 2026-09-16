@@ -292,6 +292,21 @@ describe("the laid-out version of the team mails", () => {
     expect(html).toContain(`href="${url}"`);
   });
 
+  it("names the company first, in bold, above the buyer", () => {
+    const { body, html } = saleNotification({ ...BASE, bookerCompany: "VO GROUP SA" });
+    expect(body.indexOf("Company:")).toBeLessThan(body.indexOf("Buyer:"));
+    expect(html).toMatch(/font-weight:700[^"]*">VO GROUP SA</);
+    expect(html.indexOf("VO GROUP SA")).toBeLessThan(html.indexOf("jane@example.com"));
+    expect(refundNotification({ ...BASE, amountRefunded: 100, bookerCompany: "VO GROUP SA" }).body).toContain(
+      "VO GROUP SA"
+    );
+  });
+
+  it("prints no empty company line", () => {
+    const { body } = saleNotification({ ...BASE, bookerCompany: "  " });
+    expect(body).not.toContain("Company:");
+  });
+
   it("has no Stripe link to offer when there is no payment", () => {
     expect(saleNotification({ ...BASE, stripeUrl: null }).html).not.toContain("dashboard.stripe.com");
   });
