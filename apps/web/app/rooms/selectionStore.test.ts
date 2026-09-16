@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  alreadyBoughtSlugs,
   clearAllSelections,
   clearSelection,
   getSelection,
@@ -108,5 +109,37 @@ describe("selectionStore", () => {
     expect(() => listSelections(NOW)).not.toThrow();
     expect(listSelections(NOW)).toEqual([]);
     spy.mockRestore();
+  });
+});
+
+describe("alreadyBoughtSlugs", () => {
+  const paid = [{ slug: "small-room-5", startUtc: "2026-11-17T06:00:00.000Z" }];
+
+  it("drops a shortlisted room that has been paid for at that exact time", () => {
+    expect(
+      alreadyBoughtSlugs([{ slug: "small-room-5", startUtc: "2026-11-17T06:00:00.000Z" }], paid)
+    ).toEqual(["small-room-5"]);
+  });
+
+  it("matches the same instant however it was written", () => {
+    expect(alreadyBoughtSlugs([{ slug: "small-room-5", startUtc: "2026-11-17T06:00:00Z" }], paid)).toEqual([
+      "small-room-5",
+    ]);
+  });
+
+  it("keeps another time in the same room, or another room at the same time", () => {
+    expect(
+      alreadyBoughtSlugs(
+        [
+          { slug: "small-room-5", startUtc: "2026-11-17T08:00:00.000Z" },
+          { slug: "small-room-4", startUtc: "2026-11-17T06:00:00.000Z" },
+        ],
+        paid
+      )
+    ).toEqual([]);
+  });
+
+  it("keeps a room with no time picked yet", () => {
+    expect(alreadyBoughtSlugs([{ slug: "small-room-5", startUtc: null }], paid)).toEqual([]);
   });
 });

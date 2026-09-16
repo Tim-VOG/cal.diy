@@ -7,11 +7,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  SELECTIONS_CHANGED,
+  alreadyBoughtSlugs,
   clearAllSelections,
   clearSelection,
   listSelections,
   type RoomSelection,
+  SELECTIONS_CHANGED,
 } from "./selectionStore";
 
 /** Sections that are not shopping: the panel has no business there. */
@@ -19,9 +20,7 @@ const HIDDEN_PREFIXES = ["/rooms/admin", "/rooms/desk", "/rooms/login", "/rooms/
 
 function eventDay(selection: RoomSelection): string {
   if (!selection.startUtc) return selection.date;
-  return new Intl.DateTimeFormat("en-CA", { timeZone: EVENT_TIME_ZONE }).format(
-    new Date(selection.startUtc)
-  );
+  return new Intl.DateTimeFormat("en-CA", { timeZone: EVENT_TIME_ZONE }).format(new Date(selection.startUtc));
 }
 function money(cents: number, currency: string): string {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(cents / 100);
@@ -120,6 +119,13 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
 
   const hidden = HIDDEN_PREFIXES.some((p) => pathname?.startsWith(p));
   const bookedDays = trpc.viewer.rooms.myBookedDays.useQuery(undefined, { enabled: !hidden });
+  // A room already bought is not something still being decided on: take it out
+  // of the shortlist rather than flag its day as taken. See alreadyBoughtSlugs.
+  useEffect(() => {
+    const paid = bookedDays.data?.paidSlots;
+    if (!paid?.length || !selections?.length) return;
+    for (const slug of alreadyBoughtSlugs(selections, paid)) clearSelection(slug);
+  }, [bookedDays.data, selections]);
   const pending = trpc.viewer.rooms.myPendingOrder.useQuery(undefined, {
     enabled: !hidden,
     // The hold is a clock: a stale answer here is worse than none.
@@ -295,8 +301,8 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
       {lapsed ? (
         <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
           <p className="text-gray-700 text-xs leading-snug">
-            Your hold ran out and the rooms went back on sale. Your shortlist was cleared — the rooms
-            may well still be free.
+            Your hold ran out and the rooms went back on sale. Your shortlist was cleared — the rooms may well
+            still be free.
           </p>
           <div className="mt-2 flex gap-3">
             <Link href="/rooms" className="font-semibold text-[#000643] text-xs underline">
@@ -336,12 +342,8 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
             className="mt-1.5 w-full text-amber-800 text-xs underline underline-offset-2 transition hover:text-amber-900 disabled:opacity-40">
             {release.isPending ? "Releasing…" : "Release these rooms"}
           </button>
-          {resume.error ? (
-            <p className="mt-1.5 text-red-700 text-xs">{resume.error.message}</p>
-          ) : null}
-          {release.error ? (
-            <p className="mt-1.5 text-red-700 text-xs">{release.error.message}</p>
-          ) : null}
+          {resume.error ? <p className="mt-1.5 text-red-700 text-xs">{resume.error.message}</p> : null}
+          {release.error ? <p className="mt-1.5 text-red-700 text-xs">{release.error.message}</p> : null}
         </div>
       ) : null}
 
@@ -384,9 +386,7 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
                             per hour "x 2h". Appending the raw quantity here
                             printed "Breakfast x 6 x 6". */}
                         <span className="min-w-0 flex-1 truncate">{line.name}</span>
-                        <span className="shrink-0 tabular-nums">
-                          {money(line.lineTotal, s.currency)}
-                        </span>
+                        <span className="shrink-0 tabular-nums">{money(line.lineTotal, s.currency)}</span>
                       </li>
                     ))}
                   </ul>
@@ -419,16 +419,14 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
             ) : null}
             <div className="flex justify-between border-[#000643]/10 border-t pt-1 font-semibold text-[#000643]">
               <dt>Total</dt>
-              <dd className="tabular-nums">
-                {money(totalTtc, currency)}
-              </dd>
+              <dd className="tabular-nums">{money(totalTtc, currency)}</dd>
             </div>
           </dl>
 
           {clashing.size > 0 ? (
             <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-2 text-amber-800 text-xs leading-snug">
-              One meeting room per exhibitor per day, whatever the time. Change the day marked above
-              and you can pay for the rest together.
+              One meeting room per exhibitor per day, whatever the time. Change the day marked above and you
+              can pay for the rest together.
             </p>
           ) : null}
 
@@ -494,9 +492,7 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
               : "Holding takes these rooms off sale for 35 minutes so you can finish deciding. If you have not paid by then, they go back on sale."}
           </p>
           {pay.error ? (
-            <p className="mt-2 rounded-lg bg-red-50 px-2.5 py-2 text-red-700 text-xs">
-              {pay.error.message}
-            </p>
+            <p className="mt-2 rounded-lg bg-red-50 px-2.5 py-2 text-red-700 text-xs">{pay.error.message}</p>
           ) : null}
         </>
       ) : null}
@@ -535,9 +531,7 @@ export default function ShortlistPanel({ eventDays }: { eventDays: string[] }): 
               {sheetBadge}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate font-semibold text-[#000643] text-sm">
-                {sheetSummary}
-              </span>
+              <span className="block truncate font-semibold text-[#000643] text-sm">{sheetSummary}</span>
               {/* The clock is the one thing that must never be folded away. When
                   the sheet is open the amber box carries it, so it is rendered
                   here only while it is closed — one countdown, never two. */}

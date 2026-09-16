@@ -132,3 +132,23 @@ export function clearAllSelections(): void {
     // Nothing to do — see write().
   }
 }
+
+/**
+ * Which shortlisted rooms have already been bought: same room, same start.
+ *
+ * The confirmation page empties the shortlist, but only in the tab that reaches
+ * it — a payment finished elsewhere, or a confirmation that failed to load,
+ * left the paid room sitting in the basket, flagged "you already have a room
+ * that day" and blocking everything else from being paid for. Only an exact
+ * match is dropped: a different room or time on a taken day is something the
+ * exhibitor is still deciding about, and is left for them.
+ */
+export function alreadyBoughtSlugs(
+  selections: Pick<RoomSelection, "slug" | "startUtc">[],
+  paidSlots: { slug: string; startUtc: string }[]
+): string[] {
+  const bought = new Set(paidSlots.map((p) => `${p.slug}|${new Date(p.startUtc).getTime()}`));
+  return selections
+    .filter((s) => s.startUtc && bought.has(`${s.slug}|${new Date(s.startUtc).getTime()}`))
+    .map((s) => s.slug);
+}

@@ -745,7 +745,7 @@ export class Ne26OrderRepository {
     booker: { userId: number | null; email: string },
     now: Date,
     client: { resourceBooking: PrismaClient["resourceBooking"] } = this.prismaClient
-  ): Promise<{ startTime: Date; orderUid: string | null; paid: boolean }[]> {
+  ): Promise<{ startTime: Date; orderUid: string | null; paid: boolean; roomSlug: string }[]> {
     // One EXHIBITOR, however they reached us. Matching the account when there
     // was one and the email otherwise made those two sets disjoint: the same
     // person could take a room from their phone AND buy a second at the
@@ -774,7 +774,7 @@ export class Ne26OrderRepository {
           },
         ],
       },
-      select: { startTime: true, orderUid: true, status: true },
+      select: { startTime: true, orderUid: true, status: true, resource: { select: { slug: true } } },
     });
     // Which order a day belongs to, and whether it is paid for. A CONFIRMED
     // booking is a room the exhibitor owns and nothing may displace it; a
@@ -784,6 +784,7 @@ export class Ne26OrderRepository {
       startTime: r.startTime,
       orderUid: r.orderUid,
       paid: r.status === ResourceBookingStatus.CONFIRMED,
+      roomSlug: r.resource.slug,
     }));
   }
 

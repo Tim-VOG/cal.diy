@@ -5,6 +5,12 @@ import { router } from "../../../trpc";
 import { ZBookingUidInputSchema } from "./bookingUid.schema";
 import { ZCreateBlockInputSchema } from "./createBlock.schema";
 import { ZCreateBookingInputSchema, ZCreateOrderInputSchema } from "./createBooking.schema";
+import {
+  ZDeskCheckInInputSchema,
+  ZDeskCreateBookingInputSchema,
+  ZDeskDayInputSchema,
+  ZDeskSearchInputSchema,
+} from "./desk.schema";
 import { ZIssueCreditNoteInputSchema } from "./issueCreditNote.schema";
 import {
   ZCreateLegalPageInputSchema,
@@ -12,12 +18,6 @@ import {
   ZUpdateLegalPageInputSchema,
 } from "./legalPage.schema";
 import { ZPreviewOrderVatInputSchema, ZPreviewVatInputSchema } from "./previewVat.schema";
-import {
-  ZDeskCheckInInputSchema,
-  ZDeskCreateBookingInputSchema,
-  ZDeskDayInputSchema,
-  ZDeskSearchInputSchema,
-} from "./desk.schema";
 import { ZBookerAccountInputSchema, ZGrantRoleInputSchema, ZRevokeRoleInputSchema } from "./staff.schema";
 import {
   ZCreateAddOnInputSchema,
@@ -39,9 +39,7 @@ import { ZUpdateRoomSettingsInputSchema } from "./updateRoomSettings.schema";
  */
 /** Admin-only, and refused outright while the session is locked to the desk. */
 const ne26AdminProcedure = authedAdminProcedure.use(async ({ ctx, next }) => {
-  const { deskSessionFromCookieHeader } = await import(
-    "@calcom/features/ne26-rooms/lib/deskSession"
-  );
+  const { deskSessionFromCookieHeader } = await import("@calcom/features/ne26-rooms/lib/deskSession");
   const header = (ctx as { req?: { headers?: Record<string, unknown> } }).req?.headers?.cookie;
   const desk = deskSessionFromCookieHeader(typeof header === "string" ? header : null);
   if (desk) {
@@ -67,9 +65,7 @@ async function requireDesk(ctx: {
     "@calcom/features/ne26-rooms/di/Ne26StaffRepository.container"
   );
   const { canWorkTheDesk, roleOf } = await import("@calcom/features/ne26-rooms/lib/staff");
-  const { deskSessionFromCookieHeader } = await import(
-    "@calcom/features/ne26-rooms/lib/deskSession"
-  );
+  const { deskSessionFromCookieHeader } = await import("@calcom/features/ne26-rooms/lib/deskSession");
   const repo = getNe26StaffRepository();
   const staffRole = ctx.user.role === "ADMIN" ? null : await repo.findStaffRole(ctx.user.id);
   const principal = {
@@ -145,9 +141,7 @@ export const roomsRouter = router({
     const { getRoomAvailabilityService } = await import(
       "@calcom/features/ne26-rooms/di/RoomAvailabilityService.container"
     );
-    const { getAddOnRepository } = await import(
-      "@calcom/features/ne26-rooms/di/AddOnRepository.container"
-    );
+    const { getAddOnRepository } = await import("@calcom/features/ne26-rooms/di/AddOnRepository.container");
     const [availability, addOns] = await Promise.all([
       getRoomAvailabilityService().getAvailabilityForAllRooms(),
       getAddOnRepository().findManyActive(),
@@ -259,56 +253,52 @@ export const roomsRouter = router({
    * behave identically. The hostess never handles a card: this returns the
    * Stripe Checkout URL for the exhibitor to complete.
    */
-  deskCreateBooking: authedProcedure
-    .input(ZDeskCreateBookingInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const { repo, principal, role, actorEmail } = await requireDesk(ctx);
+  deskCreateBooking: authedProcedure.input(ZDeskCreateBookingInputSchema).mutation(async ({ ctx, input }) => {
+    const { repo, principal, role, actorEmail } = await requireDesk(ctx);
 
-      // If they happen to already have an account, bill it — their saved profile
-      // and past bookings then line up with this one. Otherwise sell to them
-      // anyway: an exhibitor at the counter should not be told to go and sign up.
-      const existing = await repo.findUserByEmail(input.exhibitorEmail);
+    // If they happen to already have an account, bill it — their saved profile
+    // and past bookings then line up with this one. Otherwise sell to them
+    // anyway: an exhibitor at the counter should not be told to go and sign up.
+    const existing = await repo.findUserByEmail(input.exhibitorEmail);
 
-      const { startOrderCheckout } = await import(
-        "@calcom/features/ne26-rooms/services/startOrderCheckout"
-      );
-      const { WEBAPP_URL } = await import("@calcom/lib/constants");
-      const booking = await startOrderCheckout({
-        buyer: existing
-          ? { userId: existing.id, email: existing.email, name: existing.name }
-          : { userId: null, email: input.exhibitorEmail, name: input.exhibitorName },
-        rooms: [
-          {
-            slug: input.slug,
-            startUtc: new Date(input.startUtc),
-            durationHours: input.durationHours,
-            addOns: input.addOns,
-          },
-        ],
-        billing: {
-          country: input.country,
-          vatNumber: input.vatNumber ?? null,
-          poNumber: input.poNumber ?? null,
-          internalReference: input.internalReference ?? null,
+    const { startOrderCheckout } = await import("@calcom/features/ne26-rooms/services/startOrderCheckout");
+    const { WEBAPP_URL } = await import("@calcom/lib/constants");
+    const booking = await startOrderCheckout({
+      buyer: existing
+        ? { userId: existing.id, email: existing.email, name: existing.name }
+        : { userId: null, email: input.exhibitorEmail, name: input.exhibitorName },
+      rooms: [
+        {
+          slug: input.slug,
+          startUtc: new Date(input.startUtc),
+          durationHours: input.durationHours,
+          addOns: input.addOns,
         },
-        webappUrl: WEBAPP_URL,
-        cancelPath: "/rooms/desk/new",
-        // Back to the counter, not the public confirmation page: the hostess is
-        // mid-shift and the next exhibitor is already waiting.
-        successPath: "/rooms/desk?paid=1",
-      });
+      ],
+      billing: {
+        country: input.country,
+        vatNumber: input.vatNumber ?? null,
+        poNumber: input.poNumber ?? null,
+        internalReference: input.internalReference ?? null,
+      },
+      webappUrl: WEBAPP_URL,
+      cancelPath: "/rooms/desk/new",
+      // Back to the counter, not the public confirmation page: the hostess is
+      // mid-shift and the next exhibitor is already waiting.
+      successPath: "/rooms/desk?paid=1",
+    });
 
-      await repo.recordAction({
-        actorUserId: principal.userId,
-        actorEmail,
-        actorRole: role,
-        action: "booking.create",
-        targetType: "booking",
-        targetId: booking.uid,
-        detail: `Started a booking for ${input.exhibitorName} <${input.exhibitorEmail}> — awaiting payment`,
-      });
-      return booking;
-    }),
+    await repo.recordAction({
+      actorUserId: principal.userId,
+      actorEmail,
+      actorRole: role,
+      action: "booking.create",
+      targetType: "booking",
+      targetId: booking.uid,
+      detail: `Started a booking for ${input.exhibitorName} <${input.exhibitorEmail}> — awaiting payment`,
+    });
+    return booking;
+  }),
 
   /** Whether a desk PIN exists — never the PIN itself, nor its hash. */
   deskPinStatus: ne26AdminProcedure.query(async () => {
@@ -319,29 +309,27 @@ export const roomsRouter = router({
     return { isSet: Boolean(state.hash) };
   }),
 
-  setDeskPin: ne26AdminProcedure
-    .input(z.object({ pin: z.string() }))
-    .mutation(async ({ ctx, input }) => {
-      const { hashPin, isValidPin } = await import("@calcom/features/ne26-rooms/lib/deskSession");
-      if (!isValidPin(input.pin)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "The PIN must be exactly four digits." });
-      }
-      const { getNe26RoomSettingsRepository } = await import(
-        "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container"
-      );
-      const { getNe26StaffRepository } = await import(
-        "@calcom/features/ne26-rooms/di/Ne26StaffRepository.container"
-      );
-      await getNe26RoomSettingsRepository().setDeskPinHash(hashPin(input.pin));
-      await getNe26StaffRepository().recordAction({
-        actorUserId: ctx.user.id,
-        actorEmail: ctx.user.email,
-        actorRole: "ADMIN",
-        action: "desk.pin.set",
-        detail: "Desk PIN changed",
-      });
-      return { ok: true };
-    }),
+  setDeskPin: ne26AdminProcedure.input(z.object({ pin: z.string() })).mutation(async ({ ctx, input }) => {
+    const { hashPin, isValidPin } = await import("@calcom/features/ne26-rooms/lib/deskSession");
+    if (!isValidPin(input.pin)) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "The PIN must be exactly four digits." });
+    }
+    const { getNe26RoomSettingsRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container"
+    );
+    const { getNe26StaffRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26StaffRepository.container"
+    );
+    await getNe26RoomSettingsRepository().setDeskPinHash(hashPin(input.pin));
+    await getNe26StaffRepository().recordAction({
+      actorUserId: ctx.user.id,
+      actorEmail: ctx.user.email,
+      actorRole: "ADMIN",
+      action: "desk.pin.set",
+      detail: "Desk PIN changed",
+    });
+    return { ok: true };
+  }),
 
   // Admin-only: who holds a role, and the trail of what staff have done.
   staff: ne26AdminProcedure.query(async () => {
@@ -567,14 +555,12 @@ export const roomsRouter = router({
   }),
 
   // Admin-only: update booking settings (turnover buffer between bookings).
-  updateRoomSettings: ne26AdminProcedure
-    .input(ZUpdateRoomSettingsInputSchema)
-    .mutation(async ({ input }) => {
-      const { getNe26RoomSettingsRepository } = await import(
-        "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container"
-      );
-      return getNe26RoomSettingsRepository().update(input);
-    }),
+  updateRoomSettings: ne26AdminProcedure.input(ZUpdateRoomSettingsInputSchema).mutation(async ({ input }) => {
+    const { getNe26RoomSettingsRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container"
+    );
+    return getNe26RoomSettingsRepository().update(input);
+  }),
 
   // Admin-only: update a room's prices / capacity / surface / active state.
   updateResource: ne26AdminProcedure.input(ZUpdateResourceInputSchema).mutation(async ({ input }) => {
@@ -682,9 +668,7 @@ export const roomsRouter = router({
   createBooking: authedProcedure.input(ZCreateBookingInputSchema).mutation(async ({ ctx, input }) => {
     // One room is an order of one. There is no separate single-room path: two
     // implementations of a checkout is two places for the money to diverge.
-    const { startOrderCheckout } = await import(
-      "@calcom/features/ne26-rooms/services/startOrderCheckout"
-    );
+    const { startOrderCheckout } = await import("@calcom/features/ne26-rooms/services/startOrderCheckout");
     const { WEBAPP_URL } = await import("@calcom/lib/constants");
     return startOrderCheckout({
       buyer: { userId: ctx.user.id, email: ctx.user.email, name: ctx.user.name },
@@ -708,7 +692,9 @@ export const roomsRouter = router({
    * buyer commits, instead of the rule surfacing as a refusal at payment.
    */
   myBookedDays: authedProcedure.query(
-    async ({ ctx }): Promise<{ days: string[]; heldDays: string[] }> => {
+    async ({
+      ctx,
+    }): Promise<{ days: string[]; heldDays: string[]; paidSlots: { slug: string; startUtc: string }[] }> => {
       const { getNe26OrderRepository } = await import(
         "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
       );
@@ -727,7 +713,14 @@ export const roomsRouter = router({
       }
       return {
         days: Array.from(days).sort(),
-        heldDays: Array.from(heldDays).filter((d) => !days.has(d)).sort(),
+        heldDays: Array.from(heldDays)
+          .filter((d) => !days.has(d))
+          .sort(),
+        // The rooms actually bought, so the shortlist can drop a line for a room
+        // that has since been paid for rather than warn about it forever.
+        paidSlots: occupied
+          .filter((row) => row.paid)
+          .map((row) => ({ slug: row.roomSlug, startUtc: row.startTime.toISOString() })),
       };
     }
   ),
@@ -742,7 +735,13 @@ export const roomsRouter = router({
   myPendingOrder: authedProcedure.query(
     async ({
       ctx,
-    }): Promise<{ uid: string; holdExpiresAt: string; amountTotal: number; currency: string; rooms: number } | null> => {
+    }): Promise<{
+      uid: string;
+      holdExpiresAt: string;
+      amountTotal: number;
+      currency: string;
+      rooms: number;
+    } | null> => {
       const { getNe26OrderRepository } = await import(
         "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
       );
@@ -790,9 +789,7 @@ export const roomsRouter = router({
 
   /** The shortlist, paid in one go: several rooms, one payment, one invoice. */
   createOrder: authedProcedure.input(ZCreateOrderInputSchema).mutation(async ({ ctx, input }) => {
-    const { startOrderCheckout } = await import(
-      "@calcom/features/ne26-rooms/services/startOrderCheckout"
-    );
+    const { startOrderCheckout } = await import("@calcom/features/ne26-rooms/services/startOrderCheckout");
     const { WEBAPP_URL } = await import("@calcom/lib/constants");
     return startOrderCheckout({
       buyer: { userId: ctx.user.id, email: ctx.user.email, name: ctx.user.name },
@@ -843,9 +840,7 @@ export const roomsRouter = router({
   }),
 
   resumeOrder: authedProcedure.input(ZBookingUidInputSchema).mutation(async ({ ctx, input }) => {
-    const { resumeOrderCheckout } = await import(
-      "@calcom/features/ne26-rooms/services/startOrderCheckout"
-    );
+    const { resumeOrderCheckout } = await import("@calcom/features/ne26-rooms/services/startOrderCheckout");
     const { WEBAPP_URL } = await import("@calcom/lib/constants");
     return resumeOrderCheckout({
       orderUid: input.uid,
