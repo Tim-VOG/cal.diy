@@ -1,4 +1,5 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
+import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
 import { getResourceBookingRepository } from "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container";
 import { bookingDocuments } from "@calcom/features/ne26-rooms/lib/bookingDocuments";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
@@ -20,7 +21,10 @@ export default async function BookersPage(): Promise<JSX.Element> {
   if (session.user.role !== "ADMIN") notFound();
   await requireNotDeskMode();
 
-  const bookings = await getResourceBookingRepository().findAllWithDetails();
+  const [bookings, roomSettings] = await Promise.all([
+    getResourceBookingRepository().findAllWithDetails(),
+    getNe26RoomSettingsRepository().get(),
+  ]);
 
   // Group bookings by booker (email is the stable identity across bookings).
   const byEmail = new Map<string, Booker>();
@@ -55,10 +59,10 @@ export default async function BookersPage(): Promise<JSX.Element> {
 
   return (
     <>
-      {/* Accounts first: the list below is built from bookings, so it cannot
-          show someone who registered and has not bought yet. */}
+      <BookersView bookers={bookers} eventDates={roomSettings.eventDays.map((d) => d.date)} />
+      {/* Below the bookers: the list above is built from bookings, so it cannot
+          show someone who registered and has not bought yet — this can. */}
       <BookerAccounts />
-      <BookersView bookers={bookers} />
     </>
   );
 }

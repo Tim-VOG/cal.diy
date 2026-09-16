@@ -2,7 +2,10 @@
 
 import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { buildXlsx, type CellValue } from "@calcom/features/ne26-rooms/lib/xlsx";
-import { useMemo, useState } from "react";
+import { ChevronDown, Download, Search } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
+import { dayKey, displayStatus, fmtDay, fmtTime } from "../format";
+import { HATCH, StatusPill } from "../ui";
 
 const TZ = EVENT_TIME_ZONE;
 
@@ -30,12 +33,6 @@ export interface Booker {
   bookings: BookerBooking[];
 }
 
-const STATUS_BADGE: Record<string, string> = {
-  CONFIRMED: "bg-green-100 text-green-700",
-  PENDING: "bg-amber-100 text-amber-700",
-  CANCELLED: "bg-gray-100 text-gray-500",
-};
-
 function money(cents: number, currency: string): string {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(cents / 100);
 }
@@ -59,7 +56,14 @@ const BOOKER_SORTS: { key: BookerSort; label: string }[] = [
   { key: "total", label: "Total spent" },
 ];
 
-export default function BookersView({ bookers }: { bookers: Booker[] }): JSX.Element {
+export default function BookersView({
+  bookers,
+  eventDates,
+}: {
+  bookers: Booker[];
+  /** The event's days (YYYY-MM-DD, TRT), for the day chips. */
+  eventDates: string[];
+}): JSX.Element {
   const [query, setQuery] = useState("");
   const [openEmail, setOpenEmail] = useState<string | null>(null);
   const [sort, setSort] = useState<{ key: BookerSort; dir: "asc" | "desc" }>({
@@ -119,135 +123,270 @@ export default function BookersView({ bookers }: { bookers: Booker[] }): JSX.Ele
 
   return (
     <div>
-      <h1 className="font-bold text-2xl text-[#000643]">Bookers</h1>
-      <p className="mt-1 text-gray-600 text-sm">
-        Everyone who has booked a room, with what they purchased. Click a booker to expand their bookings.
-      </p>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="font-bold text-2xl text-[#000643] tracking-tight">Bookers</h1>
+          <p className="mt-1 text-gray-600 text-sm">Everyone who has booked a room, and on which days.</p>
+        </div>
+        <button
+          type="button"
+          onClick={downloadExcel}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-semibold text-[#000643] text-[13px] transition hover:border-[#000643]">
+          <Download className="h-3.5 w-3.5" aria-hidden />
+          Export Excel
+        </button>
+      </header>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <input
-          type="search"
-          placeholder="Search by name or email…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="w-full max-w-sm rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#000643] focus:outline-none"
-        />
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-gray-500 text-xs uppercase tracking-wide">Sort</span>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <label className="flex w-full max-w-sm items-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 focus-within:border-[#000643]">
+          <Search className="h-3.5 w-3.5 text-gray-400" aria-hidden />
+          <span className="sr-only">Search bookers</span>
+          <input
+            id="bookers-search"
+            type="search"
+            placeholder="Search by name or email…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="w-full bg-transparent text-[13px] focus:outline-none"
+          />
+        </label>
+        <div
+          className="inline-flex gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5"
+          role="group"
+          aria-label="Sort">
           {BOOKER_SORTS.map(({ key, label }) => (
             <button
               key={key}
               type="button"
               onClick={() => sortBy(key)}
-              className={`rounded-lg border px-2.5 py-1.5 font-medium text-xs transition ${
-                sort.key === key
-                  ? "border-[#000643] bg-[#000643] text-white"
-                  : "border-gray-200 bg-white text-gray-600 hover:border-[#000643]"
+              aria-pressed={sort.key === key}
+              className={`rounded-md px-2.5 py-1 font-medium text-[13px] transition ${
+                sort.key === key ? "bg-[#000643] text-white" : "text-gray-700 hover:bg-gray-100"
               }`}>
               {label}
               {sort.key === key ? <span aria-hidden> {sort.dir === "asc" ? "▲" : "▼"}</span> : null}
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          onClick={downloadExcel}
-          className="ml-auto rounded-lg bg-[#000643] px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90">
-          Export Excel
-        </button>
+        <span className="ml-auto text-gray-500 text-xs tabular-nums">
+          {sorted.length} {sorted.length === 1 ? "booker" : "bookers"} ·{" "}
+          {sorted.reduce((n, b) => n + b.bookingCount, 0)} bookings
+        </span>
       </div>
 
-      <div className="mt-4 space-y-3">
-        {sorted.length === 0 ? (
-          <p className="text-gray-400 text-sm">No bookers yet.</p>
-        ) : (
-          sorted.map((b) => {
-            const open = openEmail === b.email;
-            return (
-              <div key={b.email} className="rounded-xl border border-gray-200 bg-white">
-                <button
-                  type="button"
-                  onClick={() => setOpenEmail(open ? null : b.email)}
-                  className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left">
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold text-[#000643]">{b.name}</p>
-                    <p className="truncate text-gray-500 text-sm">{b.email}</p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-6 text-sm">
-                    <span className="text-gray-500">
-                      {b.bookingCount} booking{b.bookingCount > 1 ? "s" : ""}
-                    </span>
-                    <span className="font-semibold text-[#000643]">
-                      {money(b.confirmedTotal, b.currency)}
-                    </span>
-                    <span className="text-gray-400">{open ? "▲" : "▼"}</span>
-                  </div>
-                </button>
-
-                {open ? (
-                  <div className="overflow-x-auto border-gray-100 border-t px-5 py-3">
-                    <table className="w-full min-w-[36rem] text-left text-sm">
-                      <thead className="text-gray-400 text-xs uppercase">
-                        <tr>
-                          <th className="py-1">Room</th>
-                          <th className="py-1">When</th>
-                          <th className="py-1">Add-ons</th>
-                          <th className="py-1">Status</th>
-                          <th className="py-1 text-right">Amount</th>
-                          <th className="py-1 text-right">Invoice</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {b.bookings.map((bk) => (
-                          <tr key={bk.uid} className="border-gray-50 border-b last:border-0">
-                            <td className="py-2 font-medium">{bk.roomName}</td>
-                            <td className="py-2 text-gray-600">
-                              {fmt(bk.startUtc)} – {fmt(bk.endUtc)}
-                            </td>
-                            <td className="py-2 text-gray-600">
-                              {bk.addOns.length === 0
-                                ? "—"
-                                : bk.addOns.map((a) => `${a.name}×${a.quantity}`).join(", ")}
-                            </td>
-                            <td className="py-2">
-                              <span
-                                className={`inline-block rounded-full px-2 py-0.5 font-medium text-xs ${STATUS_BADGE[bk.status] ?? ""}`}>
-                                {bk.status}
-                              </span>
-                            </td>
-                            <td className="py-2 text-right">{money(bk.amountTotal, bk.currency)}</td>
-                            <td className="py-2 text-right">
-                              {bk.creditNoteNumber ? (
-                                <a
-                                  href={`/rooms/credit-note/${bk.documentUid}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-[#000643] underline">
-                                  {bk.creditNoteNumber}
-                                </a>
-                              ) : bk.invoiceNumber ? (
-                                <a
-                                  href={`/rooms/invoice/${bk.documentUid}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-[#000643] underline">
-                                  {bk.invoiceNumber}
-                                </a>
-                              ) : (
-                                "—"
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : null}
-              </div>
-            );
-          })
-        )}
+      <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200 bg-white">
+        <table className="w-full min-w-[46rem] text-left text-[13px]">
+          <thead className="border-gray-200 border-b bg-gray-50/80 text-[10.5px] text-gray-500 uppercase tracking-[0.05em]">
+            <tr>
+              <th className="px-4 py-2.5 font-semibold">Booker</th>
+              <th className="px-4 py-2.5 font-semibold">Days</th>
+              <th className="px-4 py-2.5 text-right font-semibold">Bookings</th>
+              <th className="px-4 py-2.5 text-right font-semibold">Confirmed total</th>
+              <th className="px-4 py-2.5 text-right font-semibold">On hold</th>
+              <th className="w-10 px-2 py-2.5" aria-label="Expand" />
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                  No bookers yet.
+                </td>
+              </tr>
+            ) : (
+              sorted.map((b) => {
+                const open = openEmail === b.email;
+                const onHold = b.bookings
+                  .filter((x) => x.status === "PENDING")
+                  .reduce((n, x) => n + x.amountTotal, 0);
+                const invoiceMissing = b.bookings.some((x) => x.status === "CONFIRMED" && !x.invoiceNumber);
+                const refunded = b.bookings.some((x) => displayStatus(x) === "REFUNDED");
+                return (
+                  <Fragment key={b.email}>
+                    <tr
+                      onClick={() => setOpenEmail(open ? null : b.email)}
+                      className={`cursor-pointer border-gray-100 border-b align-middle transition ${open ? "bg-[#000643]/[0.04]" : "hover:bg-gray-50"}`}>
+                      <td className="px-4 py-2.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="font-semibold text-[#000643]">{b.name || b.email}</span>
+                          {invoiceMissing ? (
+                            <span className="rounded bg-amber-50 px-1.5 font-semibold text-[10.5px] text-amber-800 ring-1 ring-amber-600/20 ring-inset">
+                              Invoice missing
+                            </span>
+                          ) : null}
+                          {refunded ? (
+                            <span className="rounded bg-blue-50 px-1.5 font-semibold text-[10.5px] text-blue-700 ring-1 ring-blue-600/15 ring-inset">
+                              Refunded
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="text-gray-500 text-xs">{b.email}</div>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <DayChips bookings={b.bookings} eventDates={eventDates} />
+                      </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">{b.bookingCount}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
+                        {money(b.confirmedTotal, b.currency)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">
+                        {onHold ? (
+                          <span className="font-semibold text-amber-700">{money(onHold, b.currency)}</span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-2.5 text-gray-400">
+                        <ChevronDown
+                          className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`}
+                          aria-hidden
+                        />
+                      </td>
+                    </tr>
+                    {open ? (
+                      <tr className="border-gray-100 border-b bg-[#000643]/[0.02]">
+                        <td colSpan={6} className="px-4 pt-1 pb-3">
+                          <table className="w-full rounded-lg border border-gray-200 bg-white text-left text-[13px]">
+                            <thead className="text-[10.5px] text-gray-500 uppercase tracking-[0.05em]">
+                              <tr className="border-gray-100 border-b">
+                                <th className="px-3 py-2 font-semibold">Room</th>
+                                <th className="px-3 py-2 font-semibold">When (TRT)</th>
+                                <th className="px-3 py-2 font-semibold">Add-ons</th>
+                                <th className="px-3 py-2 font-semibold">Status</th>
+                                <th className="px-3 py-2 text-right font-semibold">Amount</th>
+                                <th className="px-3 py-2 font-semibold">Document</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {b.bookings.map((bk) => (
+                                <tr key={bk.uid} className="border-gray-100 border-b last:border-0">
+                                  <td className="px-3 py-2 font-semibold text-[#000643]">{bk.roomName}</td>
+                                  <td className="px-3 py-2 tabular-nums">
+                                    {fmtDay(bk.startUtc)} · {fmtTime(bk.startUtc)}–{fmtTime(bk.endUtc)}
+                                  </td>
+                                  <td className="px-3 py-2 text-gray-600 text-xs">
+                                    {bk.addOns.length === 0
+                                      ? "—"
+                                      : bk.addOns.map((a) => `${a.name} × ${a.quantity}`).join(", ")}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <StatusPill status={displayStatus(bk)} />
+                                  </td>
+                                  <td className="px-3 py-2 text-right tabular-nums">
+                                    {money(bk.amountTotal, bk.currency)}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    {bk.creditNoteNumber ? (
+                                      <a
+                                        href={`/rooms/credit-note/${bk.documentUid}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="text-[#000643] underline decoration-[#000643]/30 underline-offset-2">
+                                        {bk.creditNoteNumber}
+                                      </a>
+                                    ) : bk.invoiceNumber ? (
+                                      <a
+                                        href={`/rooms/invoice/${bk.documentUid}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="text-[#000643] underline decoration-[#000643]/30 underline-offset-2">
+                                        {bk.invoiceNumber}
+                                      </a>
+                                    ) : (
+                                      <span className="text-gray-300">—</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
+  );
+}
+
+/**
+ * Which of the three days this person holds a room on — the one-room-a-day rule
+ * makes it the first thing the desk wants to know. Filled: confirmed. Hatched:
+ * on hold. Blue: refunded. Struck: cancelled. Pale: nothing that day.
+ */
+function DayChips({
+  bookings,
+  eventDates,
+}: {
+  bookings: BookerBooking[];
+  eventDates: string[];
+}): JSX.Element {
+  return (
+    <span className="inline-flex gap-1">
+      {eventDates.map((date) => {
+        const onDay = bookings.filter((b) => dayKey(b.startUtc) === date);
+        const statuses = onDay.map((b) => displayStatus(b));
+        const label = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday: "short" }).format(
+          new Date(`${date}T12:00:00Z`)
+        );
+        const base = "inline-block w-9 rounded border text-center font-semibold text-[10.5px] leading-[18px]";
+        if (statuses.includes("CONFIRMED")) {
+          return (
+            <span
+              key={date}
+              className={`${base} border-[#000643] bg-[#000643] text-white`}
+              title={`${label}: confirmed`}>
+              {label}
+            </span>
+          );
+        }
+        if (statuses.includes("PENDING")) {
+          return (
+            <span
+              key={date}
+              className={`${base} border-amber-300 text-amber-950`}
+              style={{ background: HATCH.held }}
+              title={`${label}: on hold`}>
+              {label}
+            </span>
+          );
+        }
+        if (statuses.includes("REFUNDED")) {
+          return (
+            <span
+              key={date}
+              className={`${base} border-blue-200 bg-blue-50 text-blue-700`}
+              title={`${label}: refunded`}>
+              {label}
+            </span>
+          );
+        }
+        if (statuses.includes("CANCELLED")) {
+          return (
+            <span
+              key={date}
+              className={`${base} border-gray-200 bg-white text-gray-400 line-through`}
+              title={`${label}: cancelled`}>
+              {label}
+            </span>
+          );
+        }
+        return (
+          <span
+            key={date}
+            className={`${base} border-gray-200 bg-white text-gray-300`}
+            title={`${label}: no room`}>
+            {label}
+          </span>
+        );
+      })}
+    </span>
   );
 }

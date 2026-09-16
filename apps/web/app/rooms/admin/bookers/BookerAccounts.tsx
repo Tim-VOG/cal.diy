@@ -30,7 +30,7 @@ export default function BookerAccounts(): JSX.Element | null {
     onSuccess: (result) => {
       setNote(
         result.ordersKept > 0
-          ? `Account deleted. ${result.ordersDeleted} booking(s) removed; ${result.ordersKept} kept, because they carry an invoice or a credit note.`
+          ? `Account deleted. ${result.ordersDeleted} booking(s) removed; ${result.ordersKept} kept, because they carry an invoice, a credit note or a payment.`
           : `Account deleted, with ${result.ordersDeleted} booking(s).`
       );
       accounts.refetch();
@@ -41,9 +41,9 @@ export default function BookerAccounts(): JSX.Element | null {
   const rows = accounts.data ?? [];
 
   return (
-    <section className="mb-8">
+    <section className="mt-10">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-bold text-[#000643] text-xl">Exhibitor accounts</h2>
+        <h2 className="font-semibold text-[#000643] text-[15px]">Exhibitor accounts</h2>
         <p className="text-gray-500 text-sm">
           {accounts.isLoading ? "Loading…" : `${rows.length} registered`}
         </p>
