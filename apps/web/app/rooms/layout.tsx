@@ -1,14 +1,18 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
+import { getNe26LegalPageRepository } from "@calcom/features/ne26-rooms/di/Ne26LegalPageRepository.container";
+import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
+import { deskSessionFromCookieHeader } from "@calcom/features/ne26-rooms/lib/deskSession";
+import { attentionCount } from "@calcom/features/ne26-rooms/lib/needsAttention";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
-import { getNe26LegalPageRepository } from "@calcom/features/ne26-rooms/di/Ne26LegalPageRepository.container";
+import { loadAdminBookings } from "./admin/adminData";
 import Footer from "./Footer";
 import LogoutButton from "./LogoutButton";
 import MainArea from "./MainArea";
 import ShortlistPanel from "./ShortlistPanel";
+import SiteNav from "./SiteNav";
 
 // Standalone public layout: it deliberately skips Cal's logged-in shell and the
 // booking PageWrapper — these pages are public and brand-themed (NATO Edge 26).
@@ -31,6 +35,15 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
   const isAdmin = session?.user?.role === "ADMIN";
   // The event's days, so the shortlist can say which are still open. Only
   // needed for someone who can actually book.
+  // The admin count on the navigation: only for an admin who is not on the
+  // desk tablet, and never allowed to break a page.
+  const onDesk = Boolean(deskSessionFromCookieHeader((await headers()).get("cookie")));
+  const adminCount =
+    isAdmin && !onDesk
+      ? await loadAdminBookings()
+          .then((data) => attentionCount(data.attention))
+          .catch(() => 0)
+      : 0;
   const eventDays = isLoggedIn
     ? (await getNe26RoomSettingsRepository().get()).eventDays.map((d) => d.date)
     : [];
@@ -86,34 +99,11 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
             )}
           </div>
         </div>
-
-        {/* Three tabs across on a phone, full labels from `sm`.
-            At their full length these three ran 26px past a 402px screen, and
-            the row had no way to scroll — so the whole PAGE could be dragged
-            sideways instead, which is not a gesture anyone makes on a phone on
-            purpose. Shorter words and an even three-way split fit without
-            asking the reader to scroll anything. */}
-        {isLoggedIn ? (
-          <nav className="border-white/10 border-t">
-            <div className="mx-auto grid max-w-6xl grid-cols-3 px-1 sm:flex sm:gap-1 sm:px-4">
-              {[
-                { href: "/rooms", label: "Book a meeting room", short: "Book" },
-                { href: "/rooms/bookings", label: "My bookings", short: "Bookings" },
-                { href: "/rooms/account", label: "Billing details", short: "Billing" },
-              ].map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="px-2 py-3 text-center font-medium text-sm text-white/75 transition hover:text-white sm:whitespace-nowrap sm:px-4 sm:text-left">
-                  <span className="sm:hidden">{item.short}</span>
-                  <span className="hidden sm:inline">{item.label}</span>
-                </Link>
-              ))}
-            </div>
-          </nav>
-        ) : null}
       </header>
-      <MainArea>{children}</MainArea>
+      <MainArea
+        nav={isLoggedIn ? <SiteNav isAdmin={isAdmin && !onDesk} attentionCount={adminCount} /> : null}>
+        {children}
+      </MainArea>
       {/* Rendered here so it follows the exhibitor from the listing into a
           room and back. On a wide screen it parks to the right of the content;
           below that it pins to the bottom. Nothing at all when there is

@@ -86,8 +86,8 @@ export default function DayCards({
               className="mt-3 grid grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-x-1.5 gap-y-[3px]"
               role="img"
               aria-label={`Room occupancy by hour on ${fmtDay(day.openUtc)}`}>
-              {day.grid.map((row) => (
-                <div key={row.roomName} className="contents">
+              {day.grid.map((row, i) => (
+                <div key={`${row.roomName}-${i}`} className="contents">
                   <span className="text-[10px] text-gray-500 leading-[9px]" title={row.roomName}>
                     {roomShort(row.roomName)}
                   </span>

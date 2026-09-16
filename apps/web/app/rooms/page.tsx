@@ -3,13 +3,13 @@ import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne
 import { getRoomAvailabilityService } from "@calcom/features/ne26-rooms/di/RoomAvailabilityService.container";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import { Euro, Scaling, Users } from "lucide-react";
-import { roomIconFor } from "./roomIcon";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { servicesFor } from "./amenities";
 import { requireBillingProfile } from "./requireBillingProfile";
+import { roomIconFor } from "./roomIcon";
 
 export const metadata: Metadata = {
   title: "Meeting Rooms · NATO Edge 26",
@@ -75,18 +75,21 @@ function RoomCard({ room }: { room: Room }): JSX.Element {
           <TitleIcon className="h-5 w-5 shrink-0 text-[#000643]" aria-hidden />
           {room.name}
         </h3>
-        <div className="mt-4 flex items-center justify-between text-sm">
+        {/* Wraps as whole items, never inside one: with the navigation rail
+            beside the listing a card can be narrow, and "54 m²" split over two
+            lines reads as two numbers. */}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm">
           <div className="flex items-center gap-3 text-gray-500">
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-1.5 whitespace-nowrap">
               <Users className="h-4 w-4 shrink-0" aria-hidden />
               {room.capacity}
             </span>
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-1.5 whitespace-nowrap">
               <Scaling className="h-4 w-4 shrink-0" aria-hidden />
               {room.surface} m²
             </span>
           </div>
-          <span className="flex items-center gap-1 font-medium text-[#000643]">
+          <span className="flex items-center gap-1 whitespace-nowrap font-medium text-[#000643]">
             <Euro className="h-4 w-4 shrink-0" aria-hidden />
             from {formatPrice(room.price1h, room.currency)}
           </span>

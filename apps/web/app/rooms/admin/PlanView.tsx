@@ -112,7 +112,7 @@ export default function PlanView({
 
           {rooms.map((room, i) => (
             <div
-              key={room.name}
+              key={`${room.name}-${i}`}
               className="grid grid-cols-[8.5rem_minmax(0,1fr)] border-gray-100 border-b last:border-0">
               <div className="py-2 pr-3">
                 <p className="font-semibold text-[#000643] text-[13px] leading-tight">{room.name}</p>
