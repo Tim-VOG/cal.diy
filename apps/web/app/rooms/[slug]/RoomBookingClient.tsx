@@ -1,8 +1,16 @@
 "use client";
 
+import { eventMinuteOfDay } from "@calcom/features/ne26-rooms/lib/deskDay";
 import { EXTENDED_USE_DISCOUNT_NOTE, extendedUseDiscountPct } from "@calcom/features/ne26-rooms/lib/discount";
 import type { DurationHours } from "@calcom/features/ne26-rooms/lib/eventSchedule";
-import { computeAddOnLine } from "@calcom/features/ne26-rooms/lib/pricing";
+import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
+import {
+  computeAddOnLine,
+  formatAddOnWindow,
+  isAddOnOfferedDuring,
+  minimumCoversFor,
+  type SlotWindow,
+} from "@calcom/features/ne26-rooms/lib/pricing";
 import { buildRoomPhotoList } from "@calcom/features/ne26-rooms/lib/roomImages";
 import type { RoomAvailability } from "@calcom/features/ne26-rooms/services/RoomAvailabilityService";
 import { AddOnPriceType } from "@calcom/prisma/enums";
@@ -10,17 +18,9 @@ import { trpc } from "@calcom/trpc/react";
 import { Clock, Euro, Scaling, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { servicesFor } from "../amenities";
+import { roomIconFor } from "../roomIcon";
 import { clearSelection, getSelection, saveSelection } from "../selectionStore";
 import RoomGallery from "./RoomGallery";
-import { eventMinuteOfDay } from "@calcom/features/ne26-rooms/lib/deskDay";
-import { minimumCoversFor } from "@calcom/features/ne26-rooms/lib/pricing";
-import { roomIconFor } from "../roomIcon";
-import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
-import {
-  formatAddOnWindow,
-  isAddOnOfferedDuring,
-  type SlotWindow,
-} from "@calcom/features/ne26-rooms/lib/pricing";
 
 const TZ = EVENT_TIME_ZONE;
 const MS_PER_HOUR = 60 * 60 * 1000;
@@ -96,8 +96,7 @@ const CELL_CLASS: Record<CellState, string> = {
   // The chosen one sits slightly proud of the row, so which day and which
   // duration are selected reads at a glance rather than by colour alone.
   selected: "border-[#000643] bg-[#000643] text-white shadow-md scale-[1.03]",
-  available:
-    "border-gray-200 bg-white text-black hover:border-[#000643] hover:shadow-sm active:scale-95",
+  available: "border-gray-200 bg-white text-black hover:border-[#000643] hover:shadow-sm active:scale-95",
   disabled: "cursor-not-allowed border-gray-100 bg-gray-100 text-gray-300",
 };
 function cellState(isSelected: boolean, isEnabled: boolean): CellState {
@@ -276,7 +275,6 @@ function vatPct(bp: number): string {
 // VAT recap derived from the buyer's saved billing profile: prices are HT, so
 // this adds the VAT and shows the incl.-VAT total actually charged. Without a
 // saved country we can't resolve VAT here, so we point to the billing details.
-
 
 export default function RoomBookingClient({
   availability,
@@ -458,10 +456,8 @@ export default function RoomBookingClient({
       // would be the same trap as the serving hours.
       if (checked) {
         const addOn = addOnsBySlug.get(slug);
-        next[slug] =
-          addOn?.priceType === AddOnPriceType.PER_PERSON ? minimumCoversFor(room.category) : 1;
-      }
-      else delete next[slug];
+        next[slug] = addOn?.priceType === AddOnPriceType.PER_PERSON ? minimumCoversFor(room.category) : 1;
+      } else delete next[slug];
       return next;
     });
   }
@@ -470,8 +466,7 @@ export default function RoomBookingClient({
     // Clamped here too, not only on the buttons: a restored shortlist can carry
     // a quantity from before the room's capacity was edited down.
     const addOn = addOnsBySlug.get(slug);
-    const floor =
-      addOn?.priceType === AddOnPriceType.PER_PERSON ? minimumCoversFor(room.category) : 1;
+    const floor = addOn?.priceType === AddOnPriceType.PER_PERSON ? minimumCoversFor(room.category) : 1;
     const capped = Math.min(room.capacity, Math.max(floor, quantity));
     setSelectedAddOns((prev) => ({ ...prev, [slug]: capped }));
   }
@@ -547,22 +542,43 @@ export default function RoomBookingClient({
 
         <RoomGallery photos={photos} roomName={room.name} />
 
-        {/* Day selector */}
+        {/* Day selector. A day on which this exhibitor already has a room is
+            amber, so the one-room-per-day rule shows before anything is picked. */}
         <div className="mt-6 flex gap-2">
-          {days.map((d) => (
-            <button
-              key={d.date}
-              type="button"
-              onClick={() => {
-                setSelectedDate(d.date);
-                setSelectedStartUtc(null);
-                createBooking.reset();
-              }}
-              className={`${CELL_BASE} ${CELL_CLASS[cellState(d.date === selectedDate, true)]}`}>
-              {formatDayLabel(d.date)}
-            </button>
-          ))}
+          {days.map((d) => {
+            const isSelected = d.date === selectedDate;
+            const taken = (bookedDays.data?.days ?? []).includes(d.date);
+            const takenClass = isSelected
+              ? "border-amber-500 bg-amber-100 font-semibold text-amber-900 ring-1 ring-amber-500"
+              : "border-amber-300 bg-amber-50 text-amber-800 hover:border-amber-400";
+            return (
+              <button
+                key={d.date}
+                type="button"
+                aria-pressed={isSelected}
+                title={taken ? "You already have a meeting room this day" : undefined}
+                onClick={() => {
+                  setSelectedDate(d.date);
+                  setSelectedStartUtc(null);
+                  createBooking.reset();
+                }}
+                className={`${CELL_BASE} ${taken ? takenClass : CELL_CLASS[cellState(isSelected, true)]}`}>
+                {formatDayLabel(d.date)}
+              </button>
+            );
+          })}
         </div>
+        {/* Right under the days, where it is read before choosing a time. At the
+            foot of the page it sat below every add-on — off screen on a phone,
+            so an exhibitor configured a whole booking before finding out. */}
+        {dayAlreadyBooked ? (
+          <p
+            className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800 text-sm"
+            role="status">
+            You already have a meeting room that day. Each exhibitor can book one room per day — pick another
+            day, or cancel the room you have.
+          </p>
+        ) : null}
 
         {/* Duration first — start slots below adapt to it */}
         <h2 className="mt-6 font-semibold text-gray-500 text-sm uppercase tracking-wide">Duration</h2>
@@ -650,18 +666,6 @@ export default function RoomBookingClient({
             href="/rooms/account"
             className="mt-3 block w-full rounded-lg bg-[#000643] px-4 py-2.5 text-center font-semibold text-sm text-white transition duration-200 hover:opacity-90 active:scale-[0.985] motion-reduce:transform-none">
             Complete billing details
-          </a>
-        </div>
-      ) : dayAlreadyBooked ? (
-        <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-5">
-          <p className="text-amber-800 text-sm">
-            You already have a meeting room that day. Each exhibitor can book one room per day,
-            whatever the time — pick another day, or cancel the room you have.
-          </p>
-          <a
-            href="/rooms/bookings"
-            className="mt-3 block w-full rounded-lg border border-[#000643] px-4 py-2.5 text-center font-semibold text-[#000643] text-sm transition duration-200 hover:bg-[#000643]/5 active:scale-[0.985] motion-reduce:transform-none">
-            See my bookings
           </a>
         </div>
       ) : null}
