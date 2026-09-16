@@ -197,10 +197,15 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                                 background: held ? HATCH.held : "#e9ebf7",
                                 border: `1px solid ${held ? "#f5c46b" : "#c9cde8"}`,
                               }}>
+                              {/* A one-hour block is an eighth of the day: too narrow
+                                  for a range, which was cut to "14:00–15:0". The
+                                  start alone says it; the full range is in the title. */}
                               <span className="font-semibold tabular-nums">
-                                {fmtTime(b.startTime.toISOString())}–{fmtTime(b.endTime.toISOString())}
+                                {b.durationMinutes <= 60
+                                  ? fmtTime(b.startTime.toISOString())
+                                  : `${fmtTime(b.startTime.toISOString())}–${fmtTime(b.endTime.toISOString())}`}
                               </span>
-                              {held ? " · awaiting payment" : ""}
+                              {held && b.durationMinutes > 60 ? " · awaiting payment" : ""}
                             </span>
                           );
                         })
@@ -219,13 +224,13 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
           <section
             aria-label="Bookings"
             className="hidden overflow-x-auto rounded-xl border border-gray-200 bg-white sm:block">
-            <table className="w-full min-w-[44rem] text-left text-[13px]">
+            <table className="w-full min-w-[40rem] text-left text-[13px]">
               <thead>
                 <tr className="border-gray-200 border-b bg-gray-50/80 text-[10.5px] text-gray-500 uppercase tracking-[0.05em]">
                   <th className="px-4 py-2.5 font-semibold">When</th>
                   <th className="px-4 py-2.5 font-semibold">Room</th>
                   <th className="px-4 py-2.5 font-semibold">Status</th>
-                  <th className="whitespace-nowrap px-4 py-2.5 text-right font-semibold">Amount excl. VAT</th>
+                  <th className="whitespace-nowrap px-4 py-2.5 text-right font-semibold">Excl. VAT</th>
                   <th className="px-4 py-2.5 font-semibold">Document</th>
                   <th className="px-4 py-2.5 font-semibold">Calendar</th>
                 </tr>
@@ -242,7 +247,9 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="font-semibold text-[#000643]">{b.resource.name}</span>
+                      <span className="whitespace-nowrap font-semibold text-[#000643]">
+                        {b.resource.name}
+                      </span>
                       <div className="text-gray-500 text-xs">
                         {b.addOns.length
                           ? b.addOns.map((a) => `${a.addOn.name} × ${a.quantity}`).join(", ")
