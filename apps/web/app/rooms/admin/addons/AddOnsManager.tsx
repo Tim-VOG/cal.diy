@@ -42,7 +42,14 @@ const input =
   "mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#000643] focus:outline-none";
 const label = "block font-medium text-gray-500 text-xs";
 
-export default function AddOnsManager({ addOns }: { addOns: AddOnRow[] }): JSX.Element {
+export default function AddOnsManager({
+  addOns,
+  kitchen,
+}: {
+  addOns: AddOnRow[];
+  /** The day-by-day kitchen sheet, rendered above the catalogue. */
+  kitchen?: React.ReactNode;
+}): JSX.Element {
   const router = useRouter();
   const [draft, setDraft] = useState<AddOnRow[]>(addOns);
   const [savingId, setSavingId] = useState<number | null>(null);
@@ -88,8 +95,15 @@ export default function AddOnsManager({ addOns }: { addOns: AddOnRow[] }): JSX.E
 
   return (
     <div>
-      <h1 className="font-bold text-2xl text-[#000643]">Manage add-ons</h1>
-      <p className="mt-1 text-gray-600 text-sm">Create, edit or remove add-ons. Prices are excl. VAT.</p>
+      <h1 className="font-bold text-2xl text-[#000643] tracking-tight">Add-ons</h1>
+      <p className="mt-1 text-gray-600 text-sm">
+        What the kitchen must prepare, then what exhibitors can order.
+      </p>
+
+      {kitchen}
+
+      <h2 className="mt-8 font-semibold text-[#000643] text-[15px]">Catalogue</h2>
+      <p className="text-gray-500 text-xs">Create, edit or remove add-ons. Prices are excl. VAT.</p>
 
       {/* Create */}
       <div className="mt-5 rounded-xl border border-gray-200 bg-white p-5">
