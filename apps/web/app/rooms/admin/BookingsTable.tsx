@@ -2,9 +2,7 @@
 
 import { orderRef } from "@calcom/features/ne26-rooms/lib/orderRef";
 import { buildXlsx, type CellValue } from "@calcom/features/ne26-rooms/lib/xlsx";
-import { trpc } from "@calcom/trpc/react";
 import { Download, Search } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { Fragment, useMemo, useState } from "react";
 import {
   dayKey,
@@ -22,16 +20,20 @@ import { StatusPill } from "./ui";
 const STATUS_FILTERS = ["ALL", "CONFIRMED", "PENDING", "REFUNDED", "CANCELLED"] as const;
 type StatusFilter = (typeof STATUS_FILTERS)[number];
 
-type SortKey = "when" | "room" | "booker" | "status" | "paid" | "addOns" | "amount" | "document";
+type SortKey = "when" | "room" | "booker" | "order" | "status" | "amount" | "document";
+/**
+ * One line per room. Email, category, payment date and add-on detail used to
+ * give every row three lines; they are one click away in the side panel, and
+ * all of them are still in the export.
+ */
 const COLUMNS: { key: SortKey; label: string; align?: "right" }[] = [
   { key: "when", label: "When (TRT)" },
   { key: "room", label: "Room" },
   { key: "booker", label: "Booker" },
+  { key: "order", label: "Order" },
   { key: "status", label: "Status" },
-  { key: "paid", label: "Payment" },
-  { key: "addOns", label: "Add-ons" },
-  { key: "amount", label: "Amount", align: "right" },
-  { key: "document", label: "Documents" },
+  { key: "amount", label: "Excl. VAT", align: "right" },
+  { key: "document", label: "Invoice" },
 ];
 
 /**
@@ -42,6 +44,7 @@ const COLUMNS: { key: SortKey; label: string; align?: "right" }[] = [
  * `=HYPERLINK(...)` at Stripe cannot execute when the file is opened.
  */
 const EXPORT_HEADERS = [
+  "Order",
   "Room",
   "Category",
   "Date (Istanbul)",
@@ -63,6 +66,7 @@ const EXPORT_HEADERS = [
 
 function exportRows(rows: AdminBookingRow[]): CellValue[][] {
   return rows.map((r) => [
+    r.orderNumber !== null ? orderRef(r.orderNumber) : "",
     r.roomName,
     r.category,
     fmtDay(r.startUtc),
@@ -100,30 +104,11 @@ export default function BookingsTable({
   onSelect: (uid: string) => void;
   now: Date | null;
 }): JSX.Element {
-  const router = useRouter();
   const [status, setStatus] = useState<StatusFilter>("ALL");
   const [query, setQuery] = useState("");
   const [roomFilter, setRoomFilter] = useState("ALL");
   const [dayFilter, setDayFilter] = useState("ALL");
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "when", dir: "asc" });
-  const [pendingUid, setPendingUid] = useState<string | null>(null);
-
-  const creditNote = trpc.viewer.rooms.issueCreditNote.useMutation({
-    onSettled: () => setPendingUid(null),
-    onSuccess: () => router.refresh(),
-  });
-
-  function onIssueCreditNote(row: AdminBookingRow): void {
-    // Issued against the ORDER, and it cancels every room on it: say so.
-    if (!row.orderUid) return;
-    const scope = row.orderRoomCount > 1 ? `all ${row.orderRoomCount} rooms on this order` : row.roomName;
-    const ok = window.confirm(
-      `Issue a credit note for ${row.bookerName}? This cancels ${scope}, frees the slots, and emails the booker. Refund the payment in Stripe separately.`
-    );
-    if (!ok) return;
-    setPendingUid(row.uid);
-    creditNote.mutate({ uid: row.orderUid });
-  }
 
   const rooms = useMemo(() => Array.from(new Set(rows.map((r) => r.roomName))).sort(), [rows]);
   const days = useMemo(() => {
@@ -145,7 +130,7 @@ export default function BookingsTable({
       if (dayFilter !== "ALL" && dayKey(r.startUtc) !== dayFilter) return false;
       if (q) {
         const hay =
-          `${r.bookerName} ${r.bookerEmail} ${r.roomName} ${r.invoiceNumber ?? ""} ${r.creditNoteNumber ?? ""} ${r.orderUid ? orderRef(r.orderUid) : ""}`.toLowerCase();
+          `${r.bookerName} ${r.bookerEmail} ${r.roomName} ${r.invoiceNumber ?? ""} ${r.creditNoteNumber ?? ""} ${r.orderNumber !== null ? orderRef(r.orderNumber) : ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -163,10 +148,8 @@ export default function BookingsTable({
           return `${r.bookerName} ${r.bookerEmail}`;
         case "status":
           return displayStatus(r);
-        case "paid":
-          return r.paidAt ?? "";
-        case "addOns":
-          return r.addOns.length;
+        case "order":
+          return r.orderNumber ?? "";
         case "amount":
           return r.amountTotal;
         case "document":
@@ -285,7 +268,7 @@ export default function BookingsTable({
       </div>
 
       <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200 bg-white">
-        <table className="w-full min-w-[56rem] text-left text-[13px]">
+        <table className="w-full min-w-[50rem] text-left text-[13px]">
           <thead className="border-gray-200 border-b bg-gray-50/80">
             <tr>
               {COLUMNS.map(({ key, label, align }) => (
@@ -345,14 +328,14 @@ export default function BookingsTable({
                       className={`cursor-pointer border-gray-100 border-b align-top transition last:border-0 ${
                         r.uid === selectedUid ? "bg-[#000643]/[0.05]" : "hover:bg-gray-50"
                       } ${shown === "CANCELLED" ? "text-gray-400" : ""}`}>
-                      <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">
+                      <td className="whitespace-nowrap px-3 py-2 tabular-nums">
                         {grouped ? null : <span className="text-gray-500">{fmtDay(r.startUtc)} · </span>}
                         <span className="font-semibold">
                           {fmtTime(r.startUtc)}–{fmtTime(r.endUtc)}
                         </span>
-                        <div className="text-gray-400 text-xs">{r.durationMinutes / 60} h</div>
+                        <span className="ml-1.5 text-gray-400 text-xs">{r.durationMinutes / 60} h</span>
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2.5">
+                      <td className="whitespace-nowrap px-3 py-2">
                         <button
                           type="button"
                           onClick={(e) => {
@@ -362,40 +345,38 @@ export default function BookingsTable({
                           className="font-semibold text-[#000643] hover:underline">
                           {r.roomName}
                         </button>
-                        <div className="text-[10.5px] text-gray-400 uppercase tracking-wide">
-                          {r.category}
-                        </div>
+                        {r.addOns.length ? (
+                          <span
+                            className="ml-1.5 text-gray-400 text-xs"
+                            title={r.addOns.map((a) => `${a.name} × ${a.quantity}`).join(", ")}>
+                            + {r.addOns.length} {r.addOns.length === 1 ? "add-on" : "add-ons"}
+                          </span>
+                        ) : null}
                       </td>
-                      <td className="max-w-[14rem] px-3 py-2.5">
-                        <div className="truncate">{r.bookerName}</div>
-                        <div className="truncate text-gray-400 text-xs">{r.bookerEmail}</div>
+                      <td className="max-w-[14rem] truncate px-3 py-2" title={r.bookerEmail}>
+                        {r.bookerName}
                       </td>
-                      <td className="px-3 py-2.5">
+                      <td className="whitespace-nowrap px-3 py-2 font-mono text-gray-500 text-xs">
+                        {r.orderNumber !== null ? orderRef(r.orderNumber) : "—"}
+                        {r.orderRoomCount > 1 ? (
+                          <span className="ml-1 font-sans text-gray-400">· {r.orderRoomCount} rooms</span>
+                        ) : null}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">
                         <StatusPill status={shown} />
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 text-xs tabular-nums">
                         {msLeft !== null ? (
                           <span
-                            className={`font-semibold ${msLeft < 5 * 60_000 ? "text-red-600" : "text-amber-700"}`}>
-                            {fmtCountdown(msLeft)} left
+                            className={`ml-2 font-semibold text-xs tabular-nums ${msLeft < 5 * 60_000 ? "text-red-600" : "text-amber-700"}`}>
+                            {fmtCountdown(msLeft)}
                           </span>
-                        ) : r.paidAt ? (
-                          <span className="text-gray-600">Paid {fmtMoment(r.paidAt)}</span>
-                        ) : (
-                          <span className="text-gray-400">Ordered {fmtMoment(r.orderedAt)}</span>
-                        )}
+                        ) : null}
                       </td>
-                      <td className="max-w-[11rem] px-3 py-2.5 text-gray-600 text-xs">
-                        {r.addOns.length ? (
-                          r.addOns.map((a) => `${a.name} × ${a.quantity}`).join(", ")
-                        ) : (
-                          <span className="text-gray-300">—</span>
-                        )}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums">
+                      <td className="whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums">
                         {fmtMoney(r.amountTotal, r.currency)}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                      <td
+                        className="whitespace-nowrap px-3 py-2 text-xs"
+                        onClick={(e) => e.stopPropagation()}>
                         {r.invoiceNumber ? (
                           <a
                             href={`/rooms/invoice/${r.documentUid}`}
@@ -404,49 +385,22 @@ export default function BookingsTable({
                             className="text-[#000643] underline decoration-[#000643]/30 underline-offset-2">
                             {r.invoiceNumber}
                           </a>
-                        ) : r.orderUid ? (
-                          <a
-                            href={`/rooms/admin/order/${r.orderUid}`}
-                            title="Order reference — no invoice issued yet"
-                            className="font-mono text-gray-500 text-xs hover:text-[#000643] hover:underline">
-                            {orderRef(r.orderUid)}
-                          </a>
+                        ) : r.status === "CONFIRMED" && r.orderUid ? (
+                          <span className="rounded bg-amber-50 px-1.5 py-0.5 font-semibold text-[10.5px] text-amber-800 ring-1 ring-amber-600/20 ring-inset">
+                            Invoice missing
+                          </span>
                         ) : (
                           <span className="text-gray-300">—</span>
                         )}
-                        {r.status === "CONFIRMED" && r.orderUid && !r.invoiceNumber ? (
-                          <div className="mt-0.5 inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 font-semibold text-[10.5px] text-amber-800 ring-1 ring-amber-600/20 ring-inset">
-                            Invoice missing
-                          </div>
-                        ) : null}
                         {r.creditNoteNumber ? (
-                          <div className="mt-0.5">
-                            <a
-                              href={`/rooms/credit-note/${r.documentUid}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-[#000643] text-xs underline decoration-[#000643]/30 underline-offset-2">
-                              {r.creditNoteNumber}
-                            </a>
-                          </div>
-                        ) : r.status === "CONFIRMED" && r.invoiceNumber ? (
-                          <div className="mt-1">
-                            <button
-                              type="button"
-                              onClick={() => onIssueCreditNote(r)}
-                              disabled={pendingUid === r.uid || !r.orderUid}
-                              title={
-                                r.orderUid
-                                  ? undefined
-                                  : "This booking predates orders and has no credit note path."
-                              }
-                              className="rounded-md border border-red-200 bg-white px-2 py-0.5 font-medium text-[11px] text-red-600 transition hover:border-red-400 disabled:opacity-50">
-                              {pendingUid === r.uid ? "Issuing…" : "Credit note"}
-                            </button>
-                          </div>
-                        ) : null}
-                        {r.orderRoomCount > 1 ? (
-                          <div className="text-[10.5px] text-gray-400">Order · {r.orderRoomCount} rooms</div>
+                          <a
+                            href={`/rooms/credit-note/${r.documentUid}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Credit note"
+                            className="ml-2 text-gray-500 underline decoration-gray-300 underline-offset-2">
+                            {r.creditNoteNumber}
+                          </a>
                         ) : null}
                       </td>
                     </tr>

@@ -10,7 +10,7 @@ import DayCards from "./DayCards";
 import { fmtDayLong } from "./format";
 import NeedsAttentionPanel from "./NeedsAttentionPanel";
 import PlanView, { type PlanBlockedSlot, type PlanRoom } from "./PlanView";
-import SummaryCards from "./SummaryCards";
+import { LatestOrders, SalesStrip } from "./SummaryCards";
 import { useNow } from "./ui";
 
 export interface AdminBookingRow {
@@ -28,6 +28,8 @@ export interface AdminBookingRow {
   stripePaymentId: string | null;
   orderRoomCount: number;
   orderUid: string | null;
+  /** The number people quote — format with orderRef(). Null only for a room with no order. */
+  orderNumber: number | null;
   /** When the order was placed, and when it was paid — different questions. */
   orderedAt: string;
   paidAt: string | null;
@@ -41,8 +43,9 @@ export interface AdminBookingRow {
 }
 
 /**
- * The bookings home: what needs a person, then money and the three days, then
- * the rooms — as a plan to the minute, or as the list the desk exports from.
+ * The bookings home: money first, then what needs a person and the three days,
+ * then the rooms — as a plan to the minute, or as the list the desk exports
+ * from. The latest orders are a log and come last.
  */
 export default function RoomsAdminView({
   rows,
@@ -99,15 +102,14 @@ export default function RoomsAdminView({
         </a>
       </header>
 
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <NeedsAttentionPanel items={attention} />
-        <SummaryCards
-          rows={rows}
-          soldHours={totals.sold}
-          heldHours={totals.held}
-          capacityHours={totals.capacity}
-        />
-      </div>
+      <SalesStrip
+        rows={rows}
+        soldHours={totals.sold}
+        heldHours={totals.held}
+        capacityHours={totals.capacity}
+      />
+
+      <NeedsAttentionPanel items={attention} />
 
       <DayCards days={days} selectedDate={day?.date ?? ""} onSelect={setSelectedDate} currency={currency} />
 
@@ -161,6 +163,8 @@ export default function RoomsAdminView({
           <BookingSidePanel booking={selected} onClose={() => setSelectedUid(null)} now={now} />
         ) : null}
       </div>
+
+      <LatestOrders rows={rows} />
     </div>
   );
 }
