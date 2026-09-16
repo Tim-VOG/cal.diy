@@ -1,6 +1,7 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
 import { getResourceBookingRepository } from "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container";
+import { orderRef } from "@calcom/features/ne26-rooms/lib/orderRef";
 import { buildEventSchedule, SLOT_GRANULARITY_MS } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import { CalendarPlus, Clock3, FileText } from "lucide-react";
@@ -268,6 +269,11 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                           the pair is what reconciles in the exhibitor's accounts,
                           and this page is where they come back for it when the
                           emails are gone. */}
+                      {b.order ? (
+                        <div className="mb-1 whitespace-nowrap font-mono text-[11px] text-gray-500">
+                          {orderRef(b.order.orderNumber)}
+                        </div>
+                      ) : null}
                       {b.order?.invoiceNumber ? (
                         <div className="grid gap-1">
                           <a
@@ -361,6 +367,11 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                     </div>
                   ) : null}
                   <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-gray-100 border-t pt-3 text-sm">
+                    {b.order ? (
+                      <span className="font-mono text-gray-500 text-xs leading-5">
+                        {orderRef(b.order.orderNumber)}
+                      </span>
+                    ) : null}
                     {b.order?.invoiceNumber ? (
                       <a
                         href={`/rooms/invoice/${b.documentUid}`}

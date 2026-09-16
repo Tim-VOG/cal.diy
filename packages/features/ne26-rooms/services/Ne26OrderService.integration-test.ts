@@ -588,6 +588,9 @@ describe("Ne26OrderService.createOrder", () => {
       });
 
       expect(second.order.uid).not.toBe(first.order.uid);
+      // A replacement is a new order with a new number: the number follows the
+      // row, and a number is never handed out twice.
+      expect(second.order.orderNumber).toBeGreaterThan(first.order.orderNumber);
       expect(second.order.amountTotal).toBe(35000 + 6 * 3500);
       // The old order is gone, not merely superseded on paper: a second row
       // holding the same slot would make the room unsellable to anyone.

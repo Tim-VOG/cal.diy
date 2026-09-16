@@ -1,16 +1,15 @@
 /**
- * A short handle for an order that has no invoice number yet.
+ * The order number people read, say and search for: "NE26-ORD-0042".
  *
- * The bookings list identified an order only by its invoice number, so the
- * rows of an unpaid hold — or of a paid order whose invoice failed, the case
- * "issue the missing invoice" exists for — carried no identifier at all. Two
- * rooms of the same order could not be told from two separate bookings, and
- * the one order that needed repairing was the one nobody could find.
+ * Orders were identified by a uuid, or by their invoice number once one
+ * existed — so an unpaid hold, or a paid order whose invoice failed, carried
+ * nothing a person could quote. The number comes from the database
+ * (Ne26Order.orderNumber), assigned at creation.
  *
- * The first block of the uid: eight hex characters, enough to be unique across
- * a few hundred orders and short enough to read out over the phone. It is a
- * prefix of the full uid shown on the order page, so the two visibly match.
+ * "ORD" rather than a bare number so it can never be mistaken for an invoice
+ * (NE26-2026-0042) or a credit note (NE26-CN-2026-0042) that happen to share
+ * the same digits — which, for the first orders of the event, they will.
  */
-export function orderRef(orderUid: string): string {
-  return `#${orderUid.split("-")[0].slice(0, 8)}`;
+export function orderRef(orderNumber: number): string {
+  return `NE26-ORD-${String(orderNumber).padStart(4, "0")}`;
 }

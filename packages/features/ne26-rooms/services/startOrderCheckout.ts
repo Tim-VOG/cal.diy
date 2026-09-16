@@ -197,6 +197,7 @@ export async function startOrderCheckout(input: StartOrderCheckoutInput) {
 
     const checkout = await getStripeCheckoutService().createCheckoutSession({
       orderUid: order.uid,
+      orderNumber: order.orderNumber,
       currency: order.currency,
       lines: [...checkoutLines, ...vatLines],
       customerEmail: input.buyer.email,
@@ -317,6 +318,7 @@ export async function resumeOrderCheckout(input: {
 
   const checkout = await getStripeCheckoutService().createCheckoutSession({
     orderUid: order.uid,
+    orderNumber: order.orderNumber,
     currency: order.currency,
     lines,
     customerEmail: input.buyerEmail,

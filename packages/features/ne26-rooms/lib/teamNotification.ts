@@ -60,7 +60,8 @@ export interface SaleNotificationRoom {
 }
 
 export interface SaleNotificationInput {
-  orderUid: string;
+  /** The order number people quote, already formatted: NE26-ORD-0001. */
+  orderRef: string;
   /** One payment can cover several rooms; the mail lists them all. */
   rooms: SaleNotificationRoom[];
   bookerName?: string | null;
@@ -148,7 +149,7 @@ export function saleNotification(input: SaleNotificationInput): TeamNotification
   if (paid !== null) lines.push(field("Paid (incl. VAT)", formatMoney(paid, input.currency)));
   if (input.invoiceNumber) lines.push(field("Invoice", input.invoiceNumber));
 
-  lines.push("", field("Order", input.orderUid), "", input.adminUrl);
+  lines.push("", field("Order", input.orderRef), "", input.adminUrl);
   if (input.stripeUrl) lines.push(input.stripeUrl);
 
   const facts: { label: string; value: string; strong?: boolean }[] = [
@@ -158,7 +159,7 @@ export function saleNotification(input: SaleNotificationInput): TeamNotification
     // figure, and the text body has always carried both.
     { label: "Total excl. VAT", value: formatMoney(input.amountHt, input.currency) },
     ...(input.invoiceNumber ? [{ label: "Invoice", value: input.invoiceNumber }] : []),
-    { label: "Order", value: input.orderUid },
+    { label: "Order", value: input.orderRef },
   ];
 
   const html = emailShell(
@@ -201,7 +202,7 @@ export type FailureReason = "payment_attempt_failed" | ReleaseReason;
 export type ReleaseReason = "payment_failed" | "session_expired";
 
 export interface FailureNotificationInput {
-  orderUid: string;
+  orderRef: string;
   reason: FailureReason;
   rooms: SaleNotificationRoom[];
   bookerName?: string | null;
@@ -304,7 +305,7 @@ export function failureNotification(input: FailureNotificationInput): TeamNotifi
 
   lines.push(field("Buyer", buyerLine));
   lines.push(field(stakeLabel, formatMoney(input.amountHt, input.currency)));
-  lines.push("", field("Order", input.orderUid), "", input.adminUrl);
+  lines.push("", field("Order", input.orderRef), "", input.adminUrl);
   if (input.stripeUrl) lines.push(input.stripeUrl);
 
   const facts: { label: string; value: string; strong?: boolean }[] = [
@@ -318,7 +319,7 @@ export function failureNotification(input: FailureNotificationInput): TeamNotifi
           ...(decline.codes ? [{ label: "Stripe code", value: decline.codes }] : []),
         ]
       : []),
-    { label: "Order", value: input.orderUid },
+    { label: "Order", value: input.orderRef },
   ];
 
   const html = emailShell(
@@ -341,7 +342,7 @@ export function failureNotification(input: FailureNotificationInput): TeamNotifi
 }
 
 export interface RefundNotificationInput {
-  orderUid: string;
+  orderRef: string;
   rooms: SaleNotificationRoom[];
   bookerName?: string | null;
   bookerEmail?: string | null;
@@ -386,7 +387,7 @@ export function refundNotification(input: RefundNotificationInput): TeamNotifica
   lines.push(field("Refunded", formatMoney(input.amountRefunded, input.currency)));
   if (input.invoiceNumber) lines.push(field("Invoice", input.invoiceNumber));
   if (input.creditNoteNumber) lines.push(field("Credit note", input.creditNoteNumber));
-  lines.push("", field("Order", input.orderUid));
+  lines.push("", field("Order", input.orderRef));
   lines.push("", "These rooms are back on sale.", "", input.adminUrl);
   if (input.stripeUrl) lines.push(input.stripeUrl);
 
@@ -395,7 +396,7 @@ export function refundNotification(input: RefundNotificationInput): TeamNotifica
     { label: "Refunded", value: formatMoney(input.amountRefunded, input.currency), strong: true },
     ...(input.invoiceNumber ? [{ label: "Invoice", value: input.invoiceNumber }] : []),
     ...(input.creditNoteNumber ? [{ label: "Credit note", value: input.creditNoteNumber }] : []),
-    { label: "Order", value: input.orderUid },
+    { label: "Order", value: input.orderRef },
   ];
 
   const html = emailShell(

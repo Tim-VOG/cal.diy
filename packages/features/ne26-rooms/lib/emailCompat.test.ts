@@ -22,7 +22,7 @@ const SUITE = {
 };
 
 const sale = saleNotification({
-  orderUid: "2fe0f775-7681-4cb1-a0c3-b21dac06219d",
+  orderRef: "NE26-ORD-0042",
   rooms: [SUITE, SUITE, SUITE],
   bookerName: "Jane Exhibitor",
   bookerEmail: "jane@example.com",
@@ -37,7 +37,7 @@ const sale = saleNotification({
 });
 
 const decline = failureNotification({
-  orderUid: "2fe0f775-7681-4cb1-a0c3-b21dac06219d",
+  orderRef: "NE26-ORD-0042",
   reason: "payment_attempt_failed",
   rooms: [SUITE],
   bookerName: "Jane Exhibitor",

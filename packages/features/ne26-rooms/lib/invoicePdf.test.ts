@@ -186,7 +186,7 @@ describe("renderInvoicePdf — the buyer's own references", () => {
   it("renders with both references", async () => {
     const bytes = await renderInvoicePdf(
       model(),
-      { ...META, poNumber: "4471", internalReference: "COST-88" },
+      { ...META, orderRef: "NE26-ORD-0007", poNumber: "4471", internalReference: "COST-88" },
       ISSUER
     );
     expect(new TextDecoder().decode(bytes.slice(0, 5))).toBe("%PDF-");

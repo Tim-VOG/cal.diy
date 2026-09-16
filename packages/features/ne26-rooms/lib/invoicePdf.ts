@@ -21,6 +21,8 @@ export interface InvoiceMeta {
   paidViaStripe?: boolean;
   /** For a credit note: the invoice number it cancels. */
   relatedInvoiceNumber?: string;
+  /** Our order number, NE26-ORD-0001 — the reference the buyer quotes to us. */
+  orderRef?: string | null;
   /** The buyer's own references. Printed only when they gave one. */
   poNumber?: string | null;
   internalReference?: string | null;
@@ -69,30 +71,32 @@ export interface InvoiceIssuer {
  * the day such a name shows up.
  */
 export function toPdfText(s: string): string {
-  return s
-    .replace(/[—–]/g, "-")
-    // Separators the app itself emits between fields ("IBAN … · BIC …"). Without
-    // this they fall through to the final catch-all and print as "?", which on an
-    // invoice reads as a rendering fault.
-    .replace(/[·•]/g, "-")
-    .replace(/…/g, "...")
-    .replace(/[\u00a0\u202f\u2009]/g, " ")
-    .replace(/×/g, "x")
-    .replace(/[’‘]/g, "'")
-    .replace(/[“”]/g, '"')
-    .replace(/ß/g, "ss")
-    .replace(/Ø/g, "O")
-    .replace(/ø/g, "o")
-    .replace(/Æ/g, "AE")
-    .replace(/æ/g, "ae")
-    .replace(/Œ/g, "OE")
-    .replace(/œ/g, "oe")
-    .normalize("NFD")
-    // Combining Diacritical Marks block. Written as an explicit range rather than
-    // \p{Diacritic}: unicode property escapes need an ES6+ target, and some
-    // packages here still compile to ES5.
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\x20-\x7E]/g, "?");
+  return (
+    s
+      .replace(/[—–]/g, "-")
+      // Separators the app itself emits between fields ("IBAN … · BIC …"). Without
+      // this they fall through to the final catch-all and print as "?", which on an
+      // invoice reads as a rendering fault.
+      .replace(/[·•]/g, "-")
+      .replace(/…/g, "...")
+      .replace(/[\u00a0\u202f\u2009]/g, " ")
+      .replace(/×/g, "x")
+      .replace(/[’‘]/g, "'")
+      .replace(/[“”]/g, '"')
+      .replace(/ß/g, "ss")
+      .replace(/Ø/g, "O")
+      .replace(/ø/g, "o")
+      .replace(/Æ/g, "AE")
+      .replace(/æ/g, "ae")
+      .replace(/Œ/g, "OE")
+      .replace(/œ/g, "oe")
+      .normalize("NFD")
+      // Combining Diacritical Marks block. Written as an explicit range rather than
+      // \p{Diacritic}: unicode property escapes need an ES6+ target, and some
+      // packages here still compile to ES5.
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\x20-\x7E]/g, "?")
+  );
 }
 
 function ascii(s: string): string {
@@ -219,6 +223,7 @@ export async function renderInvoicePdf(
   // The buyer's own references, when they gave any. An empty one prints nothing
   // rather than a dangling label — most exhibitors have neither.
   const references = [
+    meta.orderRef ? `Order ${meta.orderRef}` : "",
     meta.poNumber?.trim() ? `PO ${meta.poNumber.trim()}` : "",
     meta.internalReference?.trim() ? `Ref. ${meta.internalReference.trim()}` : "",
   ].filter(Boolean);
@@ -284,13 +289,17 @@ export async function renderInvoicePdf(
   // finance team had nothing telling them it was already settled — and finance
   // chasing a paid invoice is a phone call nobody needs during the event.
   y -= 28;
-  const statusLabel = isCredit
-    ? "REFUNDED"
+  const statusLabel = isCredit ? "REFUNDED" : meta.paidViaStripe === false ? "PAYMENT DUE" : "PAID";
+  const statusColor = isCredit
+    ? rgb(0.55, 0.33, 0.05)
     : meta.paidViaStripe === false
-      ? "PAYMENT DUE"
-      : "PAID";
-  const statusColor = isCredit ? rgb(0.55, 0.33, 0.05) : meta.paidViaStripe === false ? rgb(0.6, 0.2, 0.2) : rgb(0.06, 0.42, 0.24);
-  const statusBg = isCredit ? rgb(1, 0.96, 0.88) : meta.paidViaStripe === false ? rgb(1, 0.94, 0.94) : rgb(0.91, 0.97, 0.93);
+      ? rgb(0.6, 0.2, 0.2)
+      : rgb(0.06, 0.42, 0.24);
+  const statusBg = isCredit
+    ? rgb(1, 0.96, 0.88)
+    : meta.paidViaStripe === false
+      ? rgb(1, 0.94, 0.94)
+      : rgb(0.91, 0.97, 0.93);
   const statusW = bold.widthOfTextAtSize(statusLabel, 10) + 22;
   page.drawRectangle({
     x: right - statusW,
@@ -320,7 +329,6 @@ export async function renderInvoicePdf(
       text("Already settled by card - no transfer required.", left, y, 8, font, GREY);
     }
   }
-
 
   // VAT legal mention (reverse charge / exemption) — its own amber block, bold italic.
   if (model.vatMention) {

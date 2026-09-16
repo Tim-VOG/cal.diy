@@ -27,6 +27,8 @@ export interface InvoiceEmailRoom {
 export interface InvoiceEmailInput {
   to: string;
   bookerName: string;
+  /** NE26-ORD-0001 — what the buyer quotes when they write to us. */
+  orderRef?: string;
   invoiceNumber: string;
   /** Subject line only — the body lists every room in full. */
   roomName: string;
@@ -264,9 +266,12 @@ export async function sendInvoiceEmail(input: InvoiceEmailInput): Promise<void> 
     .join("\n\n");
   const roomsHtml = rooms.map(roomBlock).join("");
 
+  const orderText = input.orderRef ? `Order ${input.orderRef}. ` : "";
+  const orderHtml = input.orderRef ? `Order <strong>${escapeHtml(input.orderRef)}</strong>. ` : "";
+
   const textBody = isCredit
-    ? `Hi ${input.bookerName},\n\nYour booking at NATO Edge 26 has been cancelled and refunded.\nA refund of ${input.amountLabel} has been issued.\n\n${roomsText}\n\nCredit note ${input.invoiceNumber} is attached.\n\nNATO Edge 26 — Meeting Rooms`
-    : `Hi ${input.bookerName},\n\nThank you for booking with NATO Edge 26. Your payment of ${input.amountLabel} has been received.\n\n${roomsText}\n\nInvoice ${input.invoiceNumber} is attached.${icsText}\n\n17-19 November 2026 — Fuar Izmir, Turkiye\nAll times are shown in TRT.\n\nNATO Edge 26 — Meeting Rooms`;
+    ? `Hi ${input.bookerName},\n\nYour booking at NATO Edge 26 has been cancelled and refunded.\nA refund of ${input.amountLabel} has been issued.\n\n${roomsText}\n\n${orderText}Credit note ${input.invoiceNumber} is attached.\n\nNATO Edge 26 — Meeting Rooms`
+    : `Hi ${input.bookerName},\n\nThank you for booking with NATO Edge 26. Your payment of ${input.amountLabel} has been received.\n\n${roomsText}\n\n${orderText}Invoice ${input.invoiceNumber} is attached.${icsText}\n\n17-19 November 2026 — Fuar Izmir, Turkiye\nAll times are shown in TRT.\n\nNATO Edge 26 — Meeting Rooms`;
 
   const summary = roomsHtml
     ? card(roomsHtml + totalRow(isCredit ? "Total refunded" : "Total paid", input.amountLabel))
@@ -274,8 +279,8 @@ export async function sendInvoiceEmail(input: InvoiceEmailInput): Promise<void> 
 
   const htmlBody = emailShell(
     isCredit
-      ? `<p style="margin:0 0 14px">Hi ${name},</p><p style="margin:0 0 14px">Your booking at NATO Edge 26 has been cancelled and refunded.</p>${summary}<p style="margin:0 0 14px">A refund of <strong>${amount}</strong> has been issued. Credit note <strong>${escapeHtml(input.invoiceNumber)}</strong> is attached.</p>${signOff()}`
-      : `<p style="margin:0 0 14px">Hi ${name},</p><p style="margin:0 0 14px">Thank you for booking with NATO Edge 26. Your payment has been received.</p>${summary}<p style="margin:0 0 14px">Invoice <strong>${escapeHtml(input.invoiceNumber)}</strong> is attached.${icsHtml}</p>${signOff("17–19 November 2026 · Fuar İzmir, Türkiye · all times in TRT")}`
+      ? `<p style="margin:0 0 14px">Hi ${name},</p><p style="margin:0 0 14px">Your booking at NATO Edge 26 has been cancelled and refunded.</p>${summary}<p style="margin:0 0 14px">A refund of <strong>${amount}</strong> has been issued. ${orderHtml}Credit note <strong>${escapeHtml(input.invoiceNumber)}</strong> is attached.</p>${signOff()}`
+      : `<p style="margin:0 0 14px">Hi ${name},</p><p style="margin:0 0 14px">Thank you for booking with NATO Edge 26. Your payment has been received.</p>${summary}<p style="margin:0 0 14px">${orderHtml}Invoice <strong>${escapeHtml(input.invoiceNumber)}</strong> is attached.${icsHtml}</p>${signOff("17–19 November 2026 · Fuar İzmir, Türkiye · all times in TRT")}`
   );
 
   await transport.sendMail({

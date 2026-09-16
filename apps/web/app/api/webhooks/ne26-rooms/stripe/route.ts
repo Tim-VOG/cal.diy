@@ -18,6 +18,7 @@ import {
   type ReleaseReason,
   saleNotification,
 } from "@calcom/features/ne26-rooms/lib/teamNotification";
+import { orderRef } from "@calcom/features/ne26-rooms/lib/orderRef";
 import type { Ne26OrderRepository as Ne26OrderRepositoryLike } from "@calcom/features/ne26-rooms/repositories/Ne26OrderRepository";
 import { WEBAPP_URL } from "@calcom/lib/constants";
 import logger from "@calcom/lib/logger";
@@ -99,7 +100,7 @@ async function notifyRefunded(stripePaymentId: string, amountRefunded: number): 
     }
     const { refundNotification } = await import("@calcom/features/ne26-rooms/lib/teamNotification");
     const { subject, body, html } = refundNotification({
-      orderUid: order.uid,
+      orderRef: orderRef(order.orderNumber),
       rooms: order.bookings.map((b) => ({
         roomName: b.resource.name,
         startUtc: b.startTime,
@@ -114,7 +115,7 @@ async function notifyRefunded(stripePaymentId: string, amountRefunded: number): 
       invoiceNumber: order.invoiceNumber,
       creditNoteNumber: order.creditNoteNumber,
       stripeUrl: stripeUrlFor(stripePaymentId),
-      adminUrl: `${WEBAPP_URL}/rooms/admin`,
+      adminUrl: `${WEBAPP_URL}/rooms/admin/order/${order.uid}`,
     });
     await notifySales(subject, body, html);
   } catch (e) {
@@ -166,7 +167,7 @@ async function notifyReleased(
   }));
 
   const { subject, body, html } = failureNotification({
-    orderUid: order.uid,
+    orderRef: orderRef(order.orderNumber),
     reason,
     rooms,
     bookerName: order.bookerName,
@@ -174,7 +175,7 @@ async function notifyReleased(
     amountHt: order.amountTotal,
     currency: order.currency,
     stripeUrl,
-    adminUrl: `${WEBAPP_URL}/rooms/admin`,
+    adminUrl: `${WEBAPP_URL}/rooms/admin/order/${order.uid}`,
   });
   await notifySales(subject, body, html);
 
@@ -205,7 +206,7 @@ async function notifyReleased(
  * back to the uid alone rather than staying silent if that read fails.
  */
 async function notifySale(orderUid: string, session: Stripe.Checkout.Session): Promise<void> {
-  const adminUrl = `${WEBAPP_URL}/rooms/admin`;
+  const adminUrl = `${WEBAPP_URL}/rooms/admin/order/${orderUid}`;
   try {
     const { getNe26OrderRepository } = await import(
       "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
@@ -213,7 +214,7 @@ async function notifySale(orderUid: string, session: Stripe.Checkout.Session): P
     const order = await getNe26OrderRepository().findByUid(orderUid);
     if (order) {
       const { subject, body, html } = saleNotification({
-        orderUid,
+        orderRef: orderRef(order.orderNumber),
         rooms: order.bookings.map((b) => ({
           roomName: b.resource.name,
           startUtc: b.startTime,
@@ -472,7 +473,7 @@ export async function POST(req: Request): Promise<Response> {
             "@calcom/features/ne26-rooms/services/HoldReminderService"
           );
           const { subject, body, html } = failureNotification({
-            orderUid,
+            orderRef: orderRef(order.orderNumber),
             reason: "payment_attempt_failed",
             rooms: order.bookings.map((b) => ({
               roomName: b.resource.name,
@@ -497,7 +498,7 @@ export async function POST(req: Request): Promise<Response> {
             decline,
             supersedesEarlierNotice: alreadyNotified && mustNotBeTold,
             stripeUrl: stripeUrlFor(intent.id),
-            adminUrl: `${WEBAPP_URL}/rooms/admin`,
+            adminUrl: `${WEBAPP_URL}/rooms/admin/order/${order.uid}`,
           });
           log.warn(
             `Payment declined for order ${orderUid}: ${error?.code ?? "?"}/${error?.decline_code ?? "?"}`

@@ -93,9 +93,9 @@ export default function BookingSidePanel({
               : booking.addOns.map((a) => `${a.name} × ${a.quantity}`).join(", ")}
           </Row>
           <Row label="Amount">{fmtMoney(booking.amountTotal, booking.currency)}</Row>
-          {booking.orderUid ? (
+          {booking.orderNumber !== null ? (
             <Row label="Order">
-              <span className="font-mono text-xs">{orderRef(booking.orderUid)}</span>
+              <span className="font-mono text-xs">{orderRef(booking.orderNumber)}</span>
               {booking.orderRoomCount > 1 ? (
                 <span className="text-gray-500"> · {booking.orderRoomCount} rooms</span>
               ) : null}

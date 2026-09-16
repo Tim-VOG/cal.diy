@@ -61,6 +61,8 @@ DELETE FROM "Ne26AuditLog";
 -- Back to zero, so the first real sale is NE26-2026-0001 and the series a
 -- bookkeeper reads starts where the event starts.
 UPDATE "Ne26DocumentCounter" SET "lastNumber" = 0, "updatedAt" = CURRENT_TIMESTAMP;
+-- And the order numbers, so the first order after the reset is NE26-ORD-0001.
+ALTER SEQUENCE "Ne26Order_orderNumber_seq" RESTART WITH 1;
 COMMIT;
 SQL
 

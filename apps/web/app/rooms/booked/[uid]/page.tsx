@@ -7,6 +7,7 @@ import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { orderRef } from "@calcom/features/ne26-rooms/lib/orderRef";
 import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import ClearShortlist from "./ClearShortlist";
 
@@ -98,7 +99,7 @@ export default async function BookedPage({ params }: { params: Params }): Promis
         <p className="border-gray-200 border-t pt-3 font-bold text-[#000643]">
           {amount} <span className="font-normal text-gray-500 text-xs">excl. VAT</span>
         </p>
-        <p className="text-gray-500 text-xs">Reference {uid.slice(0, 8)}</p>
+        <p className="text-gray-500 text-xs">Order {order ? orderRef(order.orderNumber) : uid.slice(0, 8)}</p>
       </div>
 
       <Link

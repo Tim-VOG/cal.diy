@@ -206,7 +206,9 @@ function PlanBlockView({
   const msLeft = held && b.holdExpiresAt && now ? new Date(b.holdExpiresAt).getTime() - now.getTime() : null;
   const second = held
     ? `Hold${msLeft !== null ? ` · ${fmtCountdown(msLeft)}` : ""}`
-    : (b.invoiceNumber ?? (b.orderUid ? `${orderRef(b.orderUid)} · no invoice` : ""));
+    : b.orderNumber !== null
+      ? `${orderRef(b.orderNumber)}${b.invoiceNumber ? "" : " · no invoice"}`
+      : (b.invoiceNumber ?? "");
 
   const style: React.CSSProperties = held
     ? { background: HATCH.held, border: "1px solid #f5c46b" }

@@ -3224,6 +3224,12 @@ model Ne26DocumentCounter {
 
 model Ne26Order {
   uid                     String                @id @default(uuid())
+  // NE26: the number people say and search for — "NE26-ORD-0042" once
+  // formatted. The uid identifies the row; nobody reads a uuid over the phone.
+  // Assigned by the database at creation, so two orders created at the same
+  // instant can never share one. Gaps are expected (abandoned holds) and
+  // harmless: unlike invoice numbers, this series is not an accounting record.
+  orderNumber             Int                   @unique @default(autoincrement())
   bookings                ResourceBooking[]
   // Null for a counter sale: the desk sells to people with no account.
   bookerUserId            Int?

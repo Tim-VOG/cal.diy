@@ -10,7 +10,7 @@ const SUITE_1 = {
 };
 
 const BASE = {
-  orderUid: "2fe0f775-7681-4cb1-a0c3-b21dac06219d",
+  orderRef: "NE26-ORD-0042",
   rooms: [SUITE_1],
   bookerName: "Jane Exhibitor",
   bookerEmail: "jane@example.com",
@@ -123,7 +123,7 @@ describe("saleNotification", () => {
       expect(body).toContain("1020.00 EUR");
       expect(body).toContain("1234.20 EUR");
       // The single order reference is what ties the payment to the invoice.
-      expect(body).toContain(BASE.orderUid);
+      expect(body).toContain(BASE.orderRef);
     });
 
     it("attaches each add-on to the room it belongs to", () => {
@@ -154,7 +154,7 @@ describe("the Stripe link on a sale", () => {
 
 describe("failureNotification", () => {
   const FAILED = {
-    orderUid: BASE.orderUid,
+    orderRef: BASE.orderRef,
     reason: "payment_failed" as const,
     rooms: BASE.rooms,
     bookerName: "Jane Exhibitor",
@@ -218,7 +218,7 @@ describe("failureNotification", () => {
 
 describe("a card that was declined, not a sale that was lost", () => {
   const DECLINED = {
-    orderUid: BASE.orderUid,
+    orderRef: BASE.orderRef,
     reason: "payment_attempt_failed" as const,
     rooms: BASE.rooms,
     bookerName: "Jane Exhibitor",
@@ -282,7 +282,7 @@ describe("the laid-out version of the team mails", () => {
     expect(html).toContain("871.20 EUR");
     expect(html).toContain("NE26-2026-0007");
     expect(html).toContain("jane@example.com");
-    expect(html).toContain(BASE.orderUid);
+    expect(html).toContain(BASE.orderRef);
   });
 
   it("links to the admin dashboard and to Stripe", () => {
@@ -311,7 +311,7 @@ describe("the laid-out version of the team mails", () => {
 
   it("calls a declined card money at stake, not money lost", () => {
     const { html } = failureNotification({
-      orderUid: BASE.orderUid,
+      orderRef: BASE.orderRef,
       reason: "payment_attempt_failed",
       rooms: BASE.rooms,
       bookerName: "Jane Exhibitor",
@@ -331,7 +331,7 @@ describe("the laid-out version of the team mails", () => {
 
 describe("the decline, explained", () => {
   const BASE_FAIL = {
-    orderUid: BASE.orderUid,
+    orderRef: BASE.orderRef,
     reason: "payment_attempt_failed" as const,
     rooms: BASE.rooms,
     bookerName: "Jane Exhibitor",
@@ -387,7 +387,7 @@ describe("the decline, explained", () => {
 
 describe("the opening and the next step must not contradict each other", () => {
   const FAIL = {
-    orderUid: BASE.orderUid,
+    orderRef: BASE.orderRef,
     reason: "payment_attempt_failed" as const,
     rooms: BASE.rooms,
     amountHt: 72000,
@@ -426,7 +426,7 @@ describe("the opening and the next step must not contradict each other", () => {
  */
 describe("a decline that overrules an earlier alert", () => {
   const STOLEN = {
-    orderUid: BASE.orderUid,
+    orderRef: BASE.orderRef,
     reason: "payment_attempt_failed" as const,
     rooms: BASE.rooms,
     bookerName: "Jane Exhibitor",
@@ -477,7 +477,7 @@ describe("a decline that overrules an earlier alert", () => {
 
 describe("refundNotification", () => {
   const REFUND = {
-    orderUid: "2fe0f775-7681-4cb1-a0c3-b21dac06219d",
+    orderRef: "NE26-ORD-0042",
     rooms: [SUITE_1],
     bookerName: "Jane Exhibitor",
     bookerEmail: "jane@example.com",

@@ -407,6 +407,7 @@ export class ResourceBookingRepository {
         order: {
           select: {
             uid: true,
+            orderNumber: true,
             status: true,
             invoiceNumber: true,
             creditNoteNumber: true,
@@ -579,6 +580,7 @@ export class ResourceBookingRepository {
         order: {
           select: {
             uid: true,
+            orderNumber: true,
             invoiceNumber: true,
             creditNoteNumber: true,
             stripePaymentId: true,
@@ -624,6 +626,7 @@ export class ResourceBookingRepository {
         order: {
           select: {
             uid: true,
+            orderNumber: true,
             invoiceNumber: true,
             creditNoteNumber: true,
             holdExpiresAt: true,
@@ -670,6 +673,7 @@ export class ResourceBookingRepository {
         order: {
           select: {
             uid: true,
+            orderNumber: true,
             invoiceNumber: true,
             creditNoteNumber: true,
             stripePaymentId: true,

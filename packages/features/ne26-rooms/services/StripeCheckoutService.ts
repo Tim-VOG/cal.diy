@@ -2,6 +2,7 @@ import process from "node:process";
 import { ErrorCode } from "@calcom/lib/errorCodes";
 import { ErrorWithCode } from "@calcom/lib/errors";
 import Stripe from "stripe";
+import { orderRef } from "../lib/orderRef";
 
 const STRIPE_API_VERSION = "2020-08-27";
 
@@ -61,6 +62,8 @@ const STRIPE_MIN_SESSION_LIFETIME_SECONDS = 30 * 60;
 export interface CreateCheckoutSessionInput {
   /** The order this payment settles. One payment can cover several rooms. */
   orderUid: string;
+  /** Shown in Stripe so the payment can be found by the number people quote. */
+  orderNumber: number;
   currency: string;
   /** Itemised lines shown in the Checkout summary; their sum is the amount charged. */
   lines: { name: string; description?: string; quantity: number; unitAmount: number }[];
@@ -176,7 +179,8 @@ export class StripeCheckoutService {
   }
 
   async createCheckoutSession(input: CreateCheckoutSessionInput): Promise<{ id: string; url: string }> {
-    const metadata = { orderUid: input.orderUid, source: "ne26-rooms" };
+    const reference = orderRef(input.orderNumber);
+    const metadata = { orderUid: input.orderUid, orderRef: reference, source: "ne26-rooms" };
     const session = await this.stripe.checkout.sessions.create({
       mode: "payment",
       client_reference_id: input.orderUid,
@@ -191,7 +195,7 @@ export class StripeCheckoutService {
         },
       })),
       metadata,
-      payment_intent_data: { metadata },
+      payment_intent_data: { metadata, description: `NATO Edge 26 meeting rooms — ${reference}` },
       // Die with the hold: a session outliving it lets the buyer pay for a slot
       // that has already been released to someone else.
       expires_at: checkoutExpiresAtSeconds(input.holdExpiresAt, new Date()),

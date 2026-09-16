@@ -48,6 +48,7 @@ export async function loadAdminBookings() {
       currency: b.currency,
       stripePaymentId: b.order?.stripePaymentId ?? b.stripePaymentId,
       orderUid: b.order?.uid ?? null,
+      orderNumber: b.order?.orderNumber ?? null,
       orderRoomCount: b.order?._count.bookings ?? 1,
       orderedAt: (b.order?.createdAt ?? b.createdAt).toISOString(),
       paidAt: b.order?.paidAt?.toISOString() ?? null,

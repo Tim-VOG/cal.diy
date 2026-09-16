@@ -211,6 +211,7 @@ export class Ne26OrderRepository {
       where: { uid },
       select: {
         uid: true,
+        orderNumber: true,
         status: true,
         bookerUserId: true,
         bookerEmail: true,

@@ -8,6 +8,7 @@ import { sendInvoiceEmail } from "../lib/mailer";
 import { formatSlotRange } from "../lib/teamNotification";
 import { resolveVatTreatment } from "../lib/vat";
 import type { InvoiceSettingsRepository } from "../repositories/InvoiceSettingsRepository";
+import { orderRef } from "../lib/orderRef";
 import type { Ne26BillingProfileRepository } from "../repositories/Ne26BillingProfileRepository";
 import type { Ne26OrderRepository } from "../repositories/Ne26OrderRepository";
 import type { ResourceBookingRepository } from "../repositories/ResourceBookingRepository";
@@ -160,6 +161,7 @@ export class InvoiceService {
             paidViaStripe: Boolean(order.stripePaymentId),
             bookerName: order.bookerName,
             bookerEmail: order.bookerEmail,
+            orderRef: orderRef(order.orderNumber),
             poNumber: order.bookerPoNumber,
             internalReference: order.bookerInternalReference,
             billTo,
@@ -189,6 +191,7 @@ export class InvoiceService {
     await sendInvoiceEmail({
       to: order.bookerEmail,
       bookerName: order.bookerName,
+      orderRef: orderRef(order.orderNumber),
       invoiceNumber,
       roomName: this.roomLabel(order),
       rooms: this.emailRooms(order),
@@ -219,6 +222,7 @@ export class InvoiceService {
     await sendInvoiceEmail({
       to: order.bookerEmail,
       bookerName: order.bookerName,
+      orderRef: orderRef(order.orderNumber),
       invoiceNumber: order.invoiceNumber,
       roomName: this.roomLabel(order),
       rooms: this.emailRooms(order),
@@ -289,6 +293,7 @@ export class InvoiceService {
             issueDate,
             bookerName: order.bookerName,
             bookerEmail: order.bookerEmail,
+            orderRef: orderRef(order.orderNumber),
             poNumber: order.bookerPoNumber,
             internalReference: order.bookerInternalReference,
             billTo,
@@ -311,6 +316,7 @@ export class InvoiceService {
     await sendInvoiceEmail({
       to: order.bookerEmail,
       bookerName: order.bookerName,
+      orderRef: orderRef(order.orderNumber),
       invoiceNumber: creditNoteNumber,
       roomName: this.roomLabel(order),
       rooms: this.emailRooms(order),

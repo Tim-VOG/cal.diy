@@ -151,13 +151,15 @@ export default async function AdminOrderPage({
         <Link href="/rooms/admin" className="hover:text-[#000643]">
           Bookings
         </Link>{" "}
-        <span className="text-gray-300">›</span> Order {orderRef(order.uid)}
+        <span className="text-gray-300">›</span> Order {orderRef(order.orderNumber)}
       </nav>
 
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="font-bold text-2xl text-[#000643] tracking-tight">Order {orderRef(order.uid)}</h1>
+            <h1 className="font-bold text-2xl text-[#000643] tracking-tight">
+              Order {orderRef(order.orderNumber)}
+            </h1>
             <StatusPill status={shown} />
             {can.issueInvoice ? (
               <span className="rounded bg-amber-50 px-1.5 py-0.5 font-semibold text-[11px] text-amber-800 ring-1 ring-amber-600/20 ring-inset">
