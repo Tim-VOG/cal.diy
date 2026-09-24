@@ -1,7 +1,7 @@
 "use client";
 
 import { orderRef } from "@calcom/features/ne26-rooms/lib/orderRef";
-import { buildXlsx, type CellValue } from "@calcom/features/ne26-rooms/lib/xlsx";
+import type { CellValue } from "@calcom/features/ne26-rooms/lib/xlsx";
 import { Download, Search } from "lucide-react";
 import { Fragment, useMemo, useState } from "react";
 import {
@@ -14,6 +14,7 @@ import {
   fmtMoney,
   fmtTime,
 } from "./format";
+import { downloadWorkbook } from "./exports";
 import type { AdminBookingRow } from "./RoomsAdminView";
 import { StatusPill } from "./ui";
 
@@ -54,6 +55,11 @@ const EXPORT_HEADERS = [
   "Status",
   "Booker name",
   "Booker email",
+  "Company",
+  "VAT number",
+  "Country",
+  "PO number",
+  "Internal reference",
   "Ordered at",
   "Paid at",
   "Amount excl. VAT",
@@ -76,6 +82,11 @@ function exportRows(rows: AdminBookingRow[]): CellValue[][] {
     displayStatus(r),
     r.bookerName,
     r.bookerEmail,
+    r.bookerCompany,
+    r.bookerVatNumber,
+    r.bookerCountry,
+    r.poNumber,
+    r.internalReference,
     fmtMoment(r.orderedAt),
     r.paidAt ? fmtMoment(r.paidAt) : "",
     // A number, so the accountant can sum the column instead of retyping it.
@@ -179,16 +190,12 @@ export default function BookingsTable({
   }
 
   function downloadExcel(): void {
-    const book = buildXlsx({ sheetName: "Bookings", headers: EXPORT_HEADERS, rows: exportRows(sorted) });
-    const blob = new Blob([book as BlobPart], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    downloadWorkbook({
+      fileName: "ne26-bookings",
+      sheetName: "Bookings",
+      headers: EXPORT_HEADERS,
+      rows: exportRows(sorted),
     });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `ne26-bookings-${new Date().toISOString().slice(0, 10)}.xlsx`;
-    a.click();
-    URL.revokeObjectURL(url);
   }
 
   const select =

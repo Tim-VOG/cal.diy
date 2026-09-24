@@ -591,6 +591,13 @@ export class ResourceBookingRepository {
             // Stripe payment and this list all disagreed.
             bookerName: true,
             bookerEmail: true,
+            // The billing block, for the exports: an accountant reconciling a
+            // payment needs the company and its VAT number, not the person.
+            bookerLegalName: true,
+            bookerVatNumber: true,
+            bookerCountry: true,
+            bookerPoNumber: true,
+            bookerInternalReference: true,
             // When the order was placed and when it was paid: the desk reconciles
             // against Stripe by date, and neither date exists on a booking row.
             createdAt: true,

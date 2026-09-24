@@ -1,9 +1,10 @@
 "use client";
 
 import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
-import { buildXlsx, type CellValue } from "@calcom/features/ne26-rooms/lib/xlsx";
+import type { CellValue } from "@calcom/features/ne26-rooms/lib/xlsx";
 import { ChevronDown, Download, Search } from "lucide-react";
 import { Fragment, useMemo, useState } from "react";
+import { downloadWorkbook } from "../exports";
 import { dayKey, displayStatus, fmtDay, fmtTime } from "../format";
 import { HATCH, StatusPill } from "../ui";
 
@@ -105,20 +106,12 @@ export default function BookersView({
       b.currency,
       b.bookings.map((x) => `${x.roomName} ${fmt(x.startUtc)} (${x.status})`).join("; "),
     ]);
-    const book = buildXlsx({
+    downloadWorkbook({
+      fileName: "ne26-bookers",
       sheetName: "Bookers",
       headers: ["Name", "Email", "Bookings", "Confirmed total", "Currency", "Rooms"],
       rows,
     });
-    const blob = new Blob([book as BlobPart], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `ne26-bookers-${new Date().toISOString().slice(0, 10)}.xlsx`;
-    a.click();
-    URL.revokeObjectURL(url);
   }
 
   return (

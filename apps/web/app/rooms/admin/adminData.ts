@@ -44,6 +44,11 @@ export async function loadAdminBookings() {
       // The order's booker, falling back to the room's: what the invoice says.
       bookerName: b.order?.bookerName || b.bookerName,
       bookerEmail: b.order?.bookerEmail || b.bookerEmail,
+      bookerCompany: b.order?.bookerLegalName ?? null,
+      bookerVatNumber: b.order?.bookerVatNumber ?? null,
+      bookerCountry: b.order?.bookerCountry ?? null,
+      poNumber: b.order?.bookerPoNumber ?? null,
+      internalReference: b.order?.bookerInternalReference ?? null,
       amountTotal: b.amountTotal,
       currency: b.currency,
       stripePaymentId: b.order?.stripePaymentId ?? b.stripePaymentId,

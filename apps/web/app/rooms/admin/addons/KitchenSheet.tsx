@@ -1,8 +1,10 @@
 "use client";
 
 import type { KitchenDay } from "@calcom/features/ne26-rooms/lib/kitchenSheet";
-import { Printer } from "lucide-react";
-import { fmtDayLong, fmtTime } from "../format";
+import type { CellValue } from "@calcom/features/ne26-rooms/lib/xlsx";
+import { Download, Printer } from "lucide-react";
+import { downloadWorkbook } from "../exports";
+import { fmtDay, fmtDayLong, fmtTime } from "../format";
 
 function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -53,6 +55,47 @@ function printSheet(days: KitchenDay[]): void {
 }
 
 /**
+ * The same sheet as a spreadsheet, because the caterer is not in the admin:
+ * one row per delivery, so they can sort by day, by item or by room and total
+ * whichever column they work from. Held portions are a separate column rather
+ * than a footnote — a caterer must not cook them by mistake.
+ */
+function exportSheet(days: KitchenDay[]): void {
+  const rows: CellValue[][] = [];
+  for (const day of days) {
+    for (const item of day.items) {
+      for (const delivery of item.deliveries) {
+        rows.push([
+          fmtDay(day.openUtc),
+          item.name,
+          delivery.roomName,
+          fmtTime(delivery.startUtc),
+          fmtTime(delivery.endUtc),
+          delivery.held ? 0 : delivery.quantity,
+          delivery.held ? delivery.quantity : 0,
+          delivery.held ? "On hold" : "Confirmed",
+        ]);
+      }
+    }
+  }
+  downloadWorkbook({
+    fileName: "ne26-kitchen",
+    sheetName: "Kitchen",
+    headers: [
+      "Day (Istanbul)",
+      "Item",
+      "Room",
+      "From",
+      "To",
+      "Confirmed portions",
+      "Held portions",
+      "Status",
+    ],
+    rows,
+  });
+}
+
+/**
  * What the kitchen must prepare, day by day — above the catalogue, because it
  * is the question asked of this page most often during the event.
  */
@@ -68,13 +111,22 @@ export default function KitchenSheet({ days }: { days: KitchenDay[] }): JSX.Elem
             Portions per day, confirmed and still on hold. Held portions can disappear within 35 minutes.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => printSheet(days)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-semibold text-[#000643] text-[13px] transition hover:border-[#000643]">
-          <Printer className="h-3.5 w-3.5" aria-hidden />
-          Print kitchen sheet
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => exportSheet(days)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-semibold text-[#000643] text-[13px] transition hover:border-[#000643]">
+            <Download className="h-3.5 w-3.5" aria-hidden />
+            Export Excel
+          </button>
+          <button
+            type="button"
+            onClick={() => printSheet(days)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-semibold text-[#000643] text-[13px] transition hover:border-[#000643]">
+            <Printer className="h-3.5 w-3.5" aria-hidden />
+            Print kitchen sheet
+          </button>
+        </div>
       </div>
 
       <div className="mt-3 grid items-start gap-4 md:grid-cols-3">

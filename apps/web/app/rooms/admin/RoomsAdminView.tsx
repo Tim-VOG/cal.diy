@@ -2,12 +2,14 @@
 
 import type { DayStats } from "@calcom/features/ne26-rooms/lib/dayStats";
 import type { AttentionItem } from "@calcom/features/ne26-rooms/lib/needsAttention";
+import { orderRef } from "@calcom/features/ne26-rooms/lib/orderRef";
 import { CalendarRange, Download, List } from "lucide-react";
 import { useState } from "react";
 import BookingSidePanel from "./BookingSidePanel";
 import BookingsTable from "./BookingsTable";
 import DayCards from "./DayCards";
-import { fmtDayLong } from "./format";
+import { downloadWorkbook } from "./exports";
+import { displayStatus, fmtDayLong, fmtTime } from "./format";
 import NeedsAttentionPanel from "./NeedsAttentionPanel";
 import PlanView, { type PlanBlockedSlot, type PlanRoom } from "./PlanView";
 import { LatestOrders, SalesStrip } from "./SummaryCards";
@@ -23,6 +25,12 @@ export interface AdminBookingRow {
   durationMinutes: number;
   bookerName: string;
   bookerEmail: string;
+  /** The billing block, for the exports and the side panel. */
+  bookerCompany: string | null;
+  bookerVatNumber: string | null;
+  bookerCountry: string | null;
+  poNumber: string | null;
+  internalReference: string | null;
   amountTotal: number;
   currency: string;
   stripePaymentId: string | null;
@@ -40,6 +48,45 @@ export interface AdminBookingRow {
   invoiceNumber: string | null;
   creditNoteNumber: string | null;
   addOns: { name: string; quantity: number; lineTotal: number }[];
+}
+
+/**
+ * The day the desk is looking at, as a sheet for the people working the floor:
+ * who is in which room, when, and what they ordered. One row per booking, in
+ * time order — the order a hostess reads it in, not the plan's room order.
+ */
+function exportDaySheet(day: DayStats, rows: AdminBookingRow[]): void {
+  const inDay = rows
+    .filter((r) => r.startUtc >= day.openUtc && r.startUtc < day.closeUtc && r.status !== "CANCELLED")
+    .sort((a, b) => a.startUtc.localeCompare(b.startUtc) || a.roomName.localeCompare(b.roomName));
+  downloadWorkbook({
+    fileName: `ne26-day-${day.date}`,
+    sheetName: "Day sheet",
+    headers: [
+      "Start (TRT)",
+      "End",
+      "Hours",
+      "Room",
+      "Company",
+      "Contact",
+      "Email",
+      "Status",
+      "Add-ons",
+      "Order",
+    ],
+    rows: inDay.map((r) => [
+      fmtTime(r.startUtc),
+      fmtTime(r.endUtc),
+      r.durationMinutes / 60,
+      r.roomName,
+      r.bookerCompany,
+      r.bookerName,
+      r.bookerEmail,
+      displayStatus(r),
+      r.addOns.map((a) => `${a.name} x${a.quantity}`).join("; "),
+      r.orderNumber !== null ? orderRef(r.orderNumber) : "",
+    ]),
+  });
 }
 
 /**
@@ -95,6 +142,12 @@ export default function RoomsAdminView({
           <h1 className="mt-0.5 font-bold text-[#000643] text-2xl tracking-tight">Bookings</h1>
         </div>
         <a
+          href="/api/ne26-rooms/export/accounting"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-semibold text-[#000643] text-[13px] transition hover:border-[#000643]">
+          <Download className="h-3.5 w-3.5" aria-hidden />
+          Accounting (Excel)
+        </a>
+        <a
           href="/api/ne26-rooms/export/documents"
           className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-semibold text-[#000643] text-[13px] transition hover:border-[#000643]">
           <Download className="h-3.5 w-3.5" aria-hidden />
@@ -117,26 +170,37 @@ export default function RoomsAdminView({
         <h2 className="font-semibold text-[#000643] text-[15px]">
           {view === "plan" && day ? fmtDayLong(day.openUtc) : "All bookings"}
         </h2>
-        <div
-          className="inline-flex gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5"
-          role="group"
-          aria-label="View">
-          <button
-            type="button"
-            onClick={() => setView("plan")}
-            aria-pressed={view === "plan"}
-            className={toggle(view === "plan")}>
-            <CalendarRange className="h-3.5 w-3.5" aria-hidden />
-            Plan
-          </button>
-          <button
-            type="button"
-            onClick={() => setView("list")}
-            aria-pressed={view === "list"}
-            className={toggle(view === "list")}>
-            <List className="h-3.5 w-3.5" aria-hidden />
-            List
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {view === "plan" && day ? (
+            <button
+              type="button"
+              onClick={() => exportDaySheet(day, rows)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-semibold text-[#000643] text-[13px] transition hover:border-[#000643]">
+              <Download className="h-3.5 w-3.5" aria-hidden />
+              Day sheet
+            </button>
+          ) : null}
+          <div
+            className="inline-flex gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5"
+            role="group"
+            aria-label="View">
+            <button
+              type="button"
+              onClick={() => setView("plan")}
+              aria-pressed={view === "plan"}
+              className={toggle(view === "plan")}>
+              <CalendarRange className="h-3.5 w-3.5" aria-hidden />
+              Plan
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("list")}
+              aria-pressed={view === "list"}
+              className={toggle(view === "list")}>
+              <List className="h-3.5 w-3.5" aria-hidden />
+              List
+            </button>
+          </div>
         </div>
       </div>
 

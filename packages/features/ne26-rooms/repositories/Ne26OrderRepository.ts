@@ -408,6 +408,57 @@ export class Ne26OrderRepository {
   }
 
   /**
+   * Every issued document with what an accountant needs to book it: the billing
+   * block, the frozen VAT, the rooms behind the amount and how it was settled.
+   *
+   * Separate from findIssuedDocuments, which only names the PDFs for the
+   * archive. This is the ledger view, and it reads the VAT frozen on the order
+   * rather than today's rate — the document already went out.
+   */
+  findForAccounting() {
+    return this.prismaClient.ne26Order.findMany({
+      where: { OR: [{ invoiceNumber: { not: null } }, { creditNoteNumber: { not: null } }] },
+      select: {
+        uid: true,
+        orderNumber: true,
+        invoiceNumber: true,
+        invoiceIssuedAt: true,
+        creditNoteNumber: true,
+        creditNoteIssuedAt: true,
+        bookerName: true,
+        bookerEmail: true,
+        bookerLegalName: true,
+        bookerVatNumber: true,
+        bookerCountry: true,
+        bookerPoNumber: true,
+        bookerInternalReference: true,
+        currency: true,
+        amountTotal: true,
+        roomVatRate: true,
+        vatZeroRated: true,
+        vatMention: true,
+        stripePaymentId: true,
+        paidAt: true,
+        createdAt: true,
+        bookings: {
+          orderBy: { startTime: "asc" },
+          select: {
+            startTime: true,
+            endTime: true,
+            durationMinutes: true,
+            amountTotal: true,
+            resource: { select: { name: true } },
+            addOns: {
+              select: { quantity: true, lineTotal: true, vatRate: true, addOn: { select: { name: true } } },
+            },
+          },
+        },
+      },
+      orderBy: [{ invoiceNumber: "asc" }, { orderNumber: "asc" }],
+    });
+  }
+
+  /**
    * Documents issued before orders existed, which hang off the booking itself.
    *
    * Four of the first six invoices are these. An accounting bundle built from
