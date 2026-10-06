@@ -35,10 +35,17 @@ export interface CountryOption {
   name: string;
 }
 
-// EU-27 first (most exhibitors), then a few common non-EU markets. Used by the
+// Belgium first (the issuer), then Türkiye (where the event is held, and the
+// one country an exhibitor is certain to need), then the EU-27, then the
+// remaining NATO members and the common non-EU markets. Used by the
 // billing-profile country selector; the value stored is the ISO alpha-2 code.
+//
+// An exhibitor whose country is missing cannot finish their billing details at
+// all, so a NATO event must list every NATO member — Türkiye was missing, and
+// so were Albania, Iceland, Montenegro and North Macedonia.
 export const COUNTRY_OPTIONS: CountryOption[] = [
   { code: "BE", name: "Belgium" },
+  { code: "TR", name: "Türkiye" },
   { code: "AT", name: "Austria" },
   { code: "BG", name: "Bulgaria" },
   { code: "HR", name: "Croatia" },
@@ -65,9 +72,13 @@ export const COUNTRY_OPTIONS: CountryOption[] = [
   { code: "SI", name: "Slovenia" },
   { code: "ES", name: "Spain" },
   { code: "SE", name: "Sweden" },
-  { code: "GB", name: "United Kingdom" },
-  { code: "CH", name: "Switzerland" },
-  { code: "NO", name: "Norway" },
-  { code: "US", name: "United States" },
+  { code: "AL", name: "Albania" },
   { code: "CA", name: "Canada" },
+  { code: "IS", name: "Iceland" },
+  { code: "ME", name: "Montenegro" },
+  { code: "MK", name: "North Macedonia" },
+  { code: "NO", name: "Norway" },
+  { code: "CH", name: "Switzerland" },
+  { code: "GB", name: "United Kingdom" },
+  { code: "US", name: "United States" },
 ];
