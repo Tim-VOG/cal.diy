@@ -333,6 +333,110 @@ describe("InvoiceService.issueInvoice", () => {
     });
   });
 
+  // One payment can cover three rooms, and an exhibitor may cancel one of them.
+  // The money, the paperwork and the rooms must then move for that room ALONE.
+  describe("creditBookings, one room at a time", () => {
+    const TWO = () => [
+      { id: roomA, startUtc: "2026-11-17T13:00:00.000Z", price: 35000 },
+      { id: roomB, startUtc: "2026-11-18T13:00:00.000Z", price: 35000 },
+    ];
+
+    it("credits the room named, leaves the other sold, and keeps the order open", async () => {
+      const uid = await confirmedOrder(TWO());
+      await service.issueInvoice(uid);
+      const before = await orders.findByUid(uid);
+      const [first, second] = before!.bookings;
+      vi.clearAllMocks();
+
+      const credited = await service.creditBookings(uid, [first.uid]);
+
+      expect(credited).toMatchObject({ closesOrder: false, amountTtc: 35000 * 1.21 });
+      const after = await orders.findByUid(uid);
+      // The order and its invoice are untouched: the exhibitor still owes, and
+      // has paid for, the room they kept.
+      expect(after).toMatchObject({
+        status: "CONFIRMED",
+        invoiceNumber: before?.invoiceNumber,
+        creditNoteNumber: null,
+        amountTotal: before?.amountTotal,
+      });
+      const rooms = Object.fromEntries(after!.bookings.map((b) => [b.uid, b]));
+      expect(rooms[first.uid]).toMatchObject({ status: "CANCELLED" });
+      expect(rooms[second.uid]).toMatchObject({ status: "CONFIRMED", creditNoteId: null });
+      // Cancelled means back on sale: the slots are what hold a room.
+      expect(await prisma.resourceSlot.count({ where: { booking: { uid: first.uid } } })).toBe(0);
+      expect(await prisma.resourceSlot.count({ where: { booking: { uid: second.uid } } })).toBeGreaterThan(0);
+
+      const notes = await orders.findCreditNotes(uid);
+      expect(notes).toHaveLength(1);
+      expect(notes[0]).toMatchObject({ closesOrder: false, amountTtc: 42350 });
+      expect(notes[0].bookings.map((b) => b.uid)).toEqual([first.uid]);
+      // The buyer is told, with the credit note attached.
+      expect(sendInvoiceEmail).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(sendInvoiceEmail).mock.calls[0][0]).toMatchObject({
+        documentKind: "credit_note",
+        invoiceNumber: notes[0].number,
+      });
+    });
+
+    it("closes the order when the last room goes, exactly as a one-room order always did", async () => {
+      const uid = await confirmedOrder(TWO());
+      await service.issueInvoice(uid);
+      const [first, second] = (await orders.findByUid(uid))!.bookings;
+
+      await service.creditBookings(uid, [first.uid]);
+      const closing = await service.creditBookings(uid, [second.uid]);
+
+      expect(closing?.closesOrder).toBe(true);
+      const after = await orders.findByUid(uid);
+      expect(after).toMatchObject({ status: "CANCELLED", creditNoteNumber: closing?.number });
+      expect((await orders.findCreditNotes(uid)).map((n) => n.number)).toEqual([
+        expect.stringMatching(/^NE26-CN-/),
+        closing?.number,
+      ]);
+    });
+
+    it("credits every room left when no room is named — the refund webhook's path", async () => {
+      const uid = await confirmedOrder(TWO());
+      await service.issueInvoice(uid);
+
+      expect(await service.issueCreditNote(uid)).toBe(true);
+
+      const after = await orders.findByUid(uid);
+      expect(after?.status).toBe("CANCELLED");
+      expect(after?.bookings.every((b) => b.status === "CANCELLED")).toBe(true);
+      const notes = await orders.findCreditNotes(uid);
+      expect(notes).toHaveLength(1);
+      expect(notes[0].bookings).toHaveLength(2);
+      // A second attempt credits nothing and spends no number.
+      expect(await service.issueCreditNote(uid)).toBe(false);
+    });
+
+    it("refuses a room that is not creditable rather than crediting the wrong one", async () => {
+      const uid = await confirmedOrder(TWO());
+      await service.issueInvoice(uid);
+      const [first, second] = (await orders.findByUid(uid))!.bookings;
+      await service.creditBookings(uid, [first.uid]);
+
+      expect(await service.creditBookings(uid, [first.uid])).toBeNull();
+      expect(await service.creditBookings(uid, [first.uid, second.uid])).toBeNull();
+      // The room that is still sold can still go.
+      expect(await service.creditBookings(uid, [second.uid])).not.toBeNull();
+    });
+
+    it("prices a single room the way the credit note will, before anything moves", async () => {
+      const uid = await confirmedOrder(TWO());
+      await service.issueInvoice(uid);
+      const [first] = (await orders.findByUid(uid))!.bookings;
+
+      const quote = await service.quoteCredit(uid, [first.uid]);
+      const credited = await service.creditBookings(uid, [first.uid]);
+
+      expect(quote).toEqual({ amountHt: 35000, amountTtc: 42350 });
+      expect(credited?.amountTtc).toBe(quote?.amountTtc);
+    });
+  });
+
   // An admin correcting who an order is billed to. The one promise: only the
   // "Bill to" moves. Number, date, rooms, amounts, VAT and status do not.
   describe("correctBilling", () => {

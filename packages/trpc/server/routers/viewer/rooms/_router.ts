@@ -3,6 +3,7 @@ import { z } from "zod";
 import authedProcedure, { authedAdminProcedure } from "../../../procedures/authedProcedure";
 import { router } from "../../../trpc";
 import { ZBookingUidInputSchema } from "./bookingUid.schema";
+import { ZCancelMyBookingInputSchema } from "./cancelMyBooking.schema";
 import { ZCorrectBillingInputSchema } from "./correctBilling.schema";
 import { ZCreateBlockInputSchema } from "./createBlock.schema";
 import { ZCreateBookingInputSchema, ZCreateOrderInputSchema } from "./createBooking.schema";
@@ -843,6 +844,147 @@ export const roomsRouter = router({
    * wait thirty-five minutes, during which the rooms were unbookable by anyone,
    * including by them under a corrected basket.
    */
+  /**
+   * The exhibitor cancels ONE room they have already paid for.
+   *
+   * Room by room, because a payment can cover three of them: cancelling the
+   * Wednesday refunds the Wednesday and leaves the Tuesday booked and invoiced.
+   *
+   * The money goes back first, then the paperwork: Stripe refunds exactly what
+   * the credit note will say, the note is raised against that room, the room
+   * goes back on sale and the exhibitor is emailed. The room is claimed BEFORE
+   * the refund, so two clicks cannot pay out twice; if Stripe refuses, the claim
+   * is handed back and they can try again.
+   */
+  cancelMyBooking: authedProcedure.input(ZCancelMyBookingInputSchema).mutation(async ({ ctx, input }) => {
+    const { getNe26OrderRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
+    );
+    const { getNe26RoomSettingsRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container"
+    );
+    const { getInvoiceSettingsRepository } = await import(
+      "@calcom/features/ne26-rooms/di/InvoiceSettingsRepository.container"
+    );
+    const { getInvoiceService } = await import("@calcom/features/ne26-rooms/di/InvoiceService.container");
+    const { canBookerCancel, cancellationDeadline, refusalMessage } = await import(
+      "@calcom/features/ne26-rooms/lib/cancellationPolicy"
+    );
+    const { buildEventSchedule } = await import("@calcom/features/ne26-rooms/lib/eventSchedule");
+
+    const orders = getNe26OrderRepository();
+    const booking = await orders.findBookingForCancellation(input.uid);
+    // Not "forbidden": whose booking it is, is not this buyer's business.
+    if (!booking?.order || booking.order.bookerUserId !== ctx.user.id) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "No such booking." });
+    }
+
+    const [roomSettings, invoiceSettings] = await Promise.all([
+      getNe26RoomSettingsRepository().get(),
+      getInvoiceSettingsRepository().get(),
+    ]);
+    const deadline = cancellationDeadline(buildEventSchedule(roomSettings.eventDays));
+    const verdict = canBookerCancel(booking, new Date(), deadline);
+    if (!verdict.allowed) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: refusalMessage(verdict.reason, invoiceSettings.contactEmail || "the organisers"),
+      });
+    }
+
+    const invoices = getInvoiceService();
+    // Priced before anything moves: the refund and the credit note must agree
+    // to the cent, so both come from this one figure.
+    const quote = await invoices.quoteCredit(booking.order.uid, [input.uid]);
+    if (!quote) {
+      throw new TRPCError({ code: "CONFLICT", message: "This room can no longer be cancelled." });
+    }
+
+    const claim = await orders.claimBookerCancellation(input.uid, ctx.user.id, new Date());
+    if (!claim) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "This booking is already being cancelled. Check your inbox in a few minutes.",
+      });
+    }
+
+    let refundId: string;
+    try {
+      const { getStripeCheckoutService } = await import(
+        "@calcom/features/ne26-rooms/di/StripeCheckoutService.container"
+      );
+      refundId = await getStripeCheckoutService().refundPayment(
+        claim.stripePaymentId,
+        `ne26-cancel-${input.uid}`,
+        quote.amountTtc
+      );
+    } catch (e) {
+      await orders.releaseBookerCancellationClaim(input.uid);
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "The refund could not be sent. Nothing was cancelled — please try again.",
+        cause: e,
+      });
+    }
+
+    // The money is already gone, so nothing below may fail the request: the
+    // paperwork is retried from the dashboard, where "Refunded, but still sold"
+    // is waiting if this throws.
+    const credited = await invoices
+      .creditBookings(claim.orderUid, [input.uid], { stripeRefundId: refundId })
+      .catch(() => null);
+
+    // The desk hears about every room that comes back on sale, the same way it
+    // hears about a refund made by hand in Stripe. Without this, a room would
+    // simply reappear as free and the first anyone knew of it would be an
+    // exhibitor asking for one that had just been given back.
+    if (credited) {
+      const { WEBAPP_URL } = await import("@calcom/lib/constants");
+      const { notifyTeam } = await import("@calcom/features/ne26-rooms/lib/notifyTeam");
+      const { refundNotification } = await import("@calcom/features/ne26-rooms/lib/teamNotification");
+      const { orderRef } = await import("@calcom/features/ne26-rooms/lib/orderRef");
+      const order = await orders.findByUid(claim.orderUid);
+      const credit = order?.bookings.find((b) => b.uid === input.uid);
+      if (order && credit) {
+        const { subject, body, html } = refundNotification({
+          orderRef: orderRef(order.orderNumber),
+          rooms: [
+            {
+              roomName: credit.resource.name,
+              startUtc: credit.startTime,
+              endUtc: credit.endTime,
+              durationMinutes: credit.durationMinutes,
+              addOns: credit.addOns.map((a) => ({
+                name: a.addOn.name,
+                quantity: a.quantity,
+                lineTotal: a.lineTotal,
+              })),
+            },
+          ],
+          bookerCompany: order.bookerLegalName,
+          bookerName: order.bookerName,
+          bookerEmail: order.bookerEmail,
+          amountRefunded: quote.amountTtc,
+          currency: order.currency,
+          invoiceNumber: order.invoiceNumber,
+          creditNoteNumber: credited.number,
+          stripeUrl: order.stripePaymentId
+            ? `https://dashboard.stripe.com/payments/${order.stripePaymentId}`
+            : null,
+          adminUrl: `${WEBAPP_URL}/rooms/admin/order/${order.uid}`,
+        });
+        await notifyTeam("sales", `Cancelled by the exhibitor — ${subject}`, body, html);
+      }
+    }
+
+    return {
+      refunded: true,
+      amountTtc: quote.amountTtc,
+      creditNoteNumber: credited?.number ?? null,
+      roomName: booking.resource.name,
+    };
+  }),
+
   releaseMyHold: authedProcedure.input(ZBookingUidInputSchema).mutation(async ({ ctx, input }) => {
     const { getNe26OrderRepository } = await import(
       "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"

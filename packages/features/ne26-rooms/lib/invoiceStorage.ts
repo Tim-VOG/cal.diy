@@ -26,6 +26,33 @@ export async function saveInvoicePdf(
   await writeFile(path.join(dir, safeName(uid, kind)), bytes);
 }
 
+/**
+ * A credit note is stored under its NUMBER, not under the order.
+ *
+ * One invoice can now be credited more than once — an exhibitor cancelling one
+ * room of a payment that covered three — and two notes for one order would
+ * have overwritten each other under the order's uid. The number is unique, and
+ * it is what everybody quotes.
+ */
+function creditNoteName(number: string): string {
+  if (!/^[A-Za-z0-9-]+$/.test(number)) throw new Error("Invalid credit note number");
+  return `cn-${number}.pdf`;
+}
+
+export async function saveCreditNotePdf(number: string, bytes: Uint8Array): Promise<void> {
+  const dir = storageDir();
+  await mkdir(dir, { recursive: true });
+  await writeFile(path.join(dir, creditNoteName(number)), bytes);
+}
+
+export async function readCreditNotePdf(number: string): Promise<Buffer | null> {
+  try {
+    return await readFile(path.join(storageDir(), creditNoteName(number)));
+  } catch {
+    return null;
+  }
+}
+
 export async function readInvoicePdf(uid: string, kind: DocumentKind = "invoice"): Promise<Buffer | null> {
   try {
     return await readFile(path.join(storageDir(), safeName(uid, kind)));

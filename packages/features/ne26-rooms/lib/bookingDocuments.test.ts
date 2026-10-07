@@ -14,7 +14,7 @@ describe("bookingDocuments", () => {
         creditNoteNumber: null,
         order: { uid: ORDER_UID, invoiceNumber: "NE26-2026-0001", creditNoteNumber: null },
       })
-    ).toEqual({ documentUid: ORDER_UID, invoiceNumber: "NE26-2026-0001", creditNoteNumber: null });
+    ).toEqual({ documentUid: ORDER_UID, invoiceNumber: "NE26-2026-0001", creditNoteNumber: null, creditNoteUid: null });
   });
 
   it("carries the credit note with its invoice", () => {
@@ -34,7 +34,24 @@ describe("bookingDocuments", () => {
         creditNoteNumber: null,
         order: null,
       })
-    ).toEqual({ documentUid: ROOM_UID, invoiceNumber: "NE26-2026-0004", creditNoteNumber: null });
+    ).toEqual({ documentUid: ROOM_UID, invoiceNumber: "NE26-2026-0004", creditNoteNumber: null, creditNoteUid: null });
+  });
+
+  it("shows the room's own credit note, and links to it by number", () => {
+    // A payment covering three rooms is credited one room at a time, so the
+    // number on the order is not the number for this room.
+    expect(
+      bookingDocuments({
+        uid: ROOM_UID,
+        creditNote: { number: "NE26-CN-2026-0009" },
+        order: { uid: ORDER_UID, invoiceNumber: "NE26-2026-0001", creditNoteNumber: null },
+      })
+    ).toEqual({
+      documentUid: ORDER_UID,
+      invoiceNumber: "NE26-2026-0001",
+      creditNoteNumber: "NE26-CN-2026-0009",
+      creditNoteUid: "NE26-CN-2026-0009",
+    });
   });
 
   it("prefers the order when both carry a number", () => {
@@ -52,6 +69,6 @@ describe("bookingDocuments", () => {
         uid: ROOM_UID,
         order: { uid: ORDER_UID, invoiceNumber: null, creditNoteNumber: null },
       })
-    ).toEqual({ documentUid: ORDER_UID, invoiceNumber: null, creditNoteNumber: null });
+    ).toEqual({ documentUid: ORDER_UID, invoiceNumber: null, creditNoteNumber: null, creditNoteUid: null });
   });
 });

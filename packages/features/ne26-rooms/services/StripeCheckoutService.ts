@@ -230,6 +230,33 @@ export class StripeCheckoutService {
   }
 
   /**
+   * Give a card payment back in full.
+   *
+   * `idempotencyKey` is what makes a double click, a retried request or a
+   * reloaded page cost the buyer nothing twice: Stripe replays the first refund
+   * instead of making a second one. Keyed on the order, so it is the same key
+   * however many times the same cancellation is attempted.
+   *
+   * A partial amount is what makes room-by-room cancellation possible: an
+   * exhibitor who paid for three rooms at once cancels the Wednesday, and only
+   * the Wednesday comes back.
+   */
+  async refundPayment(
+    paymentIntentId: string,
+    idempotencyKey: string,
+    /** Minor units to give back. Omitted refunds the whole payment. */
+    amount?: number
+  ): Promise<string> {
+    const refund = await this.stripe.refunds.create(
+      amount === undefined
+        ? { payment_intent: paymentIntentId }
+        : { payment_intent: paymentIntentId, amount },
+      { idempotencyKey }
+    );
+    return refund.id;
+  }
+
+  /**
    * Close a Checkout session so it can no longer be paid.
    *
    * Used when the order behind it is superseded or released: a session outlives

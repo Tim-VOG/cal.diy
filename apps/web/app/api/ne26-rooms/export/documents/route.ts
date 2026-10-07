@@ -1,7 +1,7 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { getNe26OrderRepository } from "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container";
 import { deskSessionFromCookieHeader } from "@calcom/features/ne26-rooms/lib/deskSession";
-import { readInvoicePdf } from "@calcom/features/ne26-rooms/lib/invoiceStorage";
+import { readCreditNotePdf, readInvoicePdf } from "@calcom/features/ne26-rooms/lib/invoiceStorage";
 import { createZip, type ZipEntry } from "@calcom/features/ne26-rooms/lib/zip";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import { cookies, headers } from "next/headers";
@@ -37,17 +37,23 @@ export async function GET(): Promise<Response> {
   // Two sources, because the first four invoices VO issued predate orders and
   // hang off the booking instead. Reading only one of them hands the accountant
   // a third of the file while looking complete.
-  const [orders, legacy] = await Promise.all([repo.findIssuedDocuments(), repo.findLegacyIssuedDocuments()]);
+  const [orders, legacy, creditNotes] = await Promise.all([
+    repo.findIssuedDocuments(),
+    repo.findLegacyIssuedDocuments(),
+    repo.findAllCreditNotes(),
+  ]);
   const documents = [
     ...orders.map((o) => ({
       uid: o.uid,
       invoiceNumber: o.invoiceNumber,
-      creditNoteNumber: o.creditNoteNumber,
+      // Credit notes are collected below, from their own rows.
+      creditNoteNumber: null as string | null,
       who: o.bookerLegalName || o.bookerName || "",
     })),
     ...legacy.map((b) => ({
       uid: b.uid,
       invoiceNumber: b.invoiceNumber,
+      // These predate orders and never got a credit-note row of their own.
       creditNoteNumber: b.creditNoteNumber,
       who: b.bookerName || "",
     })),
@@ -76,6 +82,22 @@ export async function GET(): Promise<Response> {
           data: new Uint8Array(pdf),
         });
       }
+    }
+  }
+
+  // Credit notes are their own documents now: an order credited room by room
+  // has several, and the archive must hold every one of them.
+  for (const note of creditNotes) {
+    const who = (note.order.bookerLegalName || note.order.bookerName || "")
+      .replace(/[\\/:*?"<>|]/g, " ")
+      .trim();
+    const pdf =
+      (await readCreditNotePdf(note.number)) ?? (await readInvoicePdf(note.order.uid, "credit_note"));
+    if (pdf) {
+      entries.push({
+        name: `credit-notes/${note.number}${who ? ` - ${who}` : ""}.pdf`,
+        data: new Uint8Array(pdf),
+      });
     }
   }
 

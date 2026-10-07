@@ -72,13 +72,18 @@ export default async function AdminOrderPage({
   if (session.user.role !== "ADMIN") notFound();
   await requireNotDeskMode();
 
-  const [order, roomSettings] = await Promise.all([
+  const [order, roomSettings, creditNotes] = await Promise.all([
     getNe26OrderRepository().findForAdmin(uid),
     getNe26RoomSettingsRepository().get(),
+    getNe26OrderRepository().findCreditNotes(uid),
   ]);
   if (!order) notFound();
 
   const rooms = order.bookings;
+  // Which credit note took each room off sale, for the list below.
+  const creditedRooms = new Map(
+    creditNotes.flatMap((note) => note.bookings.map((b) => [b.uid, note.number] as const))
+  );
   const paid = Boolean(order.stripePaymentId);
   const shown = displayStatus(order);
   const state = {
@@ -284,7 +289,19 @@ export default async function AdminOrderPage({
                     {rooms.map((b) => (
                       <tr key={b.uid} className="border-gray-100 border-b align-top last:border-0">
                         <td className="px-4 py-2.5">
-                          <span className="font-semibold text-[#000643]">{b.resource.name}</span>
+                          <span
+                            className={`font-semibold ${
+                              b.status === "CANCELLED" ? "text-gray-400 line-through" : "text-[#000643]"
+                            }`}>
+                            {b.resource.name}
+                          </span>
+                          {/* A room can be credited on its own now, so the list
+                              has to say which of them is still sold. */}
+                          {b.status === "CANCELLED" ? (
+                            <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 font-semibold text-[10.5px] text-gray-600">
+                              {creditedRooms.get(b.uid) ?? "Cancelled"}
+                            </span>
+                          ) : null}
                           <div className="text-[10.5px] text-gray-400 uppercase tracking-wide">
                             {b.resource.category} · {b.resource.capacity} people
                           </div>
@@ -390,27 +407,37 @@ export default async function AdminOrderPage({
                   </span>
                 ) : null}
               </li>
-              <li className="flex items-center justify-between gap-3 text-sm">
-                <span className="flex min-w-0 items-center gap-2">
+              {/* One line per credit note: a payment covering several rooms can
+                  be credited one room at a time, so there may be more than one. */}
+              {creditNotes.length === 0 ? (
+                <li className="flex items-center gap-2 text-sm">
                   <FileText className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
-                  {order.creditNoteNumber ? (
-                    <a
-                      href={`/rooms/credit-note/${order.uid}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="truncate text-[#000643] underline decoration-[#000643]/30 underline-offset-2">
-                      {order.creditNoteNumber}
-                    </a>
-                  ) : (
-                    <span className="text-gray-400">Credit note — none issued</span>
-                  )}
-                </span>
-                {order.creditNoteNumber ? (
-                  <span className="shrink-0 text-gray-500 text-xs tabular-nums">
-                    −{fmtMoney(order.amountTotal, order.currency)}
-                  </span>
-                ) : null}
-              </li>
+                  <span className="text-gray-400">Credit note — none issued</span>
+                </li>
+              ) : (
+                creditNotes.map((note) => (
+                  <li key={note.number} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <FileText className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
+                      <a
+                        href={`/rooms/credit-note/${note.number}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="truncate text-[#000643] underline decoration-[#000643]/30 underline-offset-2">
+                        {note.number}
+                      </a>
+                      {note.closesOrder ? null : (
+                        <span className="truncate text-gray-500 text-xs">
+                          {note.bookings.map((b) => b.resource.name).join(", ")}
+                        </span>
+                      )}
+                    </span>
+                    <span className="shrink-0 text-gray-500 text-xs tabular-nums">
+                      −{fmtMoney(note.amountTtc, note.currency)}
+                    </span>
+                  </li>
+                ))
+              )}
             </ul>
           </Section>
 

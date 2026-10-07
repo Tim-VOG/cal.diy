@@ -252,6 +252,11 @@ export class Ne26OrderRepository {
             endTime: true,
             durationMinutes: true,
             amountTotal: true,
+            // Which rooms are still sold, so a credit note can take one room off
+            // a payment that covered three.
+            status: true,
+            creditNoteId: true,
+            bookerCancelledAt: true,
             resource: { select: { name: true, slug: true, category: true } },
             addOns: {
               select: { quantity: true, lineTotal: true, vatRate: true, addOn: { select: { name: true } } },
@@ -393,6 +398,50 @@ export class Ne26OrderRepository {
    * Ordered by number rather than by date so the archive reads like the ledger
    * it will be filed against.
    */
+  /** Which of these Stripe refunds already have their credit note. */
+  async creditedRefundIds(refundIds: string[]): Promise<Set<string>> {
+    if (refundIds.length === 0) return new Set();
+    const rows = await this.prismaClient.ne26CreditNote.findMany({
+      where: { stripeRefundId: { in: refundIds } },
+      select: { stripeRefundId: true },
+    });
+    return new Set(rows.map((r) => r.stripeRefundId).filter((id): id is string => Boolean(id)));
+  }
+
+  /** Every credit note ever raised, for the accountant's archive and ledger. */
+  findAllCreditNotes() {
+    return this.prismaClient.ne26CreditNote.findMany({
+      orderBy: { number: "asc" },
+      select: {
+        number: true,
+        amountHt: true,
+        amountVat: true,
+        amountTtc: true,
+        currency: true,
+        closesOrder: true,
+        issuedAt: true,
+        stripeRefundId: true,
+        bookings: { select: { uid: true, resource: { select: { name: true } } } },
+        order: {
+          select: {
+            uid: true,
+            orderNumber: true,
+            invoiceNumber: true,
+            bookerName: true,
+            bookerEmail: true,
+            bookerLegalName: true,
+            bookerVatNumber: true,
+            bookerCountry: true,
+            bookerPoNumber: true,
+            bookerInternalReference: true,
+            stripePaymentId: true,
+            paidAt: true,
+          },
+        },
+      },
+    });
+  }
+
   findIssuedDocuments() {
     return this.prismaClient.ne26Order.findMany({
       where: { OR: [{ invoiceNumber: { not: null } }, { creditNoteNumber: { not: null } }] },
@@ -425,6 +474,18 @@ export class Ne26OrderRepository {
         invoiceIssuedAt: true,
         creditNoteNumber: true,
         creditNoteIssuedAt: true,
+        creditNotes: {
+          orderBy: { number: "asc" },
+          select: {
+            number: true,
+            issuedAt: true,
+            amountHt: true,
+            amountVat: true,
+            amountTtc: true,
+            currency: true,
+            bookings: { select: { resource: { select: { name: true } } } },
+          },
+        },
         bookerName: true,
         bookerEmail: true,
         bookerLegalName: true,
@@ -733,69 +794,158 @@ export class Ne26OrderRepository {
   }
 
   /**
-   * Credit an order and put its rooms back on sale, atomically.
+   * Credit some of an order's rooms and put exactly those back on sale.
    *
-   * The number is claimed in the same statement that cancels the order, so two
-   * refund webhooks arriving together cannot both proceed: the second updates
-   * nothing and returns 0. The bookings are deleted rather than marked
-   * cancelled — a CANCELLED row keeping its slot rows would leave the rooms
-   * unsellable for the rest of the event.
+   * One payment can cover three rooms, and an exhibitor may cancel one of them,
+   * so a credit note belongs to the ROOMS it cancels rather than to the order.
+   * The note that cancels the last room standing also closes the order and
+   * writes itself onto it, which is why a one-room order behaves exactly as it
+   * always has: same fields, same links, same exports.
+   *
+   * Everything is claimed in one statement set inside the caller's transaction:
+   * two refunds arriving together cannot credit the same room twice, because
+   * the second finds it already carrying a credit note and gets nothing back.
    */
-  async creditNoteAndCancel(
+  async creditBookings(
     uid: string,
-    creditNoteNumber: string,
-    creditNotePdfUrl: string,
-    // Supplied when this runs inside issueWithNumber's transaction, so the
-    // number, the cancellation and the freed rooms commit or fail together.
-    // Prisma has no nested interactive transactions, so it must be passed in
-    // rather than opened again here.
-    outer?: TransactionClient,
-    issuedAt: Date = new Date()
-  ): Promise<number> {
+    bookingUids: string[],
+    note: {
+      number: string;
+      pdfUrl: string;
+      amountHt: number;
+      amountVat: number;
+      amountTtc: number;
+      currency: string;
+      issuedAt: Date;
+      stripeRefundId?: string | null;
+    },
+    outer?: TransactionClient
+  ): Promise<{ closesOrder: boolean; creditedUids: string[] } | null> {
     const run = async (tx: TransactionClient) => {
-      const result = await tx.ne26Order.updateMany({
-        where: {
-          uid,
-          status: ResourceBookingStatus.CONFIRMED,
-          invoiceNumber: { not: null },
-          creditNoteNumber: null,
-        },
-        data: {
-          creditNoteNumber,
-          creditNotePdfUrl,
-          creditNoteIssuedAt: issuedAt,
-          status: ResourceBookingStatus.CANCELLED,
-        },
+      const order = await tx.ne26Order.findUnique({
+        where: { uid },
+        select: { status: true, invoiceNumber: true },
       });
-      if (result.count === 0) return 0;
+      // An order with no invoice has nothing to credit, and one already closed
+      // has nothing left to take off sale.
+      if (!order || !order.invoiceNumber || order.status !== ResourceBookingStatus.CONFIRMED) return null;
 
-      // The rooms go back on sale by losing their SLOTS, not by losing their
-      // bookings. Deleting the bookings did free the rooms — and made a refunded
-      // sale vanish from the admin, which is built from bookings. A refund is
-      // something the desk has to be able to look up afterwards: it is the one
-      // kind of cancellation that moved money in both directions.
-      //
-      // Two things have to happen and neither alone is enough. The slot rows
-      // carry the @@unique([resourceId, slotStart]) that makes double-booking
-      // impossible, so leaving them would show the room as free and then refuse
-      // the sale at the last moment. And findActiveSlotStarts only counts slots
-      // whose booking is CONFIRMED or still held, so the status is what stops a
-      // cancelled row from occupying anything.
-      const bookings = await tx.resourceBooking.findMany({
-        where: { orderUid: uid },
+      const active = await tx.resourceBooking.findMany({
+        where: { orderUid: uid, status: ResourceBookingStatus.CONFIRMED, creditNoteId: null },
+        select: { id: true, uid: true },
+      });
+      const wanted = new Set(bookingUids);
+      const credited = active.filter((b) => wanted.has(b.uid));
+      // Somebody credited these rooms between the caller reading them and here.
+      if (credited.length !== wanted.size || credited.length === 0) return null;
+
+      const closesOrder = credited.length === active.length;
+      const row = await tx.ne26CreditNote.create({
+        data: {
+          number: note.number,
+          orderUid: uid,
+          amountHt: note.amountHt,
+          amountVat: note.amountVat,
+          amountTtc: note.amountTtc,
+          currency: note.currency,
+          closesOrder,
+          stripeRefundId: note.stripeRefundId ?? null,
+          issuedAt: note.issuedAt,
+        },
         select: { id: true },
       });
-      const ids = bookings.map((b) => b.id);
-      if (ids.length) {
-        await tx.resourceSlot.deleteMany({ where: { bookingId: { in: ids } } });
-        await tx.resourceBooking.updateMany({
-          where: { id: { in: ids } },
-          data: { status: ResourceBookingStatus.CANCELLED, holdExpiresAt: null },
+
+      // The rooms go back on sale by losing their SLOTS, not their bookings: a
+      // refunded sale the desk can no longer look up is worse than none at all.
+      // The status is what frees the room — findActiveSlotStarts counts only
+      // CONFIRMED and held rows — and the slots carry the uniqueness that makes
+      // double-booking impossible, so both have to go.
+      const ids = credited.map((b) => b.id);
+      await tx.resourceSlot.deleteMany({ where: { bookingId: { in: ids } } });
+      await tx.resourceBooking.updateMany({
+        where: { id: { in: ids } },
+        data: {
+          status: ResourceBookingStatus.CANCELLED,
+          holdExpiresAt: null,
+          creditNoteId: row.id,
+        },
+      });
+
+      if (closesOrder) {
+        await tx.ne26Order.update({
+          where: { uid },
+          data: {
+            status: ResourceBookingStatus.CANCELLED,
+            creditNoteNumber: note.number,
+            creditNotePdfUrl: note.pdfUrl,
+            creditNoteIssuedAt: note.issuedAt,
+          },
         });
       }
-      return result.count;
+      return { closesOrder, creditedUids: credited.map((b) => b.uid) };
     };
     return outer ? run(outer) : this.prismaClient.$transaction(run);
+  }
+
+  /** One room, with what decides whether its buyer may cancel it themselves. */
+  findBookingForCancellation(bookingUid: string) {
+    return this.prismaClient.resourceBooking.findUnique({
+      where: { uid: bookingUid },
+      select: {
+        uid: true,
+        status: true,
+        creditNoteId: true,
+        bookerCancelledAt: true,
+        resource: { select: { name: true } },
+        order: {
+          select: {
+            uid: true,
+            status: true,
+            stripePaymentId: true,
+            invoiceNumber: true,
+            bookerUserId: true,
+          },
+        },
+      },
+    });
+  }
+
+  /** The rooms of an order that are still sold, i.e. still creditable. */
+  findCreditableBookings(uid: string) {
+    return this.prismaClient.resourceBooking.findMany({
+      where: { orderUid: uid, status: ResourceBookingStatus.CONFIRMED, creditNoteId: null },
+      orderBy: { startTime: "asc" },
+      select: { uid: true, startTime: true, resource: { select: { name: true } } },
+    });
+  }
+
+  /** A credit note by the number people quote, with who may read it. */
+  findCreditNoteByNumber(number: string) {
+    return this.prismaClient.ne26CreditNote.findUnique({
+      where: { number },
+      select: {
+        number: true,
+        order: { select: { uid: true, bookerUserId: true, creditNoteNumber: true } },
+      },
+    });
+  }
+
+  /** Every credit note raised against an order, oldest first. */
+  findCreditNotes(uid: string) {
+    return this.prismaClient.ne26CreditNote.findMany({
+      where: { orderUid: uid },
+      orderBy: { number: "asc" },
+      select: {
+        number: true,
+        amountHt: true,
+        amountVat: true,
+        amountTtc: true,
+        currency: true,
+        closesOrder: true,
+        issuedAt: true,
+        bookings: { select: { uid: true, startTime: true, resource: { select: { name: true } } } },
+      },
+    });
   }
 
   /**
@@ -967,7 +1117,7 @@ export class Ne26OrderRepository {
    *
    * CANCELLED is excluded, and that exclusion is the whole difference between a
    * panel worth reading and one nobody reads. Issuing a credit note deletes the
-   * order's rooms (creditNoteAndCancel) — so every properly refunded order left
+   * order's rooms (creditBookings) — so every properly refunded order left
    * this query holding no rooms and carrying a Stripe payment id, and was
    * announced in red as "paid but holds no room, reconcile or refund in
    * Stripe". Business already finished. Over a three-day event the alarm that
@@ -1039,6 +1189,74 @@ export class Ne26OrderRepository {
         data: { bookerName: columns.bookerName },
       });
       return before;
+    });
+  }
+
+  /**
+   * Claim ONE room for self-service cancellation, once.
+   *
+   * Written BEFORE the refund is sent and conditional on everything the policy
+   * requires, so two clicks cannot pay out twice and a room already credited,
+   * or belonging to somebody else, can never be claimed. Returns what the
+   * refund needs: the payment, and what this room cost.
+   */
+  async claimBookerCancellation(
+    bookingUid: string,
+    bookerUserId: number,
+    now: Date
+  ): Promise<{ orderUid: string; stripePaymentId: string } | null> {
+    const result = await this.prismaClient.resourceBooking.updateMany({
+      where: {
+        uid: bookingUid,
+        status: ResourceBookingStatus.CONFIRMED,
+        creditNoteId: null,
+        bookerCancelledAt: null,
+        order: {
+          bookerUserId,
+          status: ResourceBookingStatus.CONFIRMED,
+          creditNoteNumber: null,
+          stripePaymentId: { not: null },
+        },
+      },
+      data: { bookerCancelledAt: now },
+    });
+    if (result.count === 0) return null;
+    const booking = await this.prismaClient.resourceBooking.findUnique({
+      where: { uid: bookingUid },
+      select: { order: { select: { uid: true, stripePaymentId: true } } },
+    });
+    const order = booking?.order;
+    return order?.stripePaymentId ? { orderUid: order.uid, stripePaymentId: order.stripePaymentId } : null;
+  }
+
+  /** Hand the room back when the refund could not be sent, so they can try again. */
+  async releaseBookerCancellationClaim(bookingUid: string): Promise<void> {
+    await this.prismaClient.resourceBooking.updateMany({
+      where: { uid: bookingUid, creditNoteId: null },
+      data: { bookerCancelledAt: null },
+    });
+  }
+
+  /**
+   * Rooms refunded but never credited: the money left and the paperwork and the
+   * room did not follow. Only ever a credit note that failed after the refund.
+   */
+  findCancellationsWithoutCreditNote(before: Date) {
+    return this.prismaClient.resourceBooking.findMany({
+      where: {
+        bookerCancelledAt: { not: null, lt: before },
+        creditNoteId: null,
+        status: ResourceBookingStatus.CONFIRMED,
+      },
+      select: {
+        uid: true,
+        amountTotal: true,
+        currency: true,
+        bookerCancelledAt: true,
+        resource: { select: { name: true } },
+        order: { select: { uid: true, orderNumber: true, bookerName: true } },
+      },
+      orderBy: { bookerCancelledAt: "asc" },
     });
   }
 

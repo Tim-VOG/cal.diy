@@ -20,6 +20,7 @@
 export type AttentionSeverity = "critical" | "warning" | "info";
 
 export type AttentionKind =
+  | "refund-not-credited"
   | "paid-no-room"
   | "config"
   | "hold-expiring"
@@ -43,6 +44,22 @@ export interface AttentionItem {
 
 export interface AttentionInput {
   now: Date;
+  /**
+   * Refunds the exhibitor asked for that have not produced a credit note.
+   *
+   * The money has left the account. Everything that follows it — the credit
+   * note, the email, the room going back on sale — hangs off one Stripe webhook,
+   * and a webhook that never arrives would otherwise be silent: the room stays
+   * sold to someone who has been paid back.
+   */
+  staleCancellations: {
+    uid: string;
+    orderNumber: number;
+    bookerName: string;
+    roomName: string;
+    amountTotal: number;
+    currency: string;
+  }[];
   orphanOrders: {
     uid: string;
     bookerName: string;
@@ -68,12 +85,13 @@ export const HOLD_WARNING_MINUTES = 10;
 
 const SEVERITY_RANK: Record<AttentionSeverity, number> = { critical: 0, warning: 1, info: 2 };
 const KIND_RANK: Record<AttentionKind, number> = {
-  "paid-no-room": 0,
-  config: 1,
-  "hold-expiring": 2,
-  "invoice-missing": 3,
-  "holds-running": 4,
-  abandoned: 5,
+  "refund-not-credited": 0,
+  "paid-no-room": 1,
+  config: 2,
+  "hold-expiring": 3,
+  "invoice-missing": 4,
+  "holds-running": 5,
+  abandoned: 6,
 };
 
 function money(cents: number, currency: string): string {
@@ -83,6 +101,18 @@ function money(cents: number, currency: string): string {
 export function needsAttention(input: AttentionInput): AttentionItem[] {
   const { now } = input;
   const items: AttentionItem[] = [];
+
+  for (const c of input.staleCancellations) {
+    items.push({
+      id: `refund-not-credited:${c.uid}`,
+      severity: "critical",
+      kind: "refund-not-credited",
+      title: "Refunded, but still sold",
+      detail: `${c.roomName} · ${c.bookerName} · ${money(c.amountTotal, c.currency)} was refunded minutes ago and no credit note came out — the room is still sold. Credit it by hand.`,
+      href: `/rooms/admin/order/${c.uid}`,
+      actionLabel: "Open order",
+    });
+  }
 
   for (const o of input.orphanOrders) {
     if (!o.stripePaymentId) continue;

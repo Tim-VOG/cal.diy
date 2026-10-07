@@ -16,6 +16,17 @@ import { buildInvoiceModel, ROOM_VAT_RATE_BP } from "./invoice";
 import { EVENT_TIME_ZONE } from "./eventSchedule";
 import { orderRef } from "./orderRef";
 
+/** A credit note as the ledger sees it: its own rooms, its own amounts. */
+export interface AccountingCreditNote {
+  number: string;
+  issuedAt: Date;
+  amountHt: number;
+  amountVat: number;
+  amountTtc: number;
+  currency: string;
+  rooms: string[];
+}
+
 export interface AccountingOrder {
   orderNumber: number;
   invoiceNumber: string | null;
@@ -42,6 +53,12 @@ export interface AccountingOrder {
     resource: { name: string };
     addOns: { quantity: number; lineTotal: number; vatRate: number; addOn: { name: string } }[];
   }[];
+  /**
+   * Every credit note raised against this invoice. A payment covering three
+   * rooms can be credited one room at a time, so the amounts come from the note
+   * itself rather than from the order total.
+   */
+  creditNotes: AccountingCreditNote[];
 }
 
 export const ACCOUNTING_HEADERS = [
@@ -127,7 +144,9 @@ export function accountingRows(orders: AccountingOrder[]): AccountingCell[][] {
       documentNumber: string,
       type: "Invoice" | "Credit note",
       issuedAt: Date | null,
-      sign: 1 | -1
+      sign: 1 | -1,
+      /** A credit note covering only some rooms carries its own figures. */
+      part?: { rooms: string; amountHt: number; amountVat: number; amountTtc: number }
     ): AccountingCell[] => [
       documentNumber,
       type,
@@ -138,12 +157,12 @@ export function accountingRows(orders: AccountingOrder[]): AccountingCell[][] {
       order.bookerEmail,
       order.bookerVatNumber ?? "",
       order.bookerCountry ?? "",
-      roomNames,
-      (sign * minutes) / 60,
-      (sign * model.totalHt) / 100,
+      part ? part.rooms : roomNames,
+      part ? "" : (sign * minutes) / 60,
+      (sign * (part ? part.amountHt : model.totalHt)) / 100,
       rate,
-      (sign * model.totalVat) / 100,
-      (sign * model.totalTtc) / 100,
+      (sign * (part ? part.amountVat : model.totalVat)) / 100,
+      (sign * (part ? part.amountTtc : model.totalTtc)) / 100,
       order.currency,
       model.vatMention ?? "",
       order.stripePaymentId ? "Stripe" : "Off-Stripe",
@@ -157,8 +176,21 @@ export function accountingRows(orders: AccountingOrder[]): AccountingCell[][] {
     if (order.invoiceNumber) {
       rows.push(line(order.invoiceNumber, "Invoice", order.invoiceIssuedAt ?? order.paidAt, 1));
     }
-    if (order.creditNoteNumber) {
-      rows.push(line(order.creditNoteNumber, "Credit note", order.creditNoteIssuedAt, -1));
+    for (const note of order.creditNotes) {
+      // A credit note's own amounts, negated: the invoice and the notes against
+      // it then sum to what the exhibitor actually kept.
+      // A note migrated from before credit notes had rows of their own carries
+      // no VAT split. It always covered the whole order, so the order's own
+      // figures are the right ones.
+      const whole = note.amountTtc === 0;
+      rows.push(
+        line(note.number, "Credit note", note.issuedAt, -1, {
+          rooms: whole ? roomNames : note.rooms.join("; "),
+          amountHt: whole ? model.totalHt : note.amountHt,
+          amountVat: whole ? model.totalVat : note.amountVat,
+          amountTtc: whole ? model.totalTtc : note.amountTtc,
+        })
+      );
     }
   }
 

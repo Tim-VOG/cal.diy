@@ -38,7 +38,15 @@ export async function GET(): Promise<Response> {
   const book = buildXlsx({
     sheetName: "Accounting",
     headers: ACCOUNTING_HEADERS,
-    rows: accountingRows(orders),
+    rows: accountingRows(
+      orders.map((order) => ({
+        ...order,
+        creditNotes: order.creditNotes.map((note) => ({
+          ...note,
+          rooms: note.bookings.map((b) => b.resource.name),
+        })),
+      }))
+    ),
   });
 
   return new Response(book as BodyInit, {

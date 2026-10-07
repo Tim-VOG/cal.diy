@@ -17,23 +17,35 @@ export interface DocumentSource {
   uid: string;
   invoiceNumber?: string | null;
   creditNoteNumber?: string | null;
+  /** The credit note raised against THIS room, when the order was credited room by room. */
+  creditNote?: { number: string } | null;
   order?: { uid: string; invoiceNumber: string | null; creditNoteNumber: string | null } | null;
 }
 
 export interface BookingDocuments {
-  /** The uid the /rooms/invoice and /rooms/credit-note routes look the PDF up by. */
+  /** The uid the /rooms/invoice route looks the PDF up by. */
   documentUid: string;
   invoiceNumber: string | null;
   creditNoteNumber: string | null;
+  /**
+   * What /rooms/credit-note is asked for: the note's NUMBER once an order can
+   * be credited room by room, and the order's uid for everything issued before.
+   */
+  creditNoteUid: string | null;
 }
 
 export function bookingDocuments(booking: DocumentSource): BookingDocuments {
   const { order } = booking;
-  if (order && (order.invoiceNumber || order.creditNoteNumber)) {
+  // The room's own credit note wins: one payment can be credited room by room,
+  // and the order only carries the note that closed it.
+  const roomNote = booking.creditNote?.number ?? null;
+  if (order && (order.invoiceNumber || order.creditNoteNumber || roomNote)) {
+    const creditNoteNumber = roomNote ?? order.creditNoteNumber;
     return {
       documentUid: order.uid,
       invoiceNumber: order.invoiceNumber,
-      creditNoteNumber: order.creditNoteNumber,
+      creditNoteNumber,
+      creditNoteUid: roomNote ?? (order.creditNoteNumber ? order.uid : null),
     };
   }
   if (booking.invoiceNumber || booking.creditNoteNumber) {
@@ -41,8 +53,14 @@ export function bookingDocuments(booking: DocumentSource): BookingDocuments {
       documentUid: booking.uid,
       invoiceNumber: booking.invoiceNumber ?? null,
       creditNoteNumber: booking.creditNoteNumber ?? null,
+      creditNoteUid: booking.creditNoteNumber ? booking.uid : null,
     };
   }
   // Nothing issued yet: when something is, it will be on the order.
-  return { documentUid: order?.uid ?? booking.uid, invoiceNumber: null, creditNoteNumber: null };
+  return {
+    documentUid: order?.uid ?? booking.uid,
+    invoiceNumber: null,
+    creditNoteNumber: null,
+    creditNoteUid: null,
+  };
 }

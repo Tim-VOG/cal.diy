@@ -29,6 +29,15 @@ const ORDER = {
       addOns: [],
     },
   ],
+  creditNotes: [] as {
+    number: string;
+    issuedAt: Date;
+    amountHt: number;
+    amountVat: number;
+    amountTtc: number;
+    currency: string;
+    rooms: string[];
+  }[],
 };
 
 const column = (row: (string | number | null)[], header: string) => row[ACCOUNTING_HEADERS.indexOf(header)];
@@ -65,6 +74,17 @@ describe("accountingRows", () => {
         ...ORDER,
         creditNoteNumber: "NE26-CN-2026-0001",
         creditNoteIssuedAt: new Date("2026-09-24T08:00:00.000Z"),
+        creditNotes: [
+          {
+            number: "NE26-CN-2026-0001",
+            issuedAt: new Date("2026-09-24T08:00:00.000Z"),
+            amountHt: 60000,
+            amountVat: 12600,
+            amountTtc: 72600,
+            currency: "EUR",
+            rooms: ["Suite 1"],
+          },
+        ],
       },
     ]);
     expect(rows).toHaveLength(2);
@@ -72,7 +92,8 @@ describe("accountingRows", () => {
     expect(column(credit, "Type")).toBe("Credit note");
     expect(column(credit, "Cancels invoice")).toBe("NE26-2026-0001");
     expect(Number(column(credit, "Incl. VAT")) + Number(column(invoice, "Incl. VAT"))).toBe(0);
-    expect(Number(column(credit, "Room-hours"))).toBe(-2);
+    // A credit note books an amount, not hours: it may cover one room of three.
+    expect(column(credit, "Room-hours")).toBe("");
   });
 
   it("dates every stamp in event time", () => {

@@ -21,15 +21,20 @@ export async function loadAdminBookings() {
   // Drop abandoned, unpaid bookings whose hold expired before listing.
   await getResourceBookingRepository().deleteExpiredHolds(new Date());
 
-  const [bookings, allRooms, roomSettings, settings, orphanOrders, blocks] = await Promise.all([
-    getResourceBookingRepository().findAllWithDetails(),
-    getResourceRepository().findAllForAdmin(),
-    getNe26RoomSettingsRepository().get(),
-    getInvoiceSettingsRepository().get(),
-    // An order whose rooms are gone appears nowhere in a list of rooms.
-    getNe26OrderRepository().findOrdersWithoutRooms(),
-    getResourceBookingRepository().findBlocks(),
-  ]);
+  const [bookings, allRooms, roomSettings, settings, orphanOrders, staleCancellations, blocks] =
+    await Promise.all([
+      getResourceBookingRepository().findAllWithDetails(),
+      getResourceRepository().findAllForAdmin(),
+      getNe26RoomSettingsRepository().get(),
+      getInvoiceSettingsRepository().get(),
+      // An order whose rooms are gone appears nowhere in a list of rooms.
+      getNe26OrderRepository().findOrdersWithoutRooms(),
+      // A self-service refund whose webhook never landed: money out, room still
+      // sold. Five minutes is long enough that a webhook in flight is not raised
+      // as a problem, short enough to catch one that will never come.
+      getNe26OrderRepository().findCancellationsWithoutCreditNote(new Date(Date.now() - 5 * 60_000)),
+      getResourceBookingRepository().findBlocks(),
+    ]);
 
   const rows: AdminBookingRow[] = bookings.map((b) => {
     const docs = bookingDocuments(b);
@@ -61,6 +66,7 @@ export async function loadAdminBookings() {
       documentUid: docs.documentUid,
       invoiceNumber: docs.invoiceNumber,
       creditNoteNumber: docs.creditNoteNumber,
+      creditNoteUid: docs.creditNoteUid,
       addOns: b.addOns.map((a) => ({ name: a.addOn.name, quantity: a.quantity, lineTotal: a.lineTotal })),
     };
   });
@@ -73,6 +79,17 @@ export async function loadAdminBookings() {
   const attention = needsAttention({
     now: new Date(),
     orphanOrders,
+    // One room, named: "Suite 1 on Tue 17 Nov" is what the desk goes looking for.
+    staleCancellations: staleCancellations
+      .filter((c) => c.order)
+      .map((c) => ({
+        uid: c.order?.uid ?? "",
+        orderNumber: c.order?.orderNumber ?? 0,
+        bookerName: c.order?.bookerName ?? "",
+        roomName: c.resource.name,
+        amountTotal: c.amountTotal,
+        currency: c.currency,
+      })),
     bookings: rows,
     configIssues,
   });

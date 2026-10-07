@@ -2931,6 +2931,14 @@ model ResourceBooking {
   bookerUserId            Int?
   bookerEmail             String
   bookerName              String
+  // NE26: the credit note that cancelled THIS room, when one did. A payment
+  // covering three rooms can be credited one room at a time.
+  creditNote              Ne26CreditNote?       @relation(fields: [creditNoteId], references: [id], onDelete: SetNull)
+  creditNoteId            Int?
+  // NE26: when the exhibitor asked to cancel this room and the refund was sent
+  // to Stripe. Written before the refund, so money that left without producing
+  // a credit note is visible instead of silent.
+  bookerCancelledAt       DateTime?
   // Buyer billing country (ISO-3166 alpha-2) and intra-EU VAT number, captured at
   // booking to drive the invoice VAT treatment (reverse charge / exemption).
   bookerCountry           String?
@@ -3215,6 +3223,33 @@ model Ne26AuditLog {
 /// incremented inside the same transaction that renders and stores the
 /// document, so a failure returns the number to the pool. The row lock also
 /// serialises issuance, which at a few hundred documents costs nothing.
+/// NE26: a credit note, and the rooms it credits.
+///
+/// An exhibitor who paid for three rooms in one go may cancel one of them, so a
+/// single invoice can be credited more than once. The number comes from the same
+/// gapless series as before; what changed is that it is attached to the rooms it
+/// actually cancels rather than to the whole order.
+model Ne26CreditNote {
+  id          Int               @id @default(autoincrement())
+  number      String            @unique
+  order       Ne26Order         @relation(fields: [orderUid], references: [uid], onDelete: Cascade)
+  orderUid    String
+  bookings    ResourceBooking[]
+  /// Credited amounts, mirroring the PDF: excl. VAT, VAT, incl. VAT.
+  amountHt    Int
+  amountVat   Int
+  amountTtc   Int
+  currency    String            @default("EUR")
+  /// True when this note cancelled the last room standing, closing the order.
+  closesOrder Boolean           @default(false)
+  /// Stripe refund that paid it back, when one did.
+  stripeRefundId String?
+  issuedAt    DateTime          @default(now())
+  createdAt   DateTime          @default(now())
+
+  @@index([orderUid])
+}
+
 model Ne26DocumentCounter {
   /// "invoice" or "credit-note".
   series     String   @id
@@ -3271,6 +3306,11 @@ model Ne26Order {
   invoiceNumber           String?               @unique
   invoicePdfUrl           String?
   creditNoteNumber        String?               @unique
+  // NE26: every credit note raised against this order. One per cancelled
+  // room when an exhibitor cancels part of a payment; one for the lot when the
+  // whole order goes. The fields above still carry the note that CLOSED the
+  // order, so a single-room order reads exactly as it always did.
+  creditNotes             Ne26CreditNote[]
   creditNotePdfUrl        String?
   // NE26: when each document was issued. Kept so a document re-rendered after a
   // billing correction keeps the date it was first issued on.

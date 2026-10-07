@@ -577,6 +577,7 @@ export class ResourceBookingRepository {
         // The invoice lives on the order, not the room: one payment can cover
         // several rooms and issues one document. Projected here so a booking row
         // can still say which invoice it belongs to.
+        creditNote: { select: { number: true } },
         order: {
           select: {
             uid: true,
@@ -626,6 +627,11 @@ export class ResourceBookingRepository {
         durationMinutes: true,
         amountTotal: true,
         currency: true,
+        // This room's own cancellation: a payment covering three rooms can be
+        // credited one room at a time, so the credit note hangs off the room.
+        creditNoteId: true,
+        bookerCancelledAt: true,
+        creditNote: { select: { number: true } },
         // The invoice belongs to the order this room was paid for, not to the
         // room: one payment covers one or more rooms and issues one document.
         // holdExpiresAt comes from the ORDER: it is the order that is held, and
@@ -637,10 +643,22 @@ export class ResourceBookingRepository {
             invoiceNumber: true,
             creditNoteNumber: true,
             holdExpiresAt: true,
+            // What decides whether this exhibitor may cancel the order
+            // themselves, and whether a refund is already on its way.
+            status: true,
+            amountTotal: true,
+            stripePaymentId: true,
+            // The VAT frozen when the invoice was issued, so the page can tell
+            // the exhibitor what a cancellation would actually refund.
+            roomVatRate: true,
+            vatZeroRated: true,
+            vatMention: true,
           },
         },
         resource: { select: { name: true, category: true } },
-        addOns: { select: { quantity: true, addOn: { select: { name: true } } } },
+        addOns: {
+          select: { quantity: true, lineTotal: true, vatRate: true, addOn: { select: { name: true } } },
+        },
       },
     });
   }
@@ -729,7 +747,6 @@ export class ResourceBookingRepository {
       },
     });
   }
-
 
   /** Resolve a booking uid from the Stripe payment intent (for refund webhooks). */
   async findUidByStripePaymentId(stripePaymentId: string): Promise<string | null> {

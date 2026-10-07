@@ -4,7 +4,7 @@ import { buildOrderIcs } from "../lib/ics";
 import { buildInvoiceModel, ROOM_VAT_RATE_BP } from "../lib/invoice";
 import type { InvoiceMeta } from "../lib/invoicePdf";
 import { renderInvoicePdf } from "../lib/invoicePdf";
-import { readInvoicePdf, saveInvoicePdf } from "../lib/invoiceStorage";
+import { readCreditNotePdf, readInvoicePdf, saveCreditNotePdf, saveInvoicePdf } from "../lib/invoiceStorage";
 import {
   type BillingCorrection,
   correctionColumns,
@@ -36,6 +36,7 @@ export interface IInvoiceServiceDeps {
 }
 
 type Order = NonNullable<Awaited<ReturnType<Ne26OrderRepository["findByUid"]>>>;
+type OrderBooking = Order["bookings"][number];
 
 /**
  * One order, one invoice.
@@ -73,9 +74,11 @@ export class InvoiceService {
     kind: "invoice" | "credit_note",
     number: string,
     issueDate: Date,
-    billTo: NonNullable<InvoiceMeta["billTo"]>
+    billTo: NonNullable<InvoiceMeta["billTo"]>,
+    /** The rooms this document is about: a credit note may cover only some. */
+    bookings: OrderBooking[] = order.bookings
   ): InvoiceMeta {
-    const first = order.bookings[0];
+    const first = bookings[0];
     return {
       invoiceNumber: number,
       ...(kind === "credit_note"
@@ -89,14 +92,14 @@ export class InvoiceService {
       poNumber: order.bookerPoNumber,
       internalReference: order.bookerInternalReference,
       billTo,
-      roomName: this.roomLabel(order),
+      roomName: this.roomLabel(order, bookings),
       startUtc: first?.startTime ?? issueDate,
       endUtc: first?.endTime ?? issueDate,
     };
   }
 
-  private invoiceRooms(order: Order) {
-    return order.bookings.map((b) => ({
+  private invoiceRooms(order: Order, bookings: OrderBooking[] = order.bookings) {
+    return bookings.map((b) => ({
       amountTotal: b.amountTotal,
       roomName: b.resource.name,
       durationMinutes: b.durationMinutes,
@@ -118,9 +121,9 @@ export class InvoiceService {
    * rooms with catering should not have to open the PDF to check what went
    * through.
    */
-  private emailRooms(order: Order) {
+  private emailRooms(order: Order, bookings: OrderBooking[] = order.bookings) {
     const label = (cents: number) => `${(cents / 100).toFixed(2)} ${order.currency}`;
-    return order.bookings.map((b) => ({
+    return bookings.map((b) => ({
       roomName: b.resource.name,
       slotLabel: formatSlotRange(b.startTime, b.endTime),
       durationMinutes: b.durationMinutes,
@@ -134,8 +137,8 @@ export class InvoiceService {
   }
 
   /** "Suite 1" for one room, "Suite 1 + 2 more" beyond — for email subjects. */
-  private roomLabel(order: Order): string {
-    const [first, ...rest] = order.bookings;
+  private roomLabel(order: Order, bookings: OrderBooking[] = order.bookings): string {
+    const [first, ...rest] = bookings;
     if (!first) return "NATO Edge 26";
     return rest.length === 0 ? first.resource.name : `${first.resource.name} + ${rest.length} more`;
   }
@@ -251,32 +254,46 @@ export class InvoiceService {
   }
 
   /**
-   * Credit a fully refunded order: allocate a CN number, cancel the order and
-   * free every room, render and store the credit note, then email it.
-   * Idempotent, and returns whether one was issued.
+   * Credit an order's rooms — all of them, or just the ones named.
+   *
+   * A payment can cover three rooms and an exhibitor may cancel one, so the
+   * credit note belongs to the rooms it cancels. Crediting the last room
+   * standing also closes the order, which is why a one-room order produces
+   * exactly what it always did: order CANCELLED, number on the order, same link.
+   *
+   * The VAT is the one FROZEN when the invoice was issued, never recomputed: the
+   * invoice PDF is immutable, so a rate corrected since would produce a credit
+   * note contradicting the document it credits.
+   *
+   * Idempotent under concurrency: the rooms are claimed inside the numbering
+   * transaction, so a refund webhook and an admin clicking at the same moment
+   * produce one note, not two, and the loser spends no number.
+   *
+   * Returns null when there was nothing to credit.
    */
-  async issueCreditNote(uid: string): Promise<boolean> {
+  async creditBookings(
+    uid: string,
+    bookingUids?: readonly string[],
+    opts: { stripeRefundId?: string | null } = {}
+  ): Promise<{ number: string; amountTtc: number; closesOrder: boolean; rooms: string[] } | null> {
     const order = await this.deps.ne26OrderRepository.findByUid(uid);
-    if (
-      !order ||
-      order.status !== ResourceBookingStatus.CONFIRMED ||
-      !order.invoiceNumber ||
-      order.creditNoteNumber
-    ) {
-      return false;
-    }
+    if (!order || order.status !== ResourceBookingStatus.CONFIRMED || !order.invoiceNumber) return null;
+
+    const creditable = order.bookings.filter(
+      (b) => b.status === ResourceBookingStatus.CONFIRMED && b.creditNoteId === null
+    );
+    const target = bookingUids?.length ? creditable.filter((b) => bookingUids.includes(b.uid)) : creditable;
+    // Asked for a room that is not creditable: credit nothing rather than
+    // quietly credit the rest, which would refund the wrong amount.
+    if (target.length === 0 || (bookingUids?.length && target.length !== bookingUids.length)) return null;
 
     const issuer = await this.deps.invoiceSettingsRepository.get();
-    // Re-use the treatment FROZEN when the invoice was issued — never recompute
-    // from the live settings. The invoice PDF is stored and immutable, so a rate
-    // corrected or a toggle flipped since would produce a credit note that
-    // contradicts the document it credits.
     const vat = { zeroRated: order.vatZeroRated, mention: order.vatMention };
     const model = buildInvoiceModel(
       {
         currency: order.currency,
         roomVatRate: order.roomVatRate ?? ROOM_VAT_RATE_BP,
-        rooms: this.invoiceRooms(order),
+        rooms: this.invoiceRooms(order, target),
       },
       vat
     );
@@ -284,48 +301,98 @@ export class InvoiceService {
     const issueDate = new Date();
     const billTo = await this.resolveBillTo(order);
 
-    // Same shape as the invoice: number, cancellation, PDF and record commit
-    // together or not at all. An order credited by a concurrent refund throws
-    // AlreadyCredited, which rolls the number back rather than spending it on a
-    // document that was never produced.
     const issued = await this.deps.ne26OrderRepository
       .issueWithNumber("credit-note", issueDate.getUTCFullYear(), async (creditNoteNumber, tx) => {
-        const count = await this.deps.ne26OrderRepository.creditNoteAndCancel(
+        const applied = await this.deps.ne26OrderRepository.creditBookings(
           uid,
-          creditNoteNumber,
-          `/rooms/credit-note/${uid}`,
-          tx,
-          issueDate
+          target.map((b) => b.uid),
+          {
+            number: creditNoteNumber,
+            pdfUrl: `/rooms/credit-note/${creditNoteNumber}`,
+            amountHt: model.totalHt,
+            amountVat: model.totalVat,
+            amountTtc: model.totalTtc,
+            currency: order.currency,
+            issuedAt: issueDate,
+            stripeRefundId: opts.stripeRefundId ?? null,
+          },
+          tx
         );
-        if (count === 0) throw new AlreadyCredited();
+        if (!applied) throw new AlreadyCredited();
 
         const pdf = await renderInvoicePdf(
           model,
-          this.documentMeta(order, "credit_note", creditNoteNumber, issueDate, billTo),
+          this.documentMeta(order, "credit_note", creditNoteNumber, issueDate, billTo, target),
           issuer
         );
-        await saveInvoicePdf(uid, pdf, "credit_note");
-        return { creditNoteNumber, pdf };
+        await saveCreditNotePdf(creditNoteNumber, pdf);
+        // The note that closes an order is also stored where the order's own
+        // link has always looked, so every credit-note link already emailed
+        // keeps resolving.
+        if (applied.closesOrder) await saveInvoicePdf(uid, pdf, "credit_note");
+        return { creditNoteNumber, pdf, closesOrder: applied.closesOrder };
       })
       .catch((e) => {
         if (e instanceof AlreadyCredited) return null;
         throw e;
       });
-    if (!issued) return false;
-    const { creditNoteNumber, pdf } = issued;
+    if (!issued) return null;
 
     await sendInvoiceEmail({
       to: order.bookerEmail,
       bookerName: order.bookerName,
       orderRef: orderRef(order.orderNumber),
-      invoiceNumber: creditNoteNumber,
-      roomName: this.roomLabel(order),
-      rooms: this.emailRooms(order),
+      invoiceNumber: issued.creditNoteNumber,
+      roomName: this.roomLabel(order, target),
+      rooms: this.emailRooms(order, target),
       amountLabel: `${(model.totalTtc / 100).toFixed(2)} ${order.currency}`,
-      pdf,
+      pdf: issued.pdf,
       documentKind: "credit_note",
     });
-    return true;
+
+    return {
+      number: issued.creditNoteNumber,
+      amountTtc: model.totalTtc,
+      closesOrder: issued.closesOrder,
+      rooms: target.map((b) => b.resource.name),
+    };
+  }
+
+  /**
+   * What crediting these rooms would come to, before anything is credited.
+   *
+   * The refund is sent first and must be for exactly what the credit note will
+   * say, so both read the same model: the rooms, their add-ons, and the VAT
+   * frozen when the invoice was issued.
+   */
+  async quoteCredit(
+    uid: string,
+    bookingUids: readonly string[]
+  ): Promise<{ amountHt: number; amountTtc: number } | null> {
+    const order = await this.deps.ne26OrderRepository.findByUid(uid);
+    if (!order) return null;
+    const target = order.bookings.filter(
+      (b) =>
+        bookingUids.includes(b.uid) && b.status === ResourceBookingStatus.CONFIRMED && b.creditNoteId === null
+    );
+    if (target.length !== bookingUids.length || target.length === 0) return null;
+    const model = buildInvoiceModel(
+      {
+        currency: order.currency,
+        roomVatRate: order.roomVatRate ?? ROOM_VAT_RATE_BP,
+        rooms: this.invoiceRooms(order, target),
+      },
+      { zeroRated: order.vatZeroRated, mention: order.vatMention }
+    );
+    return { amountHt: model.totalHt, amountTtc: model.totalTtc };
+  }
+
+  /**
+   * Credit everything still sold on an order — the refund webhook's path, and
+   * the admin's "Issue credit note" button. Returns whether one was issued.
+   */
+  async issueCreditNote(uid: string): Promise<boolean> {
+    return (await this.creditBookings(uid)) !== null;
   }
 
   /**
@@ -351,7 +418,7 @@ export class InvoiceService {
     const order = await this.deps.ne26OrderRepository.findByUid(uid);
     if (!order) return null;
     const regenerated: ("invoice" | "credit_note")[] = [];
-    if (!order.invoiceNumber && !order.creditNoteNumber) return { changes, regenerated };
+    if (!order.invoiceNumber) return { changes, regenerated };
 
     const issuer = await this.deps.invoiceSettingsRepository.get();
     const billTo = await this.resolveBillTo(order);
@@ -364,21 +431,45 @@ export class InvoiceService {
       { zeroRated: order.vatZeroRated, mention: order.vatMention }
     );
 
-    const documents = [
-      { kind: "invoice" as const, number: order.invoiceNumber, issuedAt: order.invoiceIssuedAt },
-      { kind: "credit_note" as const, number: order.creditNoteNumber, issuedAt: order.creditNoteIssuedAt },
-    ];
-    for (const doc of documents) {
-      if (!doc.number) continue;
-      const issueDate = doc.issuedAt ?? (await this.originalIssueDate(order, doc.kind));
+    if (order.invoiceNumber) {
+      const issueDate = order.invoiceIssuedAt ?? (await this.originalIssueDate(order, "invoice"));
       const pdf = await renderInvoicePdf(
         model,
-        this.documentMeta(order, doc.kind, doc.number, issueDate, billTo),
+        this.documentMeta(order, "invoice", order.invoiceNumber, issueDate, billTo),
         issuer
       );
-      await saveInvoicePdf(uid, pdf, doc.kind);
-      if (!doc.issuedAt) await this.deps.ne26OrderRepository.backfillIssuedAt(uid, doc.kind, issueDate);
-      regenerated.push(doc.kind);
+      await saveInvoicePdf(uid, pdf, "invoice");
+      if (!order.invoiceIssuedAt) {
+        await this.deps.ne26OrderRepository.backfillIssuedAt(uid, "invoice", issueDate);
+      }
+      regenerated.push("invoice");
+    }
+
+    // Every credit note raised against this invoice, each with its own rooms and
+    // its own amounts: an order credited room by room has more than one, and a
+    // correction that rewrote them all from the full order would restate
+    // amounts that were never credited.
+    const notes = await this.deps.ne26OrderRepository.findCreditNotes(uid);
+    const byUid = new Map(order.bookings.map((b) => [b.uid, b]));
+    for (const note of notes) {
+      const rooms = note.bookings.map((b) => byUid.get(b.uid)).filter((b): b is OrderBooking => Boolean(b));
+      if (rooms.length === 0) continue;
+      const noteModel = buildInvoiceModel(
+        {
+          currency: order.currency,
+          roomVatRate: order.roomVatRate ?? ROOM_VAT_RATE_BP,
+          rooms: this.invoiceRooms(order, rooms),
+        },
+        { zeroRated: order.vatZeroRated, mention: order.vatMention }
+      );
+      const pdf = await renderInvoicePdf(
+        noteModel,
+        this.documentMeta(order, "credit_note", note.number, note.issuedAt, billTo, rooms),
+        issuer
+      );
+      await saveCreditNotePdf(note.number, pdf);
+      if (note.closesOrder) await saveInvoicePdf(uid, pdf, "credit_note");
+      regenerated.push("credit_note");
     }
     return { changes, regenerated };
   }
@@ -392,7 +483,9 @@ export class InvoiceService {
     const stored = await readInvoicePdf(order.uid, kind);
     if (stored) {
       try {
-        const created = (await PDFDocument.load(stored.toString("base64"), { updateMetadata: false })).getCreationDate();
+        const created = (
+          await PDFDocument.load(stored.toString("base64"), { updateMetadata: false })
+        ).getCreationDate();
         if (created) return created;
       } catch {
         // Unreadable: fall through.

@@ -401,7 +401,7 @@ export default function BookingsTable({
                         )}
                         {r.creditNoteNumber ? (
                           <a
-                            href={`/rooms/credit-note/${r.documentUid}`}
+                            href={`/rooms/credit-note/${r.creditNoteUid ?? r.documentUid}`}
                             target="_blank"
                             rel="noreferrer"
                             title="Credit note"

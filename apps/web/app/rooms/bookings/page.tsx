@@ -1,7 +1,9 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
 import { getResourceBookingRepository } from "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container";
+import { buildInvoiceModel, ROOM_VAT_RATE_BP } from "@calcom/features/ne26-rooms/lib/invoice";
 import { orderRef } from "@calcom/features/ne26-rooms/lib/orderRef";
+import { canBookerCancel, cancellationDeadline } from "@calcom/features/ne26-rooms/lib/cancellationPolicy";
 import { buildEventSchedule, SLOT_GRANULARITY_MS } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import { CalendarPlus, Clock3, FileText } from "lucide-react";
@@ -12,6 +14,7 @@ import { redirect } from "next/navigation";
 import { displayStatus, fmtDay, fmtDayLong, fmtMoney, fmtTime } from "../admin/format";
 import { HATCH, StatusPill } from "../admin/ui";
 import { requireBillingProfile } from "../requireBillingProfile";
+import CancelBookingButton from "./CancelBookingButton";
 import HoldCountdown from "./HoldCountdown";
 import ResumePaymentButton from "./ResumePaymentButton";
 
@@ -72,6 +75,47 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
     ...schedule.map((d) => d.close - Math.floor(d.open / (24 * HOUR)) * 24 * HOUR)
   );
   const axisHours = Math.max(1, Math.round((closeOffset - openOffset) / HOUR));
+
+  // Cancelling refunds the card, so the page decides with the same rule the
+  // procedure enforces — the button is a courtesy, the rule is behind it.
+  const now = new Date();
+  const deadline = cancellationDeadline(buildEventSchedule(roomSettings.eventDays));
+  const cancellable = (b: (typeof rows)[number]) => canBookerCancel(b, now, deadline).allowed;
+  /** A refund asked for and not yet credited: say so rather than show the button again. */
+  const refundPending = (b: (typeof rows)[number]) => Boolean(b.bookerCancelledAt) && !b.creditNoteId;
+  /**
+   * What this one room would come back as, VAT included — the figure that lands
+   * on the card. Built from the same model as the credit note, with the VAT
+   * frozen on the order, so the page cannot promise an amount the refund will
+   * not match.
+   */
+  const refundable = (b: (typeof rows)[number]) =>
+    buildInvoiceModel(
+      {
+        currency: b.currency,
+        roomVatRate: b.order?.roomVatRate ?? ROOM_VAT_RATE_BP,
+        rooms: [
+          {
+            amountTotal: b.amountTotal,
+            roomName: b.resource.name,
+            durationMinutes: b.durationMinutes,
+            addOns: b.addOns.map((a) => ({
+              name: a.addOn.name,
+              quantity: a.quantity,
+              lineTotal: a.lineTotal,
+              vatRate: a.vatRate,
+            })),
+          },
+        ],
+      },
+      { zeroRated: b.order?.vatZeroRated ?? false, mention: b.order?.vatMention ?? null }
+    ).totalTtc;
+  const cancelProps = (b: (typeof rows)[number]) => ({
+    bookingUid: b.uid,
+    amountLabel: fmtMoney(refundable(b), b.currency),
+    roomLabel: b.resource.name,
+    dayLabel: fmtDay(b.startTime.toISOString()),
+  });
 
   const link =
     "text-[#000643] underline decoration-[#000643]/30 underline-offset-2 hover:decoration-[#000643]";
@@ -234,6 +278,7 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                   <th className="whitespace-nowrap px-4 py-2.5 text-right font-semibold">Excl. VAT</th>
                   <th className="px-4 py-2.5 font-semibold">Document</th>
                   <th className="px-4 py-2.5 font-semibold">Calendar</th>
+                  <th className="px-4 py-2.5 font-semibold">Cancel</th>
                 </tr>
               </thead>
               <tbody>
@@ -284,14 +329,14 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                             <FileText className="h-3.5 w-3.5" aria-hidden />
                             Invoice {b.order.invoiceNumber}
                           </a>
-                          {b.order.creditNoteNumber ? (
+                          {(b.creditNote?.number ?? b.order.creditNoteNumber) ? (
                             <a
                               href={`/rooms/credit-note/${b.documentUid}`}
                               target="_blank"
                               rel="noreferrer"
                               className={`inline-flex items-center gap-1 whitespace-nowrap ${link}`}>
                               <FileText className="h-3.5 w-3.5" aria-hidden />
-                              Credit note {b.order.creditNoteNumber}
+                              Credit note {b.creditNote?.number ?? b.order.creditNoteNumber}
                             </a>
                           ) : null}
                         </div>
@@ -309,6 +354,15 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                           <CalendarPlus className="h-3.5 w-3.5" aria-hidden />
                           .ics
                         </a>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {refundPending(b) ? (
+                        <span className="whitespace-nowrap text-amber-800 text-xs">Refund on its way</span>
+                      ) : cancellable(b) ? (
+                        <CancelBookingButton {...cancelProps(b)} />
                       ) : (
                         <span className="text-gray-300">—</span>
                       )}
@@ -381,19 +435,24 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                         Invoice {b.order.invoiceNumber}
                       </a>
                     ) : null}
-                    {b.order?.creditNoteNumber ? (
+                    {(b.creditNote?.number ?? b.order?.creditNoteNumber) ? (
                       <a
                         href={`/rooms/credit-note/${b.documentUid}`}
                         target="_blank"
                         rel="noreferrer"
                         className={link}>
-                        Credit note {b.order.creditNoteNumber}
+                        Credit note {b.creditNote?.number ?? b.order?.creditNoteNumber}
                       </a>
                     ) : null}
                     {b.status === "CONFIRMED" ? (
                       <a href={`/rooms/bookings/calendar?booking=${b.uid}`} className={link}>
                         Add to calendar
                       </a>
+                    ) : null}
+                    {refundPending(b) ? (
+                      <span className="text-amber-800 text-xs">Refund on its way</span>
+                    ) : cancellable(b) ? (
+                      <CancelBookingButton {...cancelProps(b)} />
                     ) : null}
                     {b.status === "PENDING" ? (
                       <span className="text-amber-800 text-xs">Awaiting payment — see above</span>
@@ -411,6 +470,14 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
               <CalendarPlus className="h-4 w-4" aria-hidden />
               Add all my confirmed bookings to my calendar
             </a>
+          ) : null}
+
+          {live.some((b) => b.status === "CONFIRMED") && deadline ? (
+            <p className="text-gray-500 text-xs">
+              Cancel a room online until {fmtDayLong(deadline.toISOString())} and that room is refunded to
+              your card in full, VAT included. Any other room on the same payment stays booked. After that
+              date, write to us and we will see what we can do.
+            </p>
           ) : null}
         </>
       )}

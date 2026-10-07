@@ -19,7 +19,7 @@ const room = (
 });
 
 const run = (over: Partial<AttentionInput>) =>
-  needsAttention({ now: NOW, orphanOrders: [], bookings: [], configIssues: [], ...over });
+  needsAttention({ now: NOW, orphanOrders: [], staleCancellations: [], bookings: [], configIssues: [], ...over });
 
 describe("needsAttention", () => {
   it("is empty when nothing needs a person", () => {

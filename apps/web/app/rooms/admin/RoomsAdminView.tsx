@@ -47,6 +47,8 @@ export interface AdminBookingRow {
   documentUid: string;
   invoiceNumber: string | null;
   creditNoteNumber: string | null;
+  /** What /rooms/credit-note is asked for: the note's number, or the order uid for old ones. */
+  creditNoteUid: string | null;
   addOns: { name: string; quantity: number; lineTotal: number }[];
 }
 

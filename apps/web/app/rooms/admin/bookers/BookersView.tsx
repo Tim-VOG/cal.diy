@@ -20,6 +20,8 @@ export interface BookerBooking {
   currency: string;
   /** The uid the invoice and credit-note PDFs are stored under — the order's. */
   documentUid: string;
+  /** What /rooms/credit-note is asked for: the note's number, or the order uid for old ones. */
+  creditNoteUid: string | null;
   invoiceNumber: string | null;
   creditNoteNumber: string | null;
   addOns: { name: string; quantity: number }[];
@@ -271,7 +273,7 @@ export default function BookersView({
                                   <td className="px-3 py-2">
                                     {bk.creditNoteNumber ? (
                                       <a
-                                        href={`/rooms/credit-note/${bk.documentUid}`}
+                                        href={`/rooms/credit-note/${bk.creditNoteUid ?? bk.documentUid}`}
                                         target="_blank"
                                         rel="noreferrer"
                                         onClick={(e) => e.stopPropagation()}

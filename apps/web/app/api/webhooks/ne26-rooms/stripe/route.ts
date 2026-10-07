@@ -1,10 +1,7 @@
 import process from "node:process";
 import { getResourceBookingService } from "@calcom/features/ne26-rooms/di/ResourceBookingService.container";
 import { getStripeCheckoutService } from "@calcom/features/ne26-rooms/di/StripeCheckoutService.container";
-import {
-  type NotificationAudience,
-  routeNotification,
-} from "@calcom/features/ne26-rooms/lib/notificationRouting";
+import { notifyTeam } from "@calcom/features/ne26-rooms/lib/notifyTeam";
 import {
   checkoutOutcome,
   isFullRefund,
@@ -36,46 +33,16 @@ interface CustomField {
   text?: { value?: string | null } | null;
 }
 
-/**
- * Email the NE26 team. Never throws: the webhook must still acknowledge the
- * delivery, or Stripe retries it forever.
- *
- * The audience decides the envelope, and lib/notificationRouting holds the
- * rules — including the fallbacks, which are the part worth testing. See
- * notifySales and notifyOps below for which is which.
- */
-async function notify(
-  audience: NotificationAudience,
-  subject: string,
-  body: string,
-  html?: string
-): Promise<void> {
-  try {
-    const { getInvoiceSettingsRepository } = await import(
-      "@calcom/features/ne26-rooms/di/InvoiceSettingsRepository.container"
-    );
-    const settings = await getInvoiceSettingsRepository().get();
-    const envelope = routeNotification(audience, settings, process.env.EMAIL_FROM);
-    if (!envelope.to.length) {
-      log.error(`Team notification has nowhere to go: ${subject} — ${body}`);
-      return;
-    }
-    const { sendTeamEmail } = await import("@calcom/features/ne26-rooms/lib/mailer");
-    await sendTeamEmail({ to: envelope.to, cc: envelope.cc, subject, body, html });
-  } catch (e) {
-    log.error(`Could not send the team notification "${subject}"`, e);
-  }
-}
-
 /** A booking changed hands: sold, declined, refunded. Sales, technical in copy. */
-const notifySales = (subject: string, body: string, html?: string) => notify("sales", subject, body, html);
+const notifySales = (subject: string, body: string, html?: string) =>
+  notifyTeam("sales", subject, body, html);
 
 /**
  * Something needs a human with Stripe or database access. Technical only —
  * nobody on the sales desk can act on a capture with no matching order, and a
  * desk that learns to skim these starts skimming the sales too.
  */
-const notifyOps = (subject: string, body: string, html?: string) => notify("ops", subject, body, html);
+const notifyOps = (subject: string, body: string, html?: string) => notifyTeam("ops", subject, body, html);
 
 /**
  * Tell the sales desk a booking has been refunded and its rooms are back on
@@ -200,6 +167,30 @@ async function notifyReleased(
     // Stripe retry a delivery we have already acted on.
     log.error(`Could not tell ${order.bookerEmail} their hold was released`, e);
   }
+}
+
+/**
+ * Whether a credit note already exists for the refunds on this charge.
+ *
+ * Self-service cancellation refunds one room and credits it in the same breath,
+ * so by the time charge.refunded lands the paperwork is done. Without this the
+ * desk would get "partial refund needs manual paperwork" for every exhibitor
+ * who cancelled a room themselves.
+ */
+async function everyRefundIsCredited(charge: Stripe.Charge): Promise<boolean> {
+  const ids = (charge.refunds?.data ?? []).map((r) => r.id).filter(Boolean);
+  // No refund list on the event (Stripe sends at most ten): say no and let the
+  // normal handling run. A duplicate alert is cheap; a refund nobody chases is
+  // not.
+  if (ids.length === 0) return false;
+  const { getNe26OrderRepository } = await import(
+    "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
+  );
+  const credited = await getNe26OrderRepository().creditedRefundIds(ids);
+  // EVERY refund, not just one of them: an admin refunding the rest of a payment
+  // after an exhibitor cancelled one room sends a refund nobody has credited,
+  // and that one still needs the usual treatment.
+  return ids.every((id) => credited.has(id));
 }
 
 /**
@@ -521,7 +512,13 @@ export async function POST(req: Request): Promise<Response> {
     const paymentIntentId =
       typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id;
 
-    if (paymentIntentId && !isFullRefund(charge)) {
+    // A refund this app sent itself — an exhibitor cancelling one room of a
+    // payment that covered three — has already produced its credit note. It is
+    // a partial refund, but not one anybody has to chase.
+    const alreadyCredited = paymentIntentId ? await everyRefundIsCredited(charge) : false;
+    if (alreadyCredited) {
+      log.info(`Refund on ${paymentIntentId} was raised by a cancellation and is already credited.`);
+    } else if (paymentIntentId && !isFullRefund(charge)) {
       // Our credit note is all-or-nothing (full amount, booking cancelled, slots
       // freed), so a partial refund must not go through it.
       const detail = `Partial refund on payment ${paymentIntentId}: ${money(charge.amount_refunded, charge.currency)} of ${money(charge.amount, charge.currency)}.\n\nNo credit note was issued and the booking still holds its room, because our credit note is all-or-nothing (full amount, booking cancelled, slot freed). Issue the paperwork for the difference manually.`;

@@ -25,11 +25,7 @@ export default function HoldCountdown({ expiresAt }: { expiresAt: string }): JSX
 
   if (msLeft === null) return <span className="text-gray-400 text-xs">Held for a short while</span>;
   if (msLeft <= 0) {
-    return (
-      <span className="font-medium text-red-600 text-xs">
-        Hold expired — the room is back on sale
-      </span>
-    );
+    return <span className="font-medium text-red-600 text-xs">Hold expired — the room is back on sale</span>;
   }
 
   const totalSeconds = Math.floor(msLeft / 1000);

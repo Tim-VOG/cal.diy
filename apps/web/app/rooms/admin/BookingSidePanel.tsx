@@ -117,7 +117,7 @@ export default function BookingSidePanel({
           {booking.creditNoteNumber ? (
             <Row label="Credit note">
               <a
-                href={`/rooms/credit-note/${booking.documentUid}`}
+                href={`/rooms/credit-note/${booking.creditNoteUid ?? booking.documentUid}`}
                 target="_blank"
                 rel="noreferrer"
                 className="text-[#000643] underline decoration-[#000643]/30 underline-offset-2">
