@@ -27,12 +27,10 @@ export default async function RoomsAccountPage({
   const next = raw.startsWith("/") && !raw.startsWith("//") ? raw : null;
 
   return (
-    <div className="grid gap-5">
-      <BillingProfileForm initial={profile} next={next} />
-      {/* Below the billing details on purpose: this is the one field that
-          decides whether they can still sign in, so it is not the first thing
-          a cursor lands on. */}
-      <ChangeEmailForm current={session.user.email ?? ""} />
-    </div>
+    <BillingProfileForm
+      initial={profile}
+      next={next}
+      email={<ChangeEmailForm current={session.user.email ?? ""} />}
+    />
   );
 }

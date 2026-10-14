@@ -5,7 +5,7 @@ import type { BillingProfile } from "@calcom/features/ne26-rooms/repositories/Ne
 import { trpc } from "@calcom/trpc/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
 type TextFieldKey = "firstName" | "lastName" | "vatNumber";
 
@@ -59,10 +59,17 @@ const inputClass =
 export default function BillingProfileForm({
   initial,
   next,
+  email,
 }: {
   initial: BillingProfile | null;
   /** Where the exhibitor was heading when we asked them to complete this. */
   next?: string | null;
+  /**
+   * The sign-in email editor, rendered as the first field of this form rather
+   * than as a panel of its own: it belongs with the person's identity, and a
+   * card parked underneath read as something left over.
+   */
+  email?: ReactNode;
 }): JSX.Element {
   const router = useRouter();
   const [form, setForm] = useState<BillingProfile>(initial ?? EMPTY);
@@ -82,8 +89,8 @@ export default function BillingProfileForm({
         <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4" role="status">
           <p className="font-semibold text-[#000643] text-sm">Complete your billing details to continue</p>
           <p className="mt-1 text-gray-700 text-sm">
-            Three fields: they set the VAT on your invoice and tell the welcome desk who to expect.
-            We&apos;ll take you straight back once saved.
+            Three fields: they set the VAT on your invoice and tell the welcome desk who to expect. We&apos;ll
+            take you straight back once saved.
           </p>
         </div>
       ) : null}
@@ -96,8 +103,14 @@ export default function BillingProfileForm({
         determine how VAT is applied. Your invoice address is collected on the payment page.
       </p>
 
+      {/* The sign-in email reads as the first field of this form and is kept
+          outside the <form> element on purpose: it saves an identity with its
+          own submit, and a form inside a form is invalid HTML — the browser
+          drops the inner one and the page stops hydrating. */}
+      {email ? <div className="mt-6 grid gap-4">{email}</div> : null}
+
       <form
-        className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2"
+        className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${email ? "mt-5 border-gray-100 border-t pt-5" : "mt-6"}`}
         onSubmit={(e) => {
           e.preventDefault();
           mutation.mutate(form);
