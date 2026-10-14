@@ -3,6 +3,7 @@ import { z } from "zod";
 import authedProcedure, { authedAdminProcedure } from "../../../procedures/authedProcedure";
 import { router } from "../../../trpc";
 import { ZBookingUidInputSchema } from "./bookingUid.schema";
+import { ZChangeBookerEmailInputSchema, ZChangeMyEmailInputSchema } from "./accountEmail.schema";
 import { ZCancelMyBookingInputSchema } from "./cancelMyBooking.schema";
 import { ZCorrectBillingInputSchema } from "./correctBilling.schema";
 import { ZCreateBlockInputSchema } from "./createBlock.schema";
@@ -883,6 +884,56 @@ export const roomsRouter = router({
       });
     }
   }),
+
+  /**
+   * The exhibitor changes the address they sign in with.
+   *
+   * The password is the point: this address is the login, so a session left open
+   * must not be enough to take the account. Everything they bought carries a
+   * copy of the old address and moves with it — see AccountEmailService.
+   */
+  changeMyEmail: authedProcedure.input(ZChangeMyEmailInputSchema).mutation(async ({ ctx, input }) => {
+    const { getAccountEmailService } = await import(
+      "@calcom/features/ne26-rooms/di/AccountEmailService.container"
+    );
+    const { EmailChangeRefused } = await import("@calcom/features/ne26-rooms/services/AccountEmailService");
+    try {
+      return await getAccountEmailService().changeOwnEmail(ctx.user.id, input.email, input.password);
+    } catch (e) {
+      if (e instanceof EmailChangeRefused) {
+        throw new TRPCError({
+          code: e.reason === "wrong-password" ? "UNAUTHORIZED" : "BAD_REQUEST",
+          message: e.message,
+        });
+      }
+      throw e;
+    }
+  }),
+
+  // Admin-only: correct an exhibitor's address for them. Logged with both
+  // addresses, because it changes who can sign into that account.
+  changeBookerEmail: ne26AdminProcedure
+    .input(ZChangeBookerEmailInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { getAccountEmailService } = await import(
+        "@calcom/features/ne26-rooms/di/AccountEmailService.container"
+      );
+      const { EmailChangeRefused } = await import("@calcom/features/ne26-rooms/services/AccountEmailService");
+      try {
+        return await getAccountEmailService().changeEmailAsAdmin(input.userId, input.email, {
+          id: ctx.user.id,
+          email: ctx.user.email,
+        });
+      } catch (e) {
+        if (e instanceof EmailChangeRefused) {
+          throw new TRPCError({
+            code: e.reason === "not-found" ? "NOT_FOUND" : "BAD_REQUEST",
+            message: e.message,
+          });
+        }
+        throw e;
+      }
+    }),
 
   releaseMyHold: authedProcedure.input(ZBookingUidInputSchema).mutation(async ({ ctx, input }) => {
     const { getNe26OrderRepository } = await import(

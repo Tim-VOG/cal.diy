@@ -2,7 +2,7 @@
 
 import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { trpc } from "@calcom/trpc/react";
-import { Trash2 } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 /**
@@ -26,6 +26,18 @@ function when(iso: string): string {
 export default function BookerAccounts(): JSX.Element | null {
   const accounts = trpc.viewer.rooms.listBookerAccounts.useQuery();
   const [note, setNote] = useState<string | null>(null);
+  // Which row is being corrected, and what it is being corrected to.
+  const [editing, setEditing] = useState<{ userId: number; email: string } | null>(null);
+  const changeEmail = trpc.viewer.rooms.changeBookerEmail.useMutation({
+    onSuccess: (r) => {
+      setNote(
+        `Address changed to ${r.email}. They sign in with it from now on, and their bookings moved with them.`
+      );
+      setEditing(null);
+      accounts.refetch();
+    },
+    onError: (e) => setNote(e.message),
+  });
   const remove = trpc.viewer.rooms.deleteBookerAccount.useMutation({
     onSuccess: (result) => {
       setNote(
@@ -78,7 +90,60 @@ export default function BookerAccounts(): JSX.Element | null {
                 const total = a.undocumentedOrders + a.documentedOrders;
                 return (
                   <tr key={a.userId} className="hover:bg-gray-50">
-                    <td className="px-4 py-2 font-medium text-gray-900">{a.email}</td>
+                    <td className="px-4 py-2 font-medium text-gray-900">
+                      {editing?.userId === a.userId ? (
+                        <form
+                          className="flex flex-wrap items-center gap-2"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            // Said out loud: it is the login that changes, not
+                            // just a line in a list.
+                            if (
+                              window.confirm(
+                                `Change the sign-in address for ${a.email} to ${editing.email}? They will have to use the new one to log in.`
+                              )
+                            ) {
+                              setNote(null);
+                              changeEmail.mutate({ userId: a.userId, email: editing.email });
+                            }
+                          }}>
+                          <input
+                            type="email"
+                            required
+                            aria-label="New email address"
+                            value={editing.email}
+                            onChange={(e) => setEditing({ userId: a.userId, email: e.target.value })}
+                            className="w-64 rounded-lg border border-gray-200 px-2.5 py-1 text-sm focus:border-[#000643] focus:outline-none"
+                          />
+                          <button
+                            type="submit"
+                            disabled={changeEmail.isPending}
+                            className="rounded-lg bg-[#000643] px-2.5 py-1 font-semibold text-white text-xs transition hover:opacity-90 disabled:opacity-40">
+                            {changeEmail.isPending ? "Saving…" : "Save"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditing(null)}
+                            className="rounded-lg border border-gray-200 px-2.5 py-1 font-medium text-gray-700 text-xs transition hover:border-gray-400">
+                            Cancel
+                          </button>
+                        </form>
+                      ) : (
+                        <span className="inline-flex items-center gap-2">
+                          {a.email}
+                          <button
+                            type="button"
+                            aria-label={`Change the email address for ${a.email}`}
+                            onClick={() => {
+                              setNote(null);
+                              setEditing({ userId: a.userId, email: a.email });
+                            }}
+                            className="text-gray-400 transition hover:text-[#000643]">
+                            <Pencil className="h-3.5 w-3.5" aria-hidden />
+                          </button>
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-2 text-gray-600">{a.name || "—"}</td>
                     <td className="px-4 py-2 text-gray-500">{when(a.createdAt as unknown as string)}</td>
                     <td className="px-4 py-2 text-right tabular-nums">

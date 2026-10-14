@@ -5,6 +5,7 @@ import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import BillingProfileForm from "./BillingProfileForm";
+import ChangeEmailForm from "./ChangeEmailForm";
 
 export const metadata: Metadata = {
   title: "Billing details · NATO Edge 26",
@@ -25,5 +26,13 @@ export default async function RoomsAccountPage({
   const raw = (await searchParams).next ?? "";
   const next = raw.startsWith("/") && !raw.startsWith("//") ? raw : null;
 
-  return <BillingProfileForm initial={profile} next={next} />;
+  return (
+    <div className="grid gap-5">
+      <BillingProfileForm initial={profile} next={next} />
+      {/* Below the billing details on purpose: this is the one field that
+          decides whether they can still sign in, so it is not the first thing
+          a cursor lands on. */}
+      <ChangeEmailForm current={session.user.email ?? ""} />
+    </div>
+  );
 }

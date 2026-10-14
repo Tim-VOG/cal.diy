@@ -178,6 +178,17 @@ export class StripeCheckoutService {
     return created.id;
   }
 
+  /**
+   * Keep the mirrored customer's address in step with the account.
+   *
+   * Stripe's copy is a mirror, not a record: it is rewritten at the next
+   * checkout anyway. Doing it now is what keeps the dashboard searchable by the
+   * address the exhibitor actually uses.
+   */
+  async updateCustomerEmail(customerId: string, email: string): Promise<void> {
+    await this.stripe.customers.update(customerId, { email });
+  }
+
   async createCheckoutSession(input: CreateCheckoutSessionInput): Promise<{ id: string; url: string }> {
     const reference = orderRef(input.orderNumber);
     const metadata = { orderUid: input.orderUid, orderRef: reference, source: "ne26-rooms" };
