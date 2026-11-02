@@ -43,6 +43,14 @@ export interface InvoiceRoom {
   durationMinutes: number;
   /** "Tue, 17 Nov 2026, 09:00-10:00 TRT" — printed under the line. */
   slotLabel?: string;
+  /**
+   * Whether this document charges for the room itself. False on a catering
+   * top-up: the room was paid for on an earlier invoice, so printing a rental
+   * line at 0.00 would read as a second booking given away free. The slot label
+   * moves onto the first add-on line instead, because an exhibitor still has to
+   * see which meeting the food is for.
+   */
+  chargesRental?: boolean;
   /** Add-on lineTotal is HT (excl. VAT). */
   addOns: { name: string; quantity: number; lineTotal: number; vatRate: number }[];
 }
@@ -81,26 +89,32 @@ export function buildInvoiceModel(input: InvoiceInput, vat?: VatTreatmentInput):
   const lines: InvoiceLine[] = [];
   for (const room of input.rooms) {
     const addOnsHt = room.addOns.reduce((sum, a) => sum + a.lineTotal, 0);
-    lines.push(
-      lineFor(
-        `${room.roomName} — meeting room rental (${room.durationMinutes / 60}h)`,
-        room.amountTotal - addOnsHt,
-        input.roomVatRate ?? ROOM_VAT_RATE_BP,
-        // When the room was actually booked for. It used to sit in a highlighted
-        // block below the totals, which repeated the line above it and pushed the
-        // money down the page — it belongs with the thing being charged for.
-        room.slotLabel
-      )
-    );
-    for (const addOn of room.addOns) {
+    const chargesRental = room.chargesRental ?? true;
+    if (chargesRental) {
+      lines.push(
+        lineFor(
+          `${room.roomName} — meeting room rental (${room.durationMinutes / 60}h)`,
+          room.amountTotal - addOnsHt,
+          input.roomVatRate ?? ROOM_VAT_RATE_BP,
+          // When the room was actually booked for. It used to sit in a highlighted
+          // block below the totals, which repeated the line above it and pushed the
+          // money down the page — it belongs with the thing being charged for.
+          room.slotLabel
+        )
+      );
+    }
+    room.addOns.forEach((addOn, i) => {
       lines.push(
         lineFor(
           addOn.quantity > 1 ? `${addOn.name} × ${addOn.quantity}` : addOn.name,
           addOn.lineTotal,
-          addOn.vatRate
+          addOn.vatRate,
+          // Only on the first, and only when there is no rental line above to
+          // carry it: the slot is said once per room, not once per dish.
+          !chargesRental && i === 0 ? `${room.roomName} — ${room.slotLabel ?? ""}`.trim() : undefined
         )
       );
-    }
+    });
   }
 
   const byRate = new Map<number, { base: number; vat: number }>();

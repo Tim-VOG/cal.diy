@@ -185,7 +185,9 @@ export class Ne26OrderService {
 
     const rooms: Awaited<ReturnType<typeof this.priceRoom>>[] = [];
     for (const selection of input.rooms) {
-      rooms.push(await this.priceRoom(selection, openSlotMs, settings.bufferMinutes, now));
+      rooms.push(
+        await this.priceRoom(selection, openSlotMs, settings.bufferMinutes, now, settings.cateringSalesOpen)
+      );
     }
 
     // The same room twice at overlapping times would otherwise only be caught by
@@ -278,7 +280,8 @@ export class Ne26OrderService {
     selection: OrderRoomSelection,
     openSlotMs: ReadonlySet<number>,
     bufferMinutes: number,
-    now: Date
+    now: Date,
+    cateringSalesOpen: boolean
   ) {
     const room = await getResourceRepository().findBySlug(selection.slug);
     if (!room || !room.isActive) {
@@ -301,6 +304,16 @@ export class Ne26OrderService {
       throw new ErrorWithCode(
         ErrorCode.BadRequest,
         `${room.name}: that time has already started. Please pick a later slot.`
+      );
+    }
+
+    // The one boundary that matters for the catering switch. The pages stop
+    // offering it, but a page is not a rule: a basket restored from an open tab,
+    // or a request posted straight at the API, arrives here either way.
+    if (!cateringSalesOpen && (selection.addOns ?? []).length > 0) {
+      throw new ErrorWithCode(
+        ErrorCode.BadRequest,
+        `${room.name}: catering is no longer on sale — the kitchen's order is already placed. Remove the catering from this room and the room itself can still be booked.`
       );
     }
 

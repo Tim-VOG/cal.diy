@@ -1,6 +1,6 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { getNe26OrderRepository } from "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container";
-import { deskSessionFromCookieHeader } from "@calcom/features/ne26-rooms/lib/deskSession";
+import { deskBlocksAdmin, deskStateFromCookieHeader } from "@calcom/features/ne26-rooms/lib/deskSession";
 import { readCreditNotePdf, readInvoicePdf } from "@calcom/features/ne26-rooms/lib/invoiceStorage";
 import { createZip, type ZipEntry } from "@calcom/features/ne26-rooms/lib/zip";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
@@ -26,7 +26,7 @@ export async function GET(): Promise<Response> {
   if (session.user.role !== "ADMIN") return Response.json({ error: "Admins only" }, { status: 403 });
 
   const deskCookie = headerStore.get("cookie");
-  if (deskSessionFromCookieHeader(deskCookie)) {
+  if (deskBlocksAdmin(deskStateFromCookieHeader(deskCookie))) {
     return Response.json(
       { error: "This tablet is in desk mode. Enter the PIN to leave it before exporting." },
       { status: 403 }

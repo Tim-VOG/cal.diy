@@ -9,6 +9,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { orderRef } from "@calcom/features/ne26-rooms/lib/orderRef";
 import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
+import { roomDoorName, roomSoldName } from "@calcom/features/ne26-rooms/lib/roomNames";
 import ClearShortlist from "./ClearShortlist";
 
 type Params = Promise<{ uid: string }>;
@@ -51,15 +52,19 @@ export default async function BookedPage({ params }: { params: Params }): Promis
   // Only the booker (or an admin) may see a confirmation.
   if (found.bookerUserId !== session.user.id && session.user.role !== "ADMIN") notFound();
 
+  // Two names per room: the one on the door, which is how it is found at the
+  // venue, and the one it was sold under, which is what the invoice says.
   const rooms = order
     ? order.bookings.map((b) => ({
-        name: b.resource.name,
+        name: roomDoorName(b.resource),
+        soldName: roomSoldName(b.resource),
         startTime: b.startTime,
         endTime: b.endTime,
       }))
     : [
         {
-          name: (booking as NonNullable<typeof booking>).resource.name,
+          name: roomDoorName((booking as NonNullable<typeof booking>).resource),
+          soldName: roomSoldName((booking as NonNullable<typeof booking>).resource),
           startTime: (booking as NonNullable<typeof booking>).startTime,
           endTime: (booking as NonNullable<typeof booking>).endTime,
         },
@@ -92,7 +97,12 @@ export default async function BookedPage({ params }: { params: Params }): Promis
       <div className="mt-6 space-y-3 rounded-lg bg-gray-50 p-4 text-left text-sm">
         {rooms.map((r) => (
           <div key={`${r.name}-${r.startTime.toISOString()}`}>
-            <p className="font-semibold">{r.name}</p>
+            <p className="font-semibold">
+              {r.name}
+              {r.soldName ? (
+                <span className="ml-1.5 font-normal text-gray-500 text-xs">{r.soldName}</span>
+              ) : null}
+            </p>
             <p>{formatRange(r.startTime, r.endTime)}</p>
           </div>
         ))}

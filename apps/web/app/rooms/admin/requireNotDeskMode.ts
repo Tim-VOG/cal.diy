@@ -1,4 +1,4 @@
-import { deskSessionFromCookieHeader } from "@calcom/features/ne26-rooms/lib/deskSession";
+import { deskBlocksAdmin, deskStateFromCookieHeader } from "@calcom/features/ne26-rooms/lib/deskSession";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -13,6 +13,8 @@ import { redirect } from "next/navigation";
  * layout.
  */
 export async function requireNotDeskMode(): Promise<void> {
-  const desk = deskSessionFromCookieHeader((await headers()).get("cookie"));
-  if (desk) redirect("/rooms/desk");
+  const desk = deskStateFromCookieHeader((await headers()).get("cookie"));
+  // Expired counts as locked: a shift that ran out overnight must not be the
+  // thing that opens the admin on the counter tablet the next morning.
+  if (deskBlocksAdmin(desk)) redirect("/rooms/desk");
 }

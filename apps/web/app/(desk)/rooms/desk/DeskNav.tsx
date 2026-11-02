@@ -4,6 +4,7 @@ import { CalendarDays, LayoutGrid, Lock, PlusCircle, Search, ShieldCheck } from 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+import { exitDeskMode } from "./deskExit";
 
 const TABS = [
   { href: "/rooms/desk", label: "Today", icon: CalendarDays },
@@ -40,14 +41,9 @@ export default function DeskNav({
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/ne26-rooms/desk", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "exit", pin }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setError(json.error || "Wrong PIN.");
+      const message = await exitDeskMode(pin);
+      if (message) {
+        setError(message);
         setPin("");
         return;
       }
@@ -85,8 +81,7 @@ export default function DeskNav({
       <nav className="border-gray-200 border-b bg-white">
         <div className="mx-auto flex max-w-5xl">
           {TABS.map((tab) => {
-            const active =
-              tab.href === "/rooms/desk" ? pathname === tab.href : pathname.startsWith(tab.href);
+            const active = tab.href === "/rooms/desk" ? pathname === tab.href : pathname.startsWith(tab.href);
             const Icon = tab.icon;
             return (
               <Link

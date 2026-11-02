@@ -4,6 +4,8 @@ import type { ResourceCategory } from "@calcom/prisma/enums";
 const publicSelect = {
   id: true,
   name: true,
+  // NE26: the name on the door, for the desk and the day sheet.
+  venueName: true,
   slug: true,
   category: true,
   capacity: true,
@@ -49,6 +51,7 @@ export class ResourceRepository {
     id: number,
     data: {
       name?: string;
+      venueName?: string | null;
       description?: string | null;
       category?: ResourceCategory;
       capacity?: number;

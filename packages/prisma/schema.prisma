@@ -2884,6 +2884,13 @@ enum AddOnPriceType {
 model Resource {
   id            Int               @id @default(autoincrement())
   name          String
+  // NE26: the name printed on the door at the venue, when the stickers do not
+  // say what the room is sold as — "Meeting 3" on the door of Large Room 1.
+  // Read by the welcome desk and the day sheet, so staff and exhibitors can
+  // speak about the same door; deliberately NOT used on invoices or credit
+  // notes, which must keep the name the room was sold under even when
+  // regenerated years later. Null means the door says `name`.
+  venueName     String?
   slug          String            @unique
   category      ResourceCategory
   capacity      Int
@@ -2982,8 +2989,12 @@ model ResourceBooking {
   // NE26: the paid order this room belongs to. One payment can cover several
   // rooms, so the money, the invoice and the Stripe payment id live on the
   // order — a booking is just one room inside it.
-  order                   Ne26Order?            @relation(fields: [orderUid], references: [uid], onDelete: Cascade)
+  order                   Ne26Order?            @relation("Ne26OrderRooms", fields: [orderUid], references: [uid], onDelete: Cascade)
   orderUid                String?
+  // NE26: catering bought for this room AFTER it was paid for. Each one is a
+  // separate order with its own payment and its own invoice; none of them
+  // claims a slot, because the room is already this exhibitor's.
+  cateringTopUps          Ne26Order[]           @relation("Ne26CateringTopUp")
   // NE26: the welcome desk marking an exhibitor as arrived. Null = not yet.
   // Stored as a timestamp rather than a flag so the log shows when, and so a
   // mistaken check-in can be cleared without losing that it happened.
@@ -3057,9 +3068,17 @@ model BookingAddOn {
   // order, not a live lookup: correcting catering VAT in the admin must not
   // re-split invoices that were already issued at the old rate.
   vatRate   Int             @default(2100)
+  // NE26: the order that PAID for this line. Usually the one that bought the
+  // room; a catering top-up points at its own order instead. Without it a
+  // credit note raised on the room would refund every cover ever added against
+  // a single payment, which is more than that payment holds. Null only on rows
+  // written before top-ups existed, where the room's own order is the answer.
+  order     Ne26Order?      @relation(fields: [orderUid], references: [uid], onDelete: Cascade)
+  orderUid  String?
 
   @@index([bookingId])
   @@index([addOnId])
+  @@index([orderUid])
 }
 
 // Singleton issuer/company details for NE26 invoices (admin-editable).
@@ -3122,6 +3141,12 @@ model Ne26RoomSettings {
   // availability, the admin calendar and the block editor. Null = built-in
   // NE26 defaults (17/18/19 Nov 2026).
   eventDays              Json?
+  // NE26: whether catering is on sale at all — on the public room page, at the
+  // welcome desk, and as a top-up on a room already paid for. Closed by
+  // default: the caterer needs notice, and once their order is placed nothing
+  // more can be served, while the rooms themselves keep selling right up to
+  // the slot. An admin opens it when the kitchen says they can take more.
+  cateringSalesOpen      Boolean   @default(false)
   // NE26: PIN that releases desk mode, stored as salt:hash — the tablet runs on
   // an admin session, so this is what stands between the welcome desk and the
   // pricing, refunds and accounts. Null = desk mode cannot be entered.
@@ -3140,28 +3165,28 @@ model Ne26RoomSettings {
 // Admin-managed legal / informational pages (Privacy Policy, Practical
 // Information, etc.) rendered publicly at /rooms/legal/[slug]. Body is Markdown.
 model Ne26LegalPage {
-  id        Int      @id @default(autoincrement())
-  slug      String   @unique
-  title     String
-  content   String   @db.Text
+  id           Int      @id @default(autoincrement())
+  slug         String   @unique
+  title        String
+  content      String   @db.Text
   // NE26: when set, the page is a signpost rather than a document — visiting it
   // redirects here. For the pages whose real content is a PDF somebody else
   // maintains, where copying it into Markdown would only guarantee the two
   // drift apart. The content column is kept and ignored, so a page can be
   // switched back by clearing this.
-  externalUrl String? @db.Text
+  externalUrl  String?  @db.Text
   // NE26: which footer column lists this page, and where in it. Null is the
   // default and means the page is reachable by URL but listed nowhere — a page
   // appearing in the footer the moment it is created is not what anybody wants.
   footerColumn String?
-  footerOrder  Int     @default(0)
+  footerOrder  Int      @default(0)
   // NE26: open the footer link in a new tab. Off by default, because a site
   // that steals tabs for its own pages is a nuisance; on is what you want for a
   // page that is really a PDF somebody is about to read.
-  footerNewTab Boolean @default(false)
-  published Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  footerNewTab Boolean  @default(false)
+  published    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 // NE26: event staff who are not platform admins.
@@ -3230,22 +3255,22 @@ model Ne26AuditLog {
 /// gapless series as before; what changed is that it is attached to the rooms it
 /// actually cancels rather than to the whole order.
 model Ne26CreditNote {
-  id          Int               @id @default(autoincrement())
-  number      String            @unique
-  order       Ne26Order         @relation(fields: [orderUid], references: [uid], onDelete: Cascade)
-  orderUid    String
-  bookings    ResourceBooking[]
+  id             Int               @id @default(autoincrement())
+  number         String            @unique
+  order          Ne26Order         @relation(fields: [orderUid], references: [uid], onDelete: Cascade)
+  orderUid       String
+  bookings       ResourceBooking[]
   /// Credited amounts, mirroring the PDF: excl. VAT, VAT, incl. VAT.
-  amountHt    Int
-  amountVat   Int
-  amountTtc   Int
-  currency    String            @default("EUR")
+  amountHt       Int
+  amountVat      Int
+  amountTtc      Int
+  currency       String            @default("EUR")
   /// True when this note cancelled the last room standing, closing the order.
-  closesOrder Boolean           @default(false)
+  closesOrder    Boolean           @default(false)
   /// Stripe refund that paid it back, when one did.
   stripeRefundId String?
-  issuedAt    DateTime          @default(now())
-  createdAt   DateTime          @default(now())
+  issuedAt       DateTime          @default(now())
+  createdAt      DateTime          @default(now())
 
   @@index([orderUid])
 }
@@ -3265,7 +3290,19 @@ model Ne26Order {
   // instant can never share one. Gaps are expected (abandoned holds) and
   // harmless: unlike invoice numbers, this series is not an accounting record.
   orderNumber             Int                   @unique @default(autoincrement())
-  bookings                ResourceBooking[]
+  bookings                ResourceBooking[]     @relation("Ne26OrderRooms")
+  // NE26: set when this order adds catering to a room that was already bought
+  // and paid for. Such an order owns no booking at all — the room stays on its
+  // original order — so every screen that walks an order's rooms has to accept
+  // finding none.
+  parentBooking           ResourceBooking?      @relation("Ne26CateringTopUp", fields: [parentBookingUid], references: [uid], onDelete: Cascade)
+  parentBookingUid        String?
+  // NE26: the add-on lines a top-up will create once it is paid, priced and
+  // frozen at checkout. Kept here rather than written as BookingAddOn rows so
+  // an unpaid top-up never reaches the kitchen sheet, an invoice or a total.
+  pendingAddOnLines       Json?
+  // NE26: the add-on lines this order paid for, wherever they hang.
+  addOnLines              BookingAddOn[]
   // Null for a counter sale: the desk sells to people with no account.
   bookerUserId            Int?
   bookerEmail             String
@@ -3330,6 +3367,7 @@ model Ne26Order {
 
   @@index([bookerUserId])
   @@index([status, holdExpiresAt])
+  @@index([parentBookingUid])
 }
 
 // NE26: room photos uploaded from the admin.

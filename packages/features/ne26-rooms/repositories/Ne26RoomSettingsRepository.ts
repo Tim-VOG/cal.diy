@@ -3,6 +3,7 @@ import type { Prisma } from "@calcom/prisma/client";
 import { type EventDayDefinition, normalizeEventDays } from "../lib/eventSchedule";
 
 const settingsSelect = {
+  cateringSalesOpen: true,
   bufferMinutes: true,
   slotGranularityMinutes: true,
   eventDays: true,
@@ -11,6 +12,13 @@ const settingsSelect = {
 } as const;
 
 export interface RoomSettings {
+  /**
+   * Whether catering is on sale anywhere: the public room page, the welcome
+   * desk, and as a top-up on a room already paid for. Closed by default — the
+   * rooms outlive the kitchen's deadline by weeks, so "still selling" has to be
+   * answerable separately for the two.
+   */
+  cateringSalesOpen: boolean;
   /** Turnover buffer in minutes required after each booking. */
   bufferMinutes: number;
   /** Start step offered to bookers (60/30/15). Atomic slot stays 15 min. */
@@ -24,6 +32,7 @@ export interface RoomSettings {
 }
 
 interface SettingsRow {
+  cateringSalesOpen: boolean;
   bufferMinutes: number;
   slotGranularityMinutes: number;
   eventDays: Prisma.JsonValue | null;
@@ -33,6 +42,7 @@ interface SettingsRow {
 
 function toSettings(row: SettingsRow): RoomSettings {
   return {
+    cateringSalesOpen: row.cateringSalesOpen,
     bufferMinutes: row.bufferMinutes,
     slotGranularityMinutes: row.slotGranularityMinutes,
     eventDays: normalizeEventDays(row.eventDays),
@@ -111,12 +121,14 @@ export class Ne26RoomSettingsRepository {
 
   async update(data: Partial<RoomSettings>): Promise<RoomSettings> {
     const patch: {
+      cateringSalesOpen?: boolean;
       bufferMinutes?: number;
       slotGranularityMinutes?: number;
       eventDays?: Prisma.InputJsonValue;
       landingTitle?: string | null;
       landingIntro?: string | null;
     } = {};
+    if (data.cateringSalesOpen !== undefined) patch.cateringSalesOpen = data.cateringSalesOpen;
     if (data.bufferMinutes !== undefined) patch.bufferMinutes = data.bufferMinutes;
     if (data.slotGranularityMinutes !== undefined) patch.slotGranularityMinutes = data.slotGranularityMinutes;
     if (data.eventDays !== undefined) patch.eventDays = data.eventDays;

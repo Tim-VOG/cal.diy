@@ -5,7 +5,7 @@ import {
   accountingFileName,
   accountingRows,
 } from "@calcom/features/ne26-rooms/lib/accountingExport";
-import { deskSessionFromCookieHeader } from "@calcom/features/ne26-rooms/lib/deskSession";
+import { deskBlocksAdmin, deskStateFromCookieHeader } from "@calcom/features/ne26-rooms/lib/deskSession";
 import { buildXlsx } from "@calcom/features/ne26-rooms/lib/xlsx";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import { cookies, headers } from "next/headers";
@@ -27,7 +27,7 @@ export async function GET(): Promise<Response> {
   const session = await getServerSession({ req: buildLegacyRequest(headerStore, cookieStore) });
   if (!session?.user?.id) return Response.json({ error: "Not signed in" }, { status: 401 });
   if (session.user.role !== "ADMIN") return Response.json({ error: "Admins only" }, { status: 403 });
-  if (deskSessionFromCookieHeader(headerStore.get("cookie"))) {
+  if (deskBlocksAdmin(deskStateFromCookieHeader(headerStore.get("cookie")))) {
     return Response.json(
       { error: "This tablet is in desk mode. Enter the PIN to leave it before exporting." },
       { status: 403 }

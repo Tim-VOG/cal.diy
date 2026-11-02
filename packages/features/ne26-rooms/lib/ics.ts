@@ -14,7 +14,14 @@ function escapeIcs(s: string): string {
 
 export interface BookingIcsEvent {
   uid: string;
+  /** What to navigate to: the name on the door at the venue. */
   roomName: string;
+  /**
+   * The name the room was sold under, when the door says something else. Only
+   * in the description: the title and the location are what someone reads at
+   * the venue with a phone in their hand, and they want the door.
+   */
+  soldName?: string | null;
   startUtc: Date;
   endUtc: Date;
 }
@@ -35,7 +42,11 @@ function vevent(event: BookingIcsEvent, stamp: string): string[] {
     // The room, then the venue: this is what an attendee navigates to, so it
     // names the place rather than just the event.
     `LOCATION:${escapeIcs(`${event.roomName}, Fuar Izmir, Izmir, Turkiye`)}`,
-    `DESCRIPTION:${escapeIcs(`Meeting room booking: ${event.roomName} at NATO Edge 26.`)}`,
+    `DESCRIPTION:${escapeIcs(
+      `Meeting room booking: ${
+        event.soldName ? `${event.roomName} (${event.soldName})` : event.roomName
+      } at NATO Edge 26.`
+    )}`,
     "END:VEVENT",
   ];
 }

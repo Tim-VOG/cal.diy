@@ -240,7 +240,7 @@ export class ResourceBookingRepository {
         invoicePdfUrl: true,
         creditNoteNumber: true,
         creditNotePdfUrl: true,
-        resource: { select: { name: true, slug: true } },
+        resource: { select: { name: true, venueName: true, slug: true } },
       },
     });
   }
@@ -431,7 +431,7 @@ export class ResourceBookingRepository {
           },
         },
         updatedAt: true,
-        resource: { select: { name: true, slug: true, category: true } },
+        resource: { select: { name: true, venueName: true, slug: true, category: true } },
         addOns: {
           select: { quantity: true, unitPrice: true, lineTotal: true, addOn: { select: { name: true } } },
         },
@@ -466,7 +466,7 @@ export class ResourceBookingRepository {
         bookerEmail: true,
         checkedInAt: true,
         checkedInByEmail: true,
-        resource: { select: { name: true, slug: true, category: true } },
+        resource: { select: { name: true, venueName: true, slug: true, category: true } },
         addOns: { select: { quantity: true, addOn: { select: { name: true } } } },
       },
     });
@@ -501,7 +501,7 @@ export class ResourceBookingRepository {
         status: true,
         isBlock: true,
         checkedInAt: true,
-        resource: { select: { slug: true, name: true, category: true } },
+        resource: { select: { slug: true, name: true, venueName: true, category: true } },
       },
     });
   }
@@ -532,7 +532,7 @@ export class ResourceBookingRepository {
         bookerEmail: true,
         checkedInAt: true,
         checkedInByEmail: true,
-        resource: { select: { name: true, slug: true, category: true } },
+        resource: { select: { name: true, venueName: true, slug: true, category: true } },
         addOns: { select: { quantity: true, addOn: { select: { name: true } } } },
       },
     });
@@ -608,7 +608,7 @@ export class ResourceBookingRepository {
             _count: { select: { bookings: true } },
           },
         },
-        resource: { select: { name: true, slug: true, category: true } },
+        resource: { select: { name: true, venueName: true, slug: true, category: true } },
         addOns: { select: { quantity: true, lineTotal: true, addOn: { select: { name: true } } } },
       },
     });
@@ -655,7 +655,7 @@ export class ResourceBookingRepository {
             vatMention: true,
           },
         },
-        resource: { select: { name: true, category: true } },
+        resource: { select: { name: true, venueName: true, category: true } },
         addOns: {
           select: { quantity: true, lineTotal: true, vatRate: true, addOn: { select: { name: true } } },
         },

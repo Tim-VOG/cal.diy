@@ -1,6 +1,7 @@
 import { ErrorCode } from "@calcom/lib/errorCodes";
 import { ErrorWithCode } from "@calcom/lib/errors";
 import type { PrismaClient } from "@calcom/prisma";
+import { Prisma } from "@calcom/prisma/client";
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
 
 export interface OrderRoomInput {
@@ -12,6 +13,21 @@ export interface OrderRoomInput {
   slotStarts: Date[];
   amountTotal: number;
   addOns: { addOnId: number; quantity: number; unitPrice: number; lineTotal: number; vatRate: number }[];
+}
+
+/**
+ * One priced add-on line, frozen at checkout, waiting on a top-up's payment.
+ *
+ * Stored as JSON on the order rather than as BookingAddOn rows so an unpaid
+ * top-up never reaches a kitchen sheet, an invoice or a revenue total. It
+ * becomes rows, once, when the payment is confirmed.
+ */
+export interface PendingAddOnLine {
+  addOnId: number;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+  vatRate: number;
 }
 
 export interface CreateOrderInput {
@@ -244,6 +260,37 @@ export class Ne26OrderRepository {
         vatZeroRated: true,
         vatMention: true,
         createdAt: true,
+        // Set only on a catering top-up: the room it completes, and the lines
+        // it will create once paid. Both null on an ordinary sale of rooms.
+        parentBookingUid: true,
+        pendingAddOnLines: true,
+        // The room a catering top-up was bought for. Selected in the same
+        // shape as a room of the order, so everything that documents an order
+        // can treat it as that order's single room — one that this document
+        // does not charge rent for, because an earlier invoice already did.
+        parentBooking: {
+          select: {
+            uid: true,
+            startTime: true,
+            endTime: true,
+            durationMinutes: true,
+            amountTotal: true,
+            status: true,
+            creditNoteId: true,
+            bookerCancelledAt: true,
+            resource: { select: { name: true, venueName: true, slug: true, category: true } },
+            addOns: {
+              select: {
+                quantity: true,
+                lineTotal: true,
+                vatRate: true,
+                orderUid: true,
+                addOnId: true,
+                addOn: { select: { name: true } },
+              },
+            },
+          },
+        },
         bookings: {
           orderBy: { startTime: "asc" },
           select: {
@@ -257,9 +304,20 @@ export class Ne26OrderRepository {
             status: true,
             creditNoteId: true,
             bookerCancelledAt: true,
-            resource: { select: { name: true, slug: true, category: true } },
+            resource: { select: { name: true, venueName: true, slug: true, category: true } },
             addOns: {
-              select: { quantity: true, lineTotal: true, vatRate: true, addOn: { select: { name: true } } },
+              // orderUid says which payment this line belongs to. A room can
+              // carry catering bought later, on another order: without it an
+              // invoice would list lines it never charged for, and a credit
+              // note would refund them.
+              select: {
+                quantity: true,
+                lineTotal: true,
+                vatRate: true,
+                orderUid: true,
+                addOnId: true,
+                addOn: { select: { name: true } },
+              },
             },
           },
         },
@@ -303,6 +361,18 @@ export class Ne26OrderRepository {
         },
       });
       if (result.count === 0) return false;
+
+      // A catering top-up owns no room: the room is already the buyer's, sold
+      // on an earlier order. What this payment buys becomes add-on rows on that
+      // room, tagged with THIS order so the two payments never get confused.
+      const topUp = await tx.ne26Order.findUnique({
+        where: { uid },
+        select: { parentBookingUid: true, pendingAddOnLines: true },
+      });
+      if (topUp?.parentBookingUid) {
+        return this.materialiseTopUp(tx, uid, topUp.parentBookingUid, topUp.pendingAddOnLines);
+      }
+
       // The payment id is deliberately NOT copied onto the rooms: it is unique
       // per booking row, so one payment covering three rooms would violate the
       // constraint and the whole confirmation would roll back — a paid order
@@ -321,6 +391,56 @@ export class Ne26OrderRepository {
       if (rooms.count === 0) throw new NoRoomsToConfirm();
       return true;
     });
+  }
+
+  /**
+   * Turn a paid top-up's frozen lines into add-on rows on the room it completes.
+   *
+   * Runs inside the confirming transaction, so the money and the catering are
+   * recorded together or not at all — and only once, because the order row was
+   * claimed from PENDING a few lines above.
+   *
+   * The room is re-checked here rather than trusted from checkout: an exhibitor
+   * can cancel the room while the catering payment is still open, and food for
+   * a room that no longer exists must not be recorded as sold. Rolling back then
+   * leaves the order PENDING, which is exactly what makes the webhook raise the
+   * "money captured, nothing held" alarm instead of swallowing it.
+   */
+  private async materialiseTopUp(
+    tx: Pick<PrismaClient, "resourceBooking" | "bookingAddOn" | "ne26Order">,
+    orderUid: string,
+    parentBookingUid: string,
+    lines: unknown
+  ): Promise<boolean> {
+    const room = await tx.resourceBooking.findFirst({
+      where: {
+        uid: parentBookingUid,
+        status: ResourceBookingStatus.CONFIRMED,
+        creditNoteId: null,
+        bookerCancelledAt: null,
+      },
+      select: { id: true },
+    });
+    if (!room) throw new NoRoomsToConfirm();
+
+    const pending = Array.isArray(lines) ? (lines as PendingAddOnLine[]) : [];
+    if (pending.length === 0) throw new NoRoomsToConfirm();
+
+    await tx.bookingAddOn.createMany({
+      data: pending.map((line) => ({
+        bookingId: room.id,
+        addOnId: line.addOnId,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        lineTotal: line.lineTotal,
+        vatRate: line.vatRate,
+        orderUid,
+      })),
+    });
+    // Cleared now the rows exist: they are the record from here on, and two
+    // places saying what was bought is how they come to disagree.
+    await tx.ne26Order.update({ where: { uid: orderUid }, data: { pendingAddOnLines: Prisma.DbNull } });
+    return true;
   }
 
   /**
@@ -510,7 +630,18 @@ export class Ne26OrderRepository {
             amountTotal: true,
             resource: { select: { name: true } },
             addOns: {
-              select: { quantity: true, lineTotal: true, vatRate: true, addOn: { select: { name: true } } },
+              // orderUid says which payment this line belongs to. A room can
+              // carry catering bought later, on another order: without it an
+              // invoice would list lines it never charged for, and a credit
+              // note would refund them.
+              select: {
+                quantity: true,
+                lineTotal: true,
+                vatRate: true,
+                orderUid: true,
+                addOnId: true,
+                addOn: { select: { name: true } },
+              },
             },
           },
         },

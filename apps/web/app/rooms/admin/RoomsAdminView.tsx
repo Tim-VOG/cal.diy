@@ -3,6 +3,7 @@
 import type { DayStats } from "@calcom/features/ne26-rooms/lib/dayStats";
 import type { AttentionItem } from "@calcom/features/ne26-rooms/lib/needsAttention";
 import { orderRef } from "@calcom/features/ne26-rooms/lib/orderRef";
+import { roomDoorName } from "@calcom/features/ne26-rooms/lib/roomNames";
 import { CalendarRange, Download, List } from "lucide-react";
 import { useState } from "react";
 import BookingSidePanel from "./BookingSidePanel";
@@ -19,6 +20,8 @@ export interface AdminBookingRow {
   uid: string;
   status: string;
   roomName: string;
+  /** The name on the door, when it differs from the one above. */
+  roomVenueName: string | null;
   category: string;
   startUtc: string;
   endUtc: string;
@@ -68,6 +71,9 @@ function exportDaySheet(day: DayStats, rows: AdminBookingRow[]): void {
       "Start (TRT)",
       "End",
       "Hours",
+      // Both, in this order: the floor works from the door, whoever reconciles
+      // the sheet against an invoice works from the name it was sold under.
+      "Door",
       "Room",
       "Company",
       "Contact",
@@ -80,6 +86,7 @@ function exportDaySheet(day: DayStats, rows: AdminBookingRow[]): void {
       fmtTime(r.startUtc),
       fmtTime(r.endUtc),
       r.durationMinutes / 60,
+      roomDoorName({ name: r.roomName, venueName: r.roomVenueName }),
       r.roomName,
       r.bookerCompany,
       r.bookerName,

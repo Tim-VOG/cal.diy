@@ -14,6 +14,12 @@ const ZEventDay = z
   });
 
 export const ZUpdateRoomSettingsInputSchema = z.object({
+  /**
+   * Whether catering is on sale at all. Rooms and catering stop selling at
+   * different moments — the kitchen needs notice, a room does not — so this is
+   * answerable on its own.
+   */
+  cateringSalesOpen: z.boolean().optional(),
   /** Turnover buffer in minutes after each booking (0 disables it). */
   bufferMinutes: z.number().int().min(0).max(240).optional(),
   /** Start step offered to bookers: hourly / half-hour / quarter-hour. */

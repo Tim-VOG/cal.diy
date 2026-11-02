@@ -9,6 +9,7 @@ import { notFound, redirect } from "next/navigation";
 import { loadAdminBookings } from "../adminData";
 import { requireNotDeskMode } from "../requireNotDeskMode";
 import AddOnsManager from "./AddOnsManager";
+import CateringSalesSwitch from "./CateringSalesSwitch";
 import KitchenSheet from "./KitchenSheet";
 
 export const metadata: Metadata = {
@@ -30,6 +31,7 @@ export default async function ManageAddOnsPage(): Promise<JSX.Element> {
   });
   return (
     <AddOnsManager
+      salesSwitch={<CateringSalesSwitch open={data.roomSettings.cateringSalesOpen} />}
       kitchen={<KitchenSheet days={days} />}
       addOns={addOns.map((a) => ({
         id: a.id,

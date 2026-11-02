@@ -1,6 +1,7 @@
 "use client";
 
 import { eventToday, shiftDay } from "@calcom/features/ne26-rooms/lib/deskDay";
+import { byDoorName, roomDoorName, roomSoldName } from "@calcom/features/ne26-rooms/lib/roomNames";
 import { trpc } from "@calcom/trpc/react";
 import { ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import Link from "next/link";
@@ -61,7 +62,8 @@ export default function PlanningView(): JSX.Element {
   );
 
   const marks = planning.data?.slotMarksUtc ?? [];
-  const rooms = planning.data?.rooms ?? [];
+  // Down the side in door order, which is not the order they are stored in.
+  const rooms = [...(planning.data?.rooms ?? [])].sort(byDoorName);
   const bookings = planning.data?.bookings ?? [];
   const bufferMs = (planning.data?.bufferMinutes ?? 0) * 60 * 1000;
   const nowMs = planning.data ? new Date(planning.data.nowUtc).getTime() : 0;
@@ -198,7 +200,12 @@ export default function PlanningView(): JSX.Element {
               {rooms.map((room) => (
                 <tr key={room.slug}>
                   <th className="sticky left-0 z-10 whitespace-nowrap border-gray-200 border-r border-b bg-white px-3 py-2 text-left font-medium text-[#000643]">
-                    {room.name}
+                    {roomDoorName(room)}
+                    {roomSoldName(room) ? (
+                      <span className="ml-1.5 font-normal text-[10px] text-gray-400">
+                        {roomSoldName(room)}
+                      </span>
+                    ) : null}
                   </th>
                   {marks.map((mark) => {
                     const markMs = new Date(mark).getTime();
@@ -247,7 +254,7 @@ export default function PlanningView(): JSX.Element {
                         ) : (
                           <Link
                             href={`/rooms/desk/new?slug=${room.slug}&date=${date}&start=${encodeURIComponent(mark)}`}
-                            aria-label={`Book ${room.name} at ${hhmm(mark)}`}
+                            aria-label={`Book ${roomDoorName(room)} at ${hhmm(mark)}`}
                             className="block h-full w-full transition hover:bg-[#000643]/10"
                           />
                         )}

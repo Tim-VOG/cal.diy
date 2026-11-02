@@ -42,10 +42,14 @@ import { ZUpdateRoomSettingsInputSchema } from "./updateRoomSettings.schema";
  */
 /** Admin-only, and refused outright while the session is locked to the desk. */
 const ne26AdminProcedure = authedAdminProcedure.use(async ({ ctx, next }) => {
-  const { deskSessionFromCookieHeader } = await import("@calcom/features/ne26-rooms/lib/deskSession");
+  const { deskBlocksAdmin, deskStateFromCookieHeader } = await import(
+    "@calcom/features/ne26-rooms/lib/deskSession"
+  );
   const header = (ctx as { req?: { headers?: Record<string, unknown> } }).req?.headers?.cookie;
-  const desk = deskSessionFromCookieHeader(typeof header === "string" ? header : null);
-  if (desk) {
+  const desk = deskStateFromCookieHeader(typeof header === "string" ? header : null);
+  // Including a shift that has ended: the lock outlives the shift, and the PIN
+  // is still the only thing that clears it.
+  if (deskBlocksAdmin(desk)) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "This tablet is in desk mode. Enter the PIN to leave it before changing anything.",
@@ -68,7 +72,7 @@ async function requireDesk(ctx: {
     "@calcom/features/ne26-rooms/di/Ne26StaffRepository.container"
   );
   const { canWorkTheDesk, roleOf } = await import("@calcom/features/ne26-rooms/lib/staff");
-  const { deskSessionFromCookieHeader } = await import("@calcom/features/ne26-rooms/lib/deskSession");
+  const { deskStateFromCookieHeader } = await import("@calcom/features/ne26-rooms/lib/deskSession");
   const repo = getNe26StaffRepository();
   const staffRole = ctx.user.role === "ADMIN" ? null : await repo.findStaffRole(ctx.user.id);
   const principal = {
@@ -85,9 +89,17 @@ async function requireDesk(ctx: {
   // nothing useful. The name entered when desk mode was started is who actually
   // did this, and it is what the trail should carry.
   const header = ctx.req?.headers?.cookie;
-  const desk = deskSessionFromCookieHeader(typeof header === "string" ? header : null);
-  const actorEmail = desk ? desk.hostessName : principal.email;
-  const role = desk ? "HOSTESS" : roleOf(principal);
+  const desk = deskStateFromCookieHeader(typeof header === "string" ? header : null);
+  // A shift that has ended cannot keep working under the name of someone who
+  // has gone home — the desk stops too, not only the admin.
+  if (desk.kind === "expired") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "This desk shift has ended. Enter the PIN to unlock the tablet and start a new one.",
+    });
+  }
+  const actorEmail = desk.kind === "active" ? desk.session.hostessName : principal.email;
+  const role = desk.kind === "active" ? "HOSTESS" : roleOf(principal);
 
   return { repo, principal, role, actorEmail };
 }
@@ -145,11 +157,17 @@ export const roomsRouter = router({
       "@calcom/features/ne26-rooms/di/RoomAvailabilityService.container"
     );
     const { getAddOnRepository } = await import("@calcom/features/ne26-rooms/di/AddOnRepository.container");
-    const [availability, addOns] = await Promise.all([
+    const { getNe26RoomSettingsRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container"
+    );
+    const [availability, catalogue, settings] = await Promise.all([
       getRoomAvailabilityService().getAvailabilityForAllRooms(),
       getAddOnRepository().findManyActive(),
+      getNe26RoomSettingsRepository().get(),
     ]);
-    return { rooms: availability, addOns };
+    // The counter sells rooms for as long as there are rooms, and catering only
+    // while the kitchen will take it. Two different deadlines, one switch.
+    return { rooms: availability, addOns: settings.cateringSalesOpen ? catalogue : [] };
   }),
 
   /**
@@ -187,7 +205,12 @@ export const roomsRouter = router({
       bufferMinutes: settings.bufferMinutes,
       nowUtc: now.toISOString(),
       slotMarksUtc: (day?.openSlotStartsUtc ?? []).map((d) => d.toISOString()),
-      rooms: rooms.map((r) => ({ slug: r.slug, name: r.name, category: r.category })),
+      rooms: rooms.map((r) => ({
+        slug: r.slug,
+        name: r.name,
+        venueName: r.venueName,
+        category: r.category,
+      })),
       bookings,
     };
   }),
@@ -228,7 +251,10 @@ export const roomsRouter = router({
     const changed = await getResourceBookingRepository().setCheckedIn(
       input.uid,
       input.arrived ? new Date() : null,
-      input.arrived ? principal.email : null
+      // The hostess, not the shared tablet's account — the same actor the audit
+      // trail records, so the two cannot tell different stories about who was
+      // standing there.
+      input.arrived ? actorEmail : null
     );
     if (!changed) {
       throw new TRPCError({

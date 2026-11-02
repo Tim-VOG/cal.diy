@@ -2,7 +2,7 @@ import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { getNe26LegalPageRepository } from "@calcom/features/ne26-rooms/di/Ne26LegalPageRepository.container";
 import { getNe26OrderRepository } from "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container";
 import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
-import { deskSessionFromCookieHeader } from "@calcom/features/ne26-rooms/lib/deskSession";
+import { deskBlocksAdmin, deskStateFromCookieHeader } from "@calcom/features/ne26-rooms/lib/deskSession";
 import { attentionCount } from "@calcom/features/ne26-rooms/lib/needsAttention";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import { cookies, headers } from "next/headers";
@@ -38,7 +38,7 @@ export default async function RoomsLayout({ children }: { children: ReactNode })
   // needed for someone who can actually book.
   // The admin count on the navigation: only for an admin who is not on the
   // desk tablet, and never allowed to break a page.
-  const onDesk = Boolean(deskSessionFromCookieHeader((await headers()).get("cookie")));
+  const onDesk = deskBlocksAdmin(deskStateFromCookieHeader((await headers()).get("cookie")));
   const adminCount =
     isAdmin && !onDesk
       ? await loadAdminBookings()

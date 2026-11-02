@@ -17,6 +17,16 @@ const imagePath = z
 export const ZUpdateResourceInputSchema = z.object({
   id: z.number().int().positive(),
   name: z.string().min(1).max(120).optional(),
+  /**
+   * The name on the door at the venue, when the stickers do not say what the
+   * room is sold as. Empty clears it: the door then says the name above.
+   */
+  venueName: z
+    .string()
+    .max(120)
+    .transform((v) => v.trim())
+    .transform((v) => (v === "" ? null : v))
+    .optional(),
   description: z.string().max(500).optional(),
   category: z.enum(["PREMIUM", "INTERMEDIATE", "ENTRY"]).optional(),
   capacity: z.number().int().min(0).optional(),

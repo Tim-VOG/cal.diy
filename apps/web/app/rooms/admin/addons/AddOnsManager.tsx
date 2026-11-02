@@ -45,10 +45,13 @@ const label = "block font-medium text-gray-500 text-xs";
 export default function AddOnsManager({
   addOns,
   kitchen,
+  salesSwitch,
 }: {
   addOns: AddOnRow[];
   /** The day-by-day kitchen sheet, rendered above the catalogue. */
   kitchen?: React.ReactNode;
+  /** Whether catering is on sale at all — the first thing to say on this page. */
+  salesSwitch?: React.ReactNode;
 }): JSX.Element {
   const router = useRouter();
   const [draft, setDraft] = useState<AddOnRow[]>(addOns);
@@ -99,6 +102,8 @@ export default function AddOnsManager({
       <p className="mt-1 text-gray-600 text-sm">
         What the kitchen must prepare, then what exhibitors can order.
       </p>
+
+      {salesSwitch}
 
       {kitchen}
 

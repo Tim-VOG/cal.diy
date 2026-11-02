@@ -3,6 +3,7 @@ import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne
 import { getResourceBookingRepository } from "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container";
 import { buildInvoiceModel, ROOM_VAT_RATE_BP } from "@calcom/features/ne26-rooms/lib/invoice";
 import { orderRef } from "@calcom/features/ne26-rooms/lib/orderRef";
+import { roomDoorName, roomFullLabel, roomSoldName } from "@calcom/features/ne26-rooms/lib/roomNames";
 import { canBookerCancel, cancellationDeadline } from "@calcom/features/ne26-rooms/lib/cancellationPolicy";
 import { buildEventSchedule, SLOT_GRANULARITY_MS } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
@@ -97,6 +98,9 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
         rooms: [
           {
             amountTotal: b.amountTotal,
+            // The name it was SOLD under, deliberately — this model is the one
+            // the credit note is built from, and a document must not start
+            // calling the room something else.
             roomName: b.resource.name,
             durationMinutes: b.durationMinutes,
             addOns: b.addOns.map((a) => ({
@@ -113,7 +117,7 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
   const cancelProps = (b: (typeof rows)[number]) => ({
     bookingUid: b.uid,
     amountLabel: fmtMoney(refundable(b), b.currency),
-    roomLabel: b.resource.name,
+    roomLabel: roomFullLabel(b.resource),
     dayLabel: fmtDay(b.startTime.toISOString()),
   });
 
@@ -138,7 +142,9 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
             </span>
             <div>
               <p className="font-semibold text-amber-950 text-sm">
-                {h.rooms.map((r) => `${r.resource.name} on ${fmtDay(r.startTime.toISOString())}`).join(", ")}{" "}
+                {h.rooms
+                  .map((r) => `${roomDoorName(r.resource)} on ${fmtDay(r.startTime.toISOString())}`)
+                  .join(", ")}{" "}
                 {h.rooms.length === 1 ? "is" : "are"} held for you
               </p>
               <p className="mt-0.5 text-amber-900/80 text-xs">
@@ -200,7 +206,9 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                       <p className="font-semibold text-[#000643] text-sm">
                         {fmtDay(new Date(day.open).toISOString())}
                       </p>
-                      <p className="text-gray-500 text-xs">{onDay[0]?.resource.name ?? "Free"}</p>
+                      <p className="text-gray-500 text-xs">
+                        {onDay[0] ? roomDoorName(onDay[0].resource) : "Free"}
+                      </p>
                     </div>
                     <div
                       className="relative my-2 h-9 rounded-md bg-gray-50"
@@ -232,7 +240,7 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                           return (
                             <span
                               key={b.uid}
-                              title={`${b.resource.name} · ${fmtTime(b.startTime.toISOString())}–${fmtTime(b.endTime.toISOString())}`}
+                              title={`${roomFullLabel(b.resource)} · ${fmtTime(b.startTime.toISOString())}–${fmtTime(b.endTime.toISOString())}`}
                               className={`absolute top-1 bottom-1 overflow-hidden whitespace-nowrap rounded px-2 text-xs leading-[26px] ${
                                 held ? "text-amber-950" : "text-[#000643]"
                               }`}
@@ -294,7 +302,12 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                     </td>
                     <td className="px-4 py-3">
                       <span className="whitespace-nowrap font-semibold text-[#000643]">
-                        {b.resource.name}
+                        {roomDoorName(b.resource)}
+                        {roomSoldName(b.resource) ? (
+                          <span className="ml-1.5 font-normal text-gray-500 text-xs">
+                            {roomSoldName(b.resource)}
+                          </span>
+                        ) : null}
                       </span>
                       <div className="text-gray-500 text-xs">
                         {b.addOns.length
@@ -399,7 +412,7 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                     <span className="font-semibold tabular-nums">{fmtMoney(b.amountTotal, b.currency)}</span>
                   </div>
                   <p className="text-gray-600 text-sm">
-                    {b.resource.name}
+                    {roomFullLabel(b.resource)}
                     {b.addOns.length
                       ? ` · ${b.addOns.map((a) => `${a.addOn.name} × ${a.quantity}`).join(", ")}`
                       : ""}

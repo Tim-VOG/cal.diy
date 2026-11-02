@@ -1,5 +1,6 @@
 "use client";
 
+import { roomDoorName, roomSoldName } from "@calcom/features/ne26-rooms/lib/roomNames";
 import { Check, Clock, Undo2, UserCheck } from "lucide-react";
 
 export interface DeskBooking {
@@ -11,7 +12,7 @@ export interface DeskBooking {
   bookerEmail: string;
   checkedInAt: string | Date | null;
   checkedInByEmail: string | null;
-  resource: { name: string; slug: string; category: string };
+  resource: { name: string; venueName: string | null; slug: string; category: string };
   addOns: { quantity: number; addOn: { name: string } }[];
 }
 
@@ -69,7 +70,14 @@ export default function BookingRow({
 
       <div className="min-w-0 flex-1">
         <span className="block truncate font-medium text-[#000643]">{booking.bookerName}</span>
-        <span className="block truncate text-gray-500 text-sm">{booking.resource.name}</span>
+        <span className="block truncate text-gray-500 text-sm">
+          {/* The door first: pointing someone at a room is the whole job, and
+              the door does not say what the room was sold as. */}
+          {roomDoorName(booking.resource)}
+          {roomSoldName(booking.resource) ? (
+            <span className="text-gray-400"> · {roomSoldName(booking.resource)}</span>
+          ) : null}
+        </span>
         {booking.addOns.length ? (
           <span className="mt-0.5 block truncate text-gray-400 text-xs">
             {booking.addOns

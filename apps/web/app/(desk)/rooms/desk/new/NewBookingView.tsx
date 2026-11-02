@@ -1,6 +1,7 @@
 "use client";
 
 import { COUNTRY_OPTIONS } from "@calcom/features/ne26-rooms/lib/countries";
+import { byDoorName, roomDoorName, roomSoldName } from "@calcom/features/ne26-rooms/lib/roomNames";
 import { trpc } from "@calcom/trpc/react";
 import { Check, ExternalLink, Info, Minus, Plus } from "lucide-react";
 import { useSearchParams } from "next/navigation";
@@ -59,15 +60,7 @@ function Choice({
   );
 }
 
-function Step({
-  n,
-  title,
-  children,
-}: {
-  n: number;
-  title: string;
-  children: React.ReactNode;
-}): JSX.Element {
+function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }): JSX.Element {
   return (
     <section className="mt-6">
       <h2 className="flex items-center gap-2 font-semibold text-[#000643] text-sm uppercase tracking-wide">
@@ -101,7 +94,11 @@ export default function NewBookingView(): JSX.Element {
   const [poNumber, setPoNumber] = useState("");
   const [internalReference, setInternalReference] = useState("");
 
-  const rooms = availability.data?.rooms ?? [];
+  // In door order: the hostess is picking the room she is about to point at.
+  const rooms = useMemo(
+    () => [...(availability.data?.rooms ?? [])].sort((a, b) => byDoorName(a.room, b.room)),
+    [availability.data]
+  );
   const catalogue = availability.data?.addOns ?? [];
 
   // Every day the event runs, taken from the first room — they all share the
@@ -232,8 +229,17 @@ export default function NewBookingView(): JSX.Element {
                     setSlug(r.room.slug);
                     setStartUtc("");
                   }}
-                  sub={`${r.room.capacity} people · ${free} slot${free === 1 ? "" : "s"} free`}>
-                  {r.room.name}
+                  // The door name is what the hostess will say out loud; the
+                  // name it is sold under still has to be there, because that
+                  // is what the exhibitor is reading off their confirmation.
+                  sub={[
+                    roomSoldName(r.room),
+                    `${r.room.capacity} people`,
+                    `${free} slot${free === 1 ? "" : "s"} free`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}>
+                  {roomDoorName(r.room)}
                 </Choice>
               );
             })}
@@ -264,7 +270,10 @@ export default function NewBookingView(): JSX.Element {
           {starts.length ? (
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
               {starts.map((s) => (
-                <Choice key={s.startUtc} active={startUtc === s.startUtc} onClick={() => setStartUtc(s.startUtc)}>
+                <Choice
+                  key={s.startUtc}
+                  active={startUtc === s.startUtc}
+                  onClick={() => setStartUtc(s.startUtc)}>
                   {time(s.startUtc)}
                 </Choice>
               ))}
@@ -275,7 +284,7 @@ export default function NewBookingView(): JSX.Element {
             // room at the length they asked for.
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
               <p className="font-medium text-amber-900 text-sm">
-                Nothing free for {duration}h in {room?.room.name} on {dayLabel(date)}.
+                Nothing free for {duration}h in {room ? roomDoorName(room.room) : ""} on {dayLabel(date)}.
               </p>
 
               {shorterHere.length ? (
@@ -311,7 +320,7 @@ export default function NewBookingView(): JSX.Element {
                           setStartUtc("");
                         }}
                         className="rounded-lg border border-amber-300 bg-white px-3 py-2 font-medium text-[#000643] text-sm">
-                        {alt.room.name} — {alt.starts.length} free
+                        {roomDoorName(alt.room)} — {alt.starts.length} free
                       </button>
                     ))}
                   </div>
@@ -362,7 +371,9 @@ export default function NewBookingView(): JSX.Element {
       ) : null}
 
       {startUtc ? (
-        <Step n={6} title="Who is booking">
+        // The add-ons step disappears when catering is off sale, so this one
+        // takes its number: a desk that reads "4, 6" looks like a broken form.
+        <Step n={catalogue.length ? 6 : 5} title="Who is booking">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="sm:col-span-2">
               <span className="font-medium text-gray-700 text-sm">Name</span>

@@ -1,6 +1,7 @@
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
 import { PDFDocument } from "pdf-lib";
 import { buildOrderIcs } from "../lib/ics";
+import { roomDoorName, roomFullLabel, roomSoldName } from "../lib/roomNames";
 import { buildInvoiceModel, ROOM_VAT_RATE_BP } from "../lib/invoice";
 import type { InvoiceMeta } from "../lib/invoicePdf";
 import { renderInvoicePdf } from "../lib/invoicePdf";
@@ -98,13 +99,30 @@ export class InvoiceService {
     };
   }
 
+  /**
+   * The add-on lines THIS order paid for, out of everything hanging off a room.
+   *
+   * A room can carry catering bought after it was paid for, on a separate order
+   * with its own payment and its own invoice. Those lines live on the same
+   * booking, so every document built from a room has to say whose money it is
+   * documenting: an invoice listing a line it never charged for would be wrong,
+   * and a credit note refunding one would try to take back more than the
+   * payment behind it holds.
+   *
+   * A null orderUid is a line written before top-ups existed, on a room that
+   * belongs to this order — so it is this order's.
+   */
+  private paidLines(order: Order, booking: OrderBooking) {
+    return booking.addOns.filter((a) => (a.orderUid ?? order.uid) === order.uid);
+  }
+
   private invoiceRooms(order: Order, bookings: OrderBooking[] = order.bookings) {
     return bookings.map((b) => ({
       amountTotal: b.amountTotal,
       roomName: b.resource.name,
       durationMinutes: b.durationMinutes,
       slotLabel: formatSlotRange(b.startTime, b.endTime),
-      addOns: b.addOns.map((a) => ({
+      addOns: this.paidLines(order, b).map((a) => ({
         name: a.addOn.name,
         quantity: a.quantity,
         lineTotal: a.lineTotal,
@@ -124,11 +142,13 @@ export class InvoiceService {
   private emailRooms(order: Order, bookings: OrderBooking[] = order.bookings) {
     const label = (cents: number) => `${(cents / 100).toFixed(2)} ${order.currency}`;
     return bookings.map((b) => ({
-      roomName: b.resource.name,
+      // Both names: the exhibitor recognises what they bought, and finds the
+      // door. The invoice attached to this very mail keeps the sold name alone.
+      roomName: roomFullLabel(b.resource),
       slotLabel: formatSlotRange(b.startTime, b.endTime),
       durationMinutes: b.durationMinutes,
       amountLabel: label(b.amountTotal),
-      addOns: b.addOns.map((a) => ({
+      addOns: this.paidLines(order, b).map((a) => ({
         name: a.addOn.name,
         quantity: a.quantity,
         lineLabel: label(a.lineTotal),
@@ -223,7 +243,8 @@ export class InvoiceService {
       ics: buildOrderIcs(
         order.bookings.map((b) => ({
           uid: b.uid,
-          roomName: b.resource.name,
+          roomName: roomDoorName(b.resource),
+          soldName: roomSoldName(b.resource),
           startUtc: b.startTime,
           endUtc: b.endTime,
         }))

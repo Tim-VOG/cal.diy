@@ -3,7 +3,8 @@ import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne
 import { getNe26StaffRepository } from "@calcom/features/ne26-rooms/di/Ne26StaffRepository.container";
 import {
   DESK_COOKIE,
-  deskSessionFromCookieHeader,
+  DESK_COOKIE_MAX_AGE_SECONDS,
+  deskStateFromCookieHeader,
   encodeDeskSession,
   isValidPin,
   nextLockState,
@@ -31,17 +32,24 @@ export async function POST(req: Request): Promise<Response> {
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
   if (!session?.user?.id) return Response.json({ error: "Not signed in" }, { status: 401 });
 
-  const body = (await req.json().catch(() => ({}))) as { action?: string; hostessName?: string; pin?: string };
+  const body = (await req.json().catch(() => ({}))) as {
+    action?: string;
+    hostessName?: string;
+    pin?: string;
+  };
   const settings = getNe26RoomSettingsRepository();
   const staff = getNe26StaffRepository();
   const cookieHeader = (await headers()).get("cookie");
-  const current = deskSessionFromCookieHeader(cookieHeader);
+  const current = deskStateFromCookieHeader(cookieHeader);
 
   if (body.action === "enter") {
     // Only an administrator can put a tablet into desk mode — and only from an
     // unrestricted session, so desk mode cannot be re-entered under a new name
     // to launder who did what.
-    if (session.user.role !== "ADMIN" || current) {
+    // An expired shift counts as "already in desk mode": re-arming has to go
+    // through the PIN, or the name on the trail could be changed by whoever is
+    // holding the tablet when the shift runs out.
+    if (session.user.role !== "ADMIN" || current.kind !== "none") {
       return Response.json({ error: "Admins only." }, { status: 403 });
     }
     const hostessName = (body.hostessName ?? "").trim().slice(0, 80);
@@ -69,13 +77,15 @@ export async function POST(req: Request): Promise<Response> {
       status: 200,
       headers: {
         "Content-Type": "application/json",
-        "Set-Cookie": `${DESK_COOKIE}=${encodeURIComponent(value)}; ${COOKIE_BASE}${secureFlag()}; Max-Age=${16 * 60 * 60}`,
+        "Set-Cookie": `${DESK_COOKIE}=${encodeURIComponent(value)}; ${COOKIE_BASE}${secureFlag()}; Max-Age=${DESK_COOKIE_MAX_AGE_SECONDS}`,
       },
     });
   }
 
   if (body.action === "exit") {
-    if (!current) return Response.json({ ok: true }, { status: 200 });
+    // Nothing to leave. An EXPIRED shift is not that: it still has to be
+    // unlocked with the PIN, which is the whole point of it failing closed.
+    if (current.kind === "none") return Response.json({ ok: true }, { status: 200 });
 
     const state = await settings.getDeskPinState();
     const remaining = pinLockRemainingMs({
@@ -98,7 +108,7 @@ export async function POST(req: Request): Promise<Response> {
       await settings.setDeskPinLockState(next.failedAttempts, next.lockedUntil);
       await staff.recordAction({
         actorUserId: session.user.id,
-        actorEmail: current.hostessName,
+        actorEmail: current.session.hostessName,
         actorRole: "HOSTESS",
         action: "desk.exit.failed",
         detail: "Wrong PIN entered to leave desk mode",
@@ -112,7 +122,7 @@ export async function POST(req: Request): Promise<Response> {
       actorEmail: session.user.email ?? "",
       actorRole: "ADMIN",
       action: "desk.exit",
-      detail: `Desk mode ended — ${current.hostessName} was on duty`,
+      detail: `Desk mode ended — ${current.session.hostessName} was on duty`,
     });
 
     return new Response(JSON.stringify({ ok: true }), {

@@ -1,5 +1,6 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { getAddOnRepository } from "@calcom/features/ne26-rooms/di/AddOnRepository.container";
+import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
 import { getNe26BillingProfileRepository } from "@calcom/features/ne26-rooms/di/Ne26BillingProfileRepository.container";
 import { getRoomAvailabilityService } from "@calcom/features/ne26-rooms/di/RoomAvailabilityService.container";
 import { isBillingProfileComplete } from "@calcom/features/ne26-rooms/lib/billing";
@@ -44,10 +45,15 @@ export default async function RoomDetailPage({ params }: { params: Params }): Pr
   const data = await loadRoom(slug);
   if (!data) notFound();
 
-  const [addOns, profile] = await Promise.all([
+  const [catalogue, profile, settings] = await Promise.all([
     getAddOnRepository().findManyActive(),
     getNe26BillingProfileRepository().findByUserId(session.user.id),
+    getNe26RoomSettingsRepository().get(),
   ]);
+  // Nothing to choose from once catering is closed, so the step disappears
+  // rather than offering options the order would refuse. The room itself is
+  // untouched: it keeps selling until its slot starts.
+  const addOns = settings.cateringSalesOpen ? catalogue : [];
 
   return (
     <RoomBookingClient

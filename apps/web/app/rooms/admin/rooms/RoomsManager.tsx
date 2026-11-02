@@ -24,6 +24,8 @@ const CATEGORY_META: Record<Category, { title: string; blurb: string }> = {
 export interface RoomRow {
   id: number;
   name: string;
+  /** The name on the door at the venue. "" means the door says `name`. */
+  venueName: string;
   description: string;
   category: string;
   capacity: number;
@@ -189,13 +191,26 @@ function RoomRowCard({
         r.isActive ? "bg-white" : "bg-gray-50/70"
       }`}>
       <div className="flex items-start gap-3">
-        <input
-          type="text"
-          aria-label="Room name"
-          className={`${input} mt-0 min-w-0 flex-1 font-semibold text-[#000643] text-sm`}
-          value={r.name}
-          onChange={(e) => setField(r.id, "name", e.target.value)}
-        />
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <input
+            type="text"
+            aria-label="Room name"
+            className={`${input} mt-0 min-w-0 font-semibold text-[#000643] text-sm`}
+            value={r.name}
+            onChange={(e) => setField(r.id, "name", e.target.value)}
+          />
+          {/* The sticker on the door. Kept apart from the name above because
+              that one is sold, invoiced and must not move; this one only has
+              to match what is printed at the venue. */}
+          <input
+            type="text"
+            aria-label="Name on the door"
+            placeholder="Name on the door (same as above if empty)"
+            className={`${input} mt-0 min-w-0 text-gray-600 text-xs`}
+            value={r.venueName}
+            onChange={(e) => setField(r.id, "venueName", e.target.value)}
+          />
+        </div>
         <label className="flex shrink-0 items-center gap-1.5 pt-2 text-gray-600 text-xs">
           <input
             type="checkbox"
@@ -368,6 +383,7 @@ export default function RoomsManager({
     update.mutate({
       id: row.id,
       name: row.name,
+      venueName: row.venueName,
       description: row.description,
       category: row.category as Category,
       capacity: row.capacity,

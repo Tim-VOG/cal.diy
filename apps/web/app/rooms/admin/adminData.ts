@@ -42,6 +42,8 @@ export async function loadAdminBookings() {
       uid: b.uid,
       status: b.status,
       roomName: b.resource.name,
+      // NE26: the sticker on the door, for the sheets the floor reads.
+      roomVenueName: b.resource.venueName,
       category: b.resource.category,
       startUtc: b.startTime.toISOString(),
       endUtc: b.endTime.toISOString(),
