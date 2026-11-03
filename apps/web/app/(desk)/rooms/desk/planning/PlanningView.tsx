@@ -7,6 +7,7 @@ import { trpc } from "@calcom/trpc/react";
 import { ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import BookingPanel, { type PanelBooking } from "./BookingPanel";
 
 const HOUR_MS = 3_600_000;
 const SLOT_MS = 15 * 60 * 1000;
@@ -43,10 +44,15 @@ interface PlanningBooking {
   status: string;
   startUtc: string;
   endUtc: string;
+  durationMinutes: number;
   bookerName: string;
+  bookerEmail: string;
   company: string | null;
+  addOns: { name: string; quantity: number }[];
   isBlock: boolean;
   arrived: boolean;
+  arrivedAt: string | null;
+  arrivedBy: string | null;
 }
 
 /**
@@ -101,10 +107,15 @@ export default function PlanningView(): JSX.Element {
         status: b.isBlock ? "BLOCKED" : b.status,
         startUtc: new Date(b.startTime as unknown as string).toISOString(),
         endUtc: new Date(b.endTime as unknown as string).toISOString(),
+        durationMinutes: b.durationMinutes,
         bookerName: b.bookerName,
+        bookerEmail: b.bookerEmail,
         company: b.order?.bookerLegalName ?? null,
+        addOns: b.addOns.map((a) => ({ name: a.addOn.name, quantity: a.quantity })),
         isBlock: b.isBlock,
         arrived: Boolean(b.checkedInAt),
+        arrivedAt: b.checkedInAt ? new Date(b.checkedInAt as unknown as string).toISOString() : null,
+        arrivedBy: b.checkedInByEmail,
       })),
     [payloadBookings]
   );
@@ -119,6 +130,37 @@ export default function PlanningView(): JSX.Element {
       bufferMinutes,
     });
   }, [bookings, rooms, openUtc, closeUtc, bufferMinutes]);
+
+  // Tapping a block opens the order behind it, so greeting someone does not
+  // mean leaving the board and finding them again on Today.
+  const [openUid, setOpenUid] = useState<string | null>(null);
+  const checkIn = trpc.viewer.rooms.deskCheckIn.useMutation({
+    onSuccess: () => void planning.refetch(),
+  });
+  const dismiss = () => {
+    setOpenUid(null);
+    checkIn.reset();
+  };
+  const panel: PanelBooking | null = useMemo(() => {
+    const b = bookings.find((x) => x.uid === openUid);
+    if (!b || b.isBlock) return null;
+    const room = rooms.find((r) => r.name === b.roomName);
+    return {
+      uid: b.uid,
+      doorName: room ? roomDoorName(room) : b.roomName,
+      soldName: room ? roomSoldName(room) : null,
+      startUtc: b.startUtc,
+      endUtc: b.endUtc,
+      durationMinutes: b.durationMinutes,
+      bookerName: b.bookerName,
+      bookerEmail: b.bookerEmail,
+      company: b.company,
+      addOns: b.addOns,
+      held: b.status === "PENDING",
+      arrivedAt: b.arrivedAt,
+      arrivedBy: b.arrivedBy,
+    };
+  }, [bookings, rooms, openUid]);
 
   const open = openUtc ? new Date(openUtc).getTime() : 0;
   const close = closeUtc ? new Date(closeUtc).getTime() : 0;
@@ -239,7 +281,14 @@ export default function PlanningView(): JSX.Element {
                       nowMs={nowMs}
                     />
                     {(layout[i]?.blocks ?? []).map((block) => (
-                      <BookingBlock key={block.booking.uid} block={block} />
+                      <BookingBlock
+                        key={block.booking.uid}
+                        block={block}
+                        onOpen={() => {
+                          checkIn.reset();
+                          setOpenUid(block.booking.uid);
+                        }}
+                      />
                     ))}
                     {nowPct === null ? null : (
                       <span
@@ -263,6 +312,16 @@ export default function PlanningView(): JSX.Element {
           </div>
         </div>
       )}
+
+      {panel ? (
+        <BookingPanel
+          booking={panel}
+          onClose={dismiss}
+          onToggle={(uid, arrived) => checkIn.mutate({ uid, arrived })}
+          busy={checkIn.isPending}
+          error={checkIn.error?.message ?? null}
+        />
+      ) : null}
     </div>
   );
 }
@@ -343,7 +402,13 @@ function FreeTime({
   );
 }
 
-function BookingBlock({ block }: { block: PlanBlock<PlanningBooking> }): JSX.Element {
+function BookingBlock({
+  block,
+  onOpen,
+}: {
+  block: PlanBlock<PlanningBooking>;
+  onOpen: () => void;
+}): JSX.Element {
   const b = block.booking;
   const position = { left: `${block.left}%`, width: `calc(${block.width}% - 2px)` };
   const cleaning =
@@ -387,11 +452,18 @@ function BookingBlock({ block }: { block: PlanBlock<PlanningBooking> }): JSX.Ele
 
   return (
     <>
-      <span
-        className={`absolute top-1.5 bottom-1.5 z-[1] overflow-hidden rounded-md px-2 py-1 ${
+      {/* A button, not a label: tapping a booking is how the hostess opens the
+          order and checks the exhibitor in. */}
+      <button
+        type="button"
+        onClick={onOpen}
+        className={`absolute top-1.5 bottom-1.5 z-[1] overflow-hidden rounded-md px-2 py-1 text-left transition hover:brightness-[0.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#000643] focus-visible:outline-offset-1 ${
           held ? "text-amber-950" : "text-[#000643]"
         }`}
         style={{ ...position, ...style }}
+        aria-label={`Open the booking for ${b.company || b.bookerName}, ${hhmm(b.startUtc)} to ${hhmm(
+          b.endUtc
+        )}`}
         title={`${b.company ? `${b.company} — ` : ""}${b.bookerName} · ${hhmm(b.startUtc)}–${hhmm(
           b.endUtc
         )}${held ? " · held, unpaid" : ""}${b.arrived ? " · arrived" : ""}`}>
@@ -411,7 +483,7 @@ function BookingBlock({ block }: { block: PlanBlock<PlanningBooking> }): JSX.Ele
             {held ? "Held, unpaid" : b.company ? b.bookerName : hhmm(b.startUtc)}
           </span>
         )}
-      </span>
+      </button>
       {cleaning}
     </>
   );

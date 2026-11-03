@@ -501,13 +501,18 @@ export class ResourceBookingRepository {
         endTime: true,
         durationMinutes: true,
         bookerName: true,
+        bookerEmail: true,
         status: true,
         isBlock: true,
         checkedInAt: true,
+        checkedInByEmail: true,
         // NE26: the company is how an exhibitor introduces themselves at the
         // counter ("I'm with AWS"), so the desk reads it as well as the name.
         order: { select: { bookerLegalName: true } },
         resource: { select: { slug: true, name: true, venueName: true, category: true } },
+        // NE26: tapping a block opens the order behind it, where "is the lunch
+        // included?" is the question that follows the name.
+        addOns: { select: { quantity: true, addOn: { select: { name: true } } } },
       },
     });
   }
