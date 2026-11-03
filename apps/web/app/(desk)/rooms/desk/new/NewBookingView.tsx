@@ -107,6 +107,17 @@ export default function NewBookingView(): JSX.Element {
   const room = useMemo(() => rooms.find((r) => r.room.slug === slug), [rooms, slug]);
   const day = room?.days.find((d) => d.date === date);
   const starts = (day?.starts ?? []).filter((s) => s.availableDurations.includes(duration));
+  /**
+   * A start that came from the planning board and is not on the offered grid.
+   *
+   * The board offers the moment a room is next free (11:15, after a cleaning
+   * gap), while the grid chains from the first start of the day (09:00, 10:15,
+   * 11:30…). Without this the hostess saw a list of times with nothing
+   * selected, while the form quietly held the one she had tapped — and the
+   * natural correction was to tap a neighbouring time and sell a different
+   * slot from the one she had just shown the exhibitor.
+   */
+  const offGrid = startUtc && !starts.some((s) => s.startUtc === startUtc) ? startUtc : null;
 
   /** Other rooms with something free that day, when this one has nothing. */
   const alternatives = useMemo(() => {
@@ -267,8 +278,13 @@ export default function NewBookingView(): JSX.Element {
 
       {slug && date ? (
         <Step n={4} title="Which time">
-          {starts.length ? (
+          {starts.length || offGrid ? (
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+              {offGrid ? (
+                <Choice active onClick={() => setStartUtc(offGrid)} sub="from the planning">
+                  {time(offGrid)}
+                </Choice>
+              ) : null}
               {starts.map((s) => (
                 <Choice
                   key={s.startUtc}

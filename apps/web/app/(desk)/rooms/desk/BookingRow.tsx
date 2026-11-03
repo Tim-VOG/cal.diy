@@ -12,6 +12,8 @@ export interface DeskBooking {
   bookerEmail: string;
   checkedInAt: string | Date | null;
   checkedInByEmail: string | null;
+  /** The company on the order — how an exhibitor introduces themselves. */
+  order: { bookerLegalName: string | null } | null;
   resource: { name: string; venueName: string | null; slug: string; category: string };
   addOns: { quantity: number; addOn: { name: string } }[];
 }
@@ -69,7 +71,14 @@ export default function BookingRow({
       </div>
 
       <div className="min-w-0 flex-1">
-        <span className="block truncate font-medium text-[#000643]">{booking.bookerName}</span>
+        <span className="block truncate font-medium text-[#000643]">
+          {booking.bookerName}
+          {booking.order?.bookerLegalName ? (
+            // The badge says the company; the person says their name. The
+            // hostess hears one and reads the other, so both are on the line.
+            <span className="font-normal text-gray-500"> · {booking.order.bookerLegalName}</span>
+          ) : null}
+        </span>
         <span className="block truncate text-gray-500 text-sm">
           {/* The door first: pointing someone at a room is the whole job, and
               the door does not say what the room was sold as. */}

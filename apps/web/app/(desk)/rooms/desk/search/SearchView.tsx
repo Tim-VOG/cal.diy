@@ -2,18 +2,24 @@
 
 import { trpc } from "@calcom/trpc/react";
 import { Search } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import BookingRow, { type DeskBooking } from "../BookingRow";
 
 export default function SearchView(): JSX.Element {
   const [term, setTerm] = useState("");
-  // Only sent on submit: a query-as-you-type across the whole event would hit
-  // the database on every keystroke at the busiest moment of the day.
-  const [submitted, setSubmitted] = useState("");
+  // Searched as the hostess types, a short pause behind the keyboard: somebody
+  // is standing at the counter spelling their name, and making them press a
+  // button to find out they spelled it wrong costs more than the queries do.
+  // The pause is what keeps it from being one query per keystroke.
+  const [typed, setTyped] = useState("");
+  useEffect(() => {
+    const id = setTimeout(() => setTyped(term.trim()), 250);
+    return () => clearTimeout(id);
+  }, [term]);
 
   const results = trpc.viewer.rooms.deskSearch.useQuery(
-    { query: submitted },
-    { enabled: submitted.length >= 2 }
+    { query: typed },
+    { enabled: typed.length >= 2, placeholderData: (previous) => previous }
   );
   const checkIn = trpc.viewer.rooms.deskCheckIn.useMutation({
     onSuccess: () => void results.refetch(),
@@ -25,21 +31,22 @@ export default function SearchView(): JSX.Element {
     <div>
       <h1 className="font-bold text-2xl text-[#000643]">Find a booking</h1>
       <p className="mt-1 text-gray-600 text-sm">
-        Search the whole event by name or email — for when someone knows they booked but not when.
+        Search the whole event by name, company or email — for when someone knows they booked but not when.
       </p>
 
       <form
         className="mt-4 flex gap-2"
         onSubmit={(e) => {
+          // Results are already there; this only stops Enter reloading the page.
           e.preventDefault();
-          setSubmitted(term.trim());
+          setTyped(term.trim());
         }}>
         <input
           type="search"
           value={term}
           onChange={(e) => setTerm(e.target.value)}
-          placeholder="Name or email"
-          aria-label="Name or email"
+          placeholder="Name, company or email"
+          aria-label="Name, company or email"
           className="min-w-0 flex-1 rounded-lg border border-gray-200 px-4 py-3 text-base focus:border-[#000643] focus:outline-none"
         />
         <button
@@ -51,11 +58,11 @@ export default function SearchView(): JSX.Element {
         </button>
       </form>
 
-      {results.isPending && submitted.length >= 2 ? (
+      {results.isPending && typed.length >= 2 ? (
         <p className="mt-6 text-gray-500 text-sm">Searching…</p>
       ) : null}
 
-      {submitted.length >= 2 && !results.isPending ? (
+      {typed.length >= 2 && !results.isPending ? (
         rows.length ? (
           <ul className="mt-5 space-y-2">
             {rows.map((booking) => (
@@ -70,7 +77,7 @@ export default function SearchView(): JSX.Element {
           </ul>
         ) : (
           <p className="mt-6 rounded-xl border border-gray-200 bg-white px-4 py-8 text-center text-gray-500 text-sm">
-            Nothing found for “{submitted}”. Only paid bookings appear here.
+            Nothing found for “{typed}”. Only paid bookings appear here.
           </p>
         )
       ) : null}

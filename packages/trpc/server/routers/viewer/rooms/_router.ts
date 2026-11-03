@@ -173,9 +173,9 @@ export const roomsRouter = router({
   /**
    * The planning board: every room across one day, with what occupies it.
    *
-   * Returns the day's 15-minute marks so the client draws exactly the columns
-   * the schedule actually opens, rather than assuming a window and disagreeing
-   * with availability at the edges.
+   * Returns the day's own opening window so the client draws exactly the hours
+   * the schedule opens, rather than assuming a window and disagreeing with
+   * availability at the edges. Bookings are placed inside it to the minute.
    */
   deskPlanning: authedProcedure.input(ZDeskDayInputSchema).query(async ({ ctx, input }) => {
     await requireDesk(ctx);
@@ -189,7 +189,9 @@ export const roomsRouter = router({
       "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container"
     );
     const { eventDayBounds } = await import("@calcom/features/ne26-rooms/lib/deskDay");
-    const { buildEventSchedule } = await import("@calcom/features/ne26-rooms/lib/eventSchedule");
+    const { buildEventSchedule, SLOT_GRANULARITY_MS } = await import(
+      "@calcom/features/ne26-rooms/lib/eventSchedule"
+    );
 
     const { fromUtc, toUtc } = eventDayBounds(input.date);
     const now = new Date();
@@ -200,16 +202,23 @@ export const roomsRouter = router({
     ]);
 
     const day = buildEventSchedule(settings.eventDays).find((d) => d.date === input.date);
+    const marks = day?.openSlotStartsUtc ?? [];
+    const first = marks[0];
+    const last = marks[marks.length - 1];
     return {
       date: input.date,
       bufferMinutes: settings.bufferMinutes,
       nowUtc: now.toISOString(),
-      slotMarksUtc: (day?.openSlotStartsUtc ?? []).map((d) => d.toISOString()),
+      // The day's window, so the board can place a booking to the minute
+      // instead of snapping it to a column.
+      openUtc: first ? first.toISOString() : null,
+      closeUtc: last ? new Date(last.getTime() + SLOT_GRANULARITY_MS).toISOString() : null,
       rooms: rooms.map((r) => ({
         slug: r.slug,
         name: r.name,
         venueName: r.venueName,
         category: r.category,
+        capacity: r.capacity,
       })),
       bookings,
     };

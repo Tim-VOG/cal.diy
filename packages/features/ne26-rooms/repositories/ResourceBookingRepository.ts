@@ -466,6 +466,9 @@ export class ResourceBookingRepository {
         bookerEmail: true,
         checkedInAt: true,
         checkedInByEmail: true,
+        // NE26: the company is how an exhibitor introduces themselves at the
+        // counter ("I'm with AWS"), so the desk reads it as well as the name.
+        order: { select: { bookerLegalName: true } },
         resource: { select: { name: true, venueName: true, slug: true, category: true } },
         addOns: { select: { quantity: true, addOn: { select: { name: true } } } },
       },
@@ -501,6 +504,9 @@ export class ResourceBookingRepository {
         status: true,
         isBlock: true,
         checkedInAt: true,
+        // NE26: the company is how an exhibitor introduces themselves at the
+        // counter ("I'm with AWS"), so the desk reads it as well as the name.
+        order: { select: { bookerLegalName: true } },
         resource: { select: { slug: true, name: true, venueName: true, category: true } },
       },
     });
@@ -508,7 +514,8 @@ export class ResourceBookingRepository {
 
   /**
    * Desk search across the whole event, for "I booked something, I forget when".
-   * Matches the booker's name or email; the caller decides how many to show.
+   * Matches the booker's name, their email or their company; the caller decides
+   * how many to show.
    */
   searchForDesk(query: string, limit = 25) {
     const q = query.trim();
@@ -519,6 +526,9 @@ export class ResourceBookingRepository {
         OR: [
           { bookerName: { contains: q, mode: "insensitive" } },
           { bookerEmail: { contains: q, mode: "insensitive" } },
+          // Half the people at the counter introduce themselves by their stand,
+          // not by their name.
+          { order: { bookerLegalName: { contains: q, mode: "insensitive" } } },
         ],
       },
       orderBy: [{ startTime: "asc" }],
@@ -532,6 +542,9 @@ export class ResourceBookingRepository {
         bookerEmail: true,
         checkedInAt: true,
         checkedInByEmail: true,
+        // NE26: the company is how an exhibitor introduces themselves at the
+        // counter ("I'm with AWS"), so the desk reads it as well as the name.
+        order: { select: { bookerLegalName: true } },
         resource: { select: { name: true, venueName: true, slug: true, category: true } },
         addOns: { select: { quantity: true, addOn: { select: { name: true } } } },
       },
