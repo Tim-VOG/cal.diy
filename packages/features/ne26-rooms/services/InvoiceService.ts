@@ -410,7 +410,7 @@ export class InvoiceService {
 
   /**
    * Credit everything still sold on an order — the refund webhook's path, and
-   * the admin's "Issue credit note" button. Returns whether one was issued.
+   * the admin's "Cancel & credit" button. Returns whether one was issued.
    */
   async issueCreditNote(uid: string): Promise<boolean> {
     return (await this.creditBookings(uid)) !== null;

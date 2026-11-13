@@ -217,7 +217,7 @@ describe("explaining what is not offered", () => {
               "Mark as paid manually": offered.confirmManually,
               "Issue the missing invoice": offered.issueInvoice,
               "Resend invoice email": offered.resendInvoice,
-              "Issue credit note": offered.issueCreditNote,
+              "Cancel & credit": offered.issueCreditNote,
               "Delete order": offered.deleteOrder,
             };
             for (const [label, isOffered] of Object.entries(byLabel)) {

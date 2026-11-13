@@ -130,7 +130,7 @@ export function explainUnavailableActions(order: OrderState): UnavailableAction[
   }
   if (!can.issueCreditNote && !order.hasCreditNote) {
     out.push({
-      label: "Issue credit note",
+      label: "Cancel & credit",
       reason: !order.hasInvoice ? "needs an invoice" : "only for a confirmed order",
     });
   }

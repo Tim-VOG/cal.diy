@@ -197,14 +197,14 @@ export default function BookingActions({
             onClick={() => {
               if (
                 window.confirm(
-                  `Issue a credit note for the whole order? This cancels ${rooms}, frees the slots, and emails the booker. Refund the payment in Stripe separately.`
+                  `Cancel the whole order? This cancels ${rooms}, frees the slots, issues a credit note and emails the booker. Refund the payment in Stripe separately.`
                 )
               ) {
                 creditNote.mutate({ uid: orderUid });
               }
             }}
             className={`${btnBase} border border-red-200 bg-white text-red-600 hover:border-red-400`}>
-            {creditNote.isPending ? "Issuing…" : "Issue credit note"}
+            {creditNote.isPending ? "Cancelling…" : "Cancel & credit"}
           </button>
         ) : null}
 
