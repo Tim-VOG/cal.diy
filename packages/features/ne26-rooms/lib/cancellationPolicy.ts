@@ -10,7 +10,12 @@
  * and the desk answers one question instead of three.
  */
 
-const DAYS_BEFORE_EVENT = 7;
+/**
+ * How long before the event self-service cancellation closes, when the admin
+ * has not said otherwise. Seven days is where the event started; it is a
+ * default now, not the rule.
+ */
+export const DEFAULT_CANCELLATION_DAYS = 7;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /** The room being cancelled, and the payment behind it. */
@@ -37,15 +42,28 @@ export type CancellationRefusal =
   | "no-invoice";
 
 /**
- * The instant self-service cancellation closes: seven days before the first
- * bookable minute of the event. Past it the rooms are being planned for, and a
- * cancellation goes through the desk.
+ * The instant self-service cancellation closes: `daysBefore` days before the
+ * first bookable minute of the event. Past it a cancellation goes through the
+ * desk.
+ *
+ * The number is an admin setting, because the right answer moves: it was seven
+ * days until somebody had to cancel four days out and found the button gone,
+ * with no way to reopen it short of a deploy. Zero means the window runs until
+ * the event opens — never further, so a room cannot be refunded in full while
+ * it is being used or after it has been.
  */
-export function cancellationDeadline(schedule: readonly { openSlotStartsUtc: Date[] }[]): Date | null {
+export function cancellationDeadline(
+  schedule: readonly { openSlotStartsUtc: Date[] }[],
+  daysBefore: number = DEFAULT_CANCELLATION_DAYS
+): Date | null {
   // The EARLIEST minute, not the first in the list: the days are configured by
   // hand in the admin and nothing keeps them in order.
   const opens = schedule.flatMap((day) => day.openSlotStartsUtc).map((d) => d.getTime());
-  return opens.length ? new Date(Math.min(...opens) - DAYS_BEFORE_EVENT * MS_PER_DAY) : null;
+  if (!opens.length) return null;
+  // A negative setting would push the deadline into the event. Treat anything
+  // below zero as zero rather than letting it mean something nobody intended.
+  const days = Math.max(0, daysBefore);
+  return new Date(Math.min(...opens) - days * MS_PER_DAY);
 }
 
 /**

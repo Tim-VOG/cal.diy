@@ -71,7 +71,10 @@ export class BookerCancellationService {
       this.deps.ne26RoomSettingsRepository.get(),
       this.deps.invoiceSettingsRepository.get(),
     ]);
-    const deadline = cancellationDeadline(buildEventSchedule(roomSettings.eventDays));
+    const deadline = cancellationDeadline(
+      buildEventSchedule(roomSettings.eventDays),
+      roomSettings.cancellationDeadlineDays
+    );
     const verdict = canBookerCancel(booking, now, deadline);
     if (!verdict.allowed) {
       throw new CancellationRefused(

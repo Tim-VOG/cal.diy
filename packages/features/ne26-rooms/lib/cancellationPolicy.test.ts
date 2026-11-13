@@ -25,6 +25,20 @@ describe("cancellationDeadline", () => {
   it("has no deadline when no day is open", () => {
     expect(cancellationDeadline([])).toBeNull();
   });
+
+  it("moves with the admin's setting", () => {
+    // The whole point of the setting: reopening the window days after the old
+    // seven-day deadline had already passed.
+    expect(cancellationDeadline(SCHEDULE, 2)?.toISOString()).toBe("2026-11-15T06:00:00.000Z");
+    expect(cancellationDeadline(SCHEDULE, 30)?.toISOString()).toBe("2026-10-18T06:00:00.000Z");
+  });
+
+  it("stops at the moment the event opens, never later", () => {
+    // Zero is the widest the window goes. A room being used, or already used,
+    // is not refundable in full by its holder pressing a button.
+    expect(cancellationDeadline(SCHEDULE, 0)?.toISOString()).toBe("2026-11-17T06:00:00.000Z");
+    expect(cancellationDeadline(SCHEDULE, -5)?.toISOString()).toBe("2026-11-17T06:00:00.000Z");
+  });
 });
 
 describe("canBookerCancel", () => {

@@ -80,7 +80,10 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
   // Cancelling refunds the card, so the page decides with the same rule the
   // procedure enforces — the button is a courtesy, the rule is behind it.
   const now = new Date();
-  const deadline = cancellationDeadline(buildEventSchedule(roomSettings.eventDays));
+  const deadline = cancellationDeadline(
+    buildEventSchedule(roomSettings.eventDays),
+    roomSettings.cancellationDeadlineDays
+  );
   const cancellable = (b: (typeof rows)[number]) => canBookerCancel(b, now, deadline).allowed;
   /** A refund asked for and not yet credited: say so rather than show the button again. */
   const refundPending = (b: (typeof rows)[number]) => Boolean(b.bookerCancelledAt) && !b.creditNoteId;

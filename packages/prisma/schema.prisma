@@ -3147,6 +3147,11 @@ model Ne26RoomSettings {
   // more can be served, while the rooms themselves keep selling right up to
   // the slot. An admin opens it when the kitchen says they can take more.
   cateringSalesOpen      Boolean   @default(false)
+  // NE26: how many days before the event's first bookable minute self-service
+  // cancellation closes. 0 runs the window right up to the moment the event
+  // opens — never into it, so a room cannot be refunded in full while it is
+  // being used. Past the deadline the exhibitor writes to the desk instead.
+  cancellationDeadlineDays Int     @default(7)
   // NE26: PIN that releases desk mode, stored as salt:hash — the tablet runs on
   // an admin session, so this is what stands between the welcome desk and the
   // pricing, refunds and accounts. Null = desk mode cannot be entered.
