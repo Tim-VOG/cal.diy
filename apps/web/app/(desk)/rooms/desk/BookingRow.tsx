@@ -1,7 +1,9 @@
 "use client";
 
 import { roomDoorName, roomSoldName } from "@calcom/features/ne26-rooms/lib/roomNames";
-import { Check, Clock, Undo2, UserCheck } from "lucide-react";
+import { Check, Clock, CreditCard, Undo2, UserCheck } from "lucide-react";
+import { useEffect, useState } from "react";
+import CancelRequestButton from "./CancelRequestButton";
 
 export interface DeskBooking {
   uid: string;
@@ -10,8 +12,14 @@ export interface DeskBooking {
   durationMinutes: number;
   bookerName: string;
   bookerEmail: string;
+  /** CONFIRMED, or PENDING for a hold that has not been paid for yet. */
+  status: string;
+  /** When an unpaid hold frees itself. */
+  holdExpiresAt: string | Date | null;
   checkedInAt: string | Date | null;
   checkedInByEmail: string | null;
+  cancellationRequestedAt: string | Date | null;
+  cancellationRequestedBy: string | null;
   /** The company on the order — how an exhibitor introduces themselves. */
   order: { bookerLegalName: string | null } | null;
   resource: { name: string; venueName: string | null; slug: string; category: string };
@@ -36,28 +44,48 @@ function day(value: string | Date): string {
   }).format(new Date(value));
 }
 
+function iso(value: string | Date | null): string | null {
+  return value ? new Date(value).toISOString() : null;
+}
+
 /**
- * One booking as the desk sees it. No prices anywhere: the hostess greets people
- * and points them at a room, and what someone paid is not her business — nor
- * anything she should be able to read out loud at a busy counter.
+ * One booking as the desk sees it. No prices anywhere: the hostess greets
+ * people and points them at a room, and what someone paid is not her business —
+ * nor anything she should be able to read out loud at a busy counter.
+ *
+ * A row is either a paid room, which can be checked in and given back, or a
+ * live hold, which can only be paid for. The two are deliberately not the same
+ * shape on screen: an exhibitor whose card was refused this morning is standing
+ * here believing they have a room, and the row has to say otherwise before the
+ * hostess does.
  */
 export default function BookingRow({
   booking,
   showDay,
   onToggle,
+  onResume,
   busy,
+  onRequested,
 }: {
   booking: DeskBooking;
   showDay?: boolean;
   onToggle: (uid: string, arrived: boolean) => void;
+  /** Reopens the payment page for an unpaid hold. */
+  onResume?: (uid: string) => void;
   busy?: boolean;
+  onRequested?: () => void;
 }): JSX.Element {
   const arrived = Boolean(booking.checkedInAt);
+  const held = booking.status === "PENDING";
 
   return (
     <li
       className={`flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 transition ${
-        arrived ? "border-green-200 bg-green-50/60" : "border-gray-200 bg-white"
+        held
+          ? "border-amber-300 bg-amber-50/70"
+          : arrived
+            ? "border-green-200 bg-green-50/60"
+            : "border-gray-200 bg-white"
       }`}>
       <div className="flex w-24 shrink-0 flex-col">
         <span className="flex items-center gap-1.5 font-semibold text-[#000643]">
@@ -87,16 +115,46 @@ export default function BookingRow({
             <span className="text-gray-400"> · {roomSoldName(booking.resource)}</span>
           ) : null}
         </span>
-        {booking.addOns.length ? (
+        {held ? (
+          <span className="mt-0.5 block font-medium text-[12px] text-amber-900">
+            Not paid —{" "}
+            {booking.holdExpiresAt ? (
+              <TimeLeft iso={iso(booking.holdExpiresAt) as string} />
+            ) : (
+              "the room is not theirs yet"
+            )}
+          </span>
+        ) : booking.addOns.length ? (
           <span className="mt-0.5 block truncate text-gray-400 text-xs">
             {booking.addOns
               .map((a) => (a.quantity > 1 ? `${a.addOn.name} x${a.quantity}` : a.addOn.name))
               .join(" · ")}
           </span>
         ) : null}
+        {held ? null : (
+          <span className="mt-1.5 block">
+            <CancelRequestButton
+              uid={booking.uid}
+              roomLabel={roomDoorName(booking.resource)}
+              requestedAt={iso(booking.cancellationRequestedAt)}
+              requestedBy={booking.cancellationRequestedBy}
+              onDone={onRequested}
+              compact
+            />
+          </span>
+        )}
       </div>
 
-      {arrived ? (
+      {held ? (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onResume?.(booking.uid)}
+          className="inline-flex items-center gap-2 rounded-lg bg-[#000643] px-4 py-2.5 font-medium text-sm text-white transition hover:bg-[#000643]/90 disabled:opacity-50">
+          <CreditCard className="h-4 w-4 shrink-0" aria-hidden />
+          Take the payment
+        </button>
+      ) : arrived ? (
         <div className="flex items-center gap-2">
           <span className="flex items-center gap-1.5 rounded-full bg-green-100 px-3 py-1.5 font-medium text-green-800 text-sm">
             <Check className="h-4 w-4 shrink-0" aria-hidden />
@@ -125,4 +183,18 @@ export default function BookingRow({
       )}
     </li>
   );
+}
+
+/** Minutes left on a hold, so the counter can see the clock it is racing. */
+function TimeLeft({ iso: value }: { iso: string }): JSX.Element {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const msLeft = new Date(value).getTime() - now;
+  if (msLeft <= 0) return <>the hold has run out</>;
+  const minutes = Math.ceil(msLeft / 60_000);
+  return <>{minutes === 1 ? "1 minute left to pay" : `${minutes} minutes left to pay`}</>;
 }

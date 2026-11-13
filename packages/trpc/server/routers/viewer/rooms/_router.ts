@@ -9,9 +9,12 @@ import { ZCorrectBillingInputSchema } from "./correctBilling.schema";
 import { ZCreateBlockInputSchema } from "./createBlock.schema";
 import { ZCreateBookingInputSchema, ZCreateOrderInputSchema } from "./createBooking.schema";
 import {
+  ZDeskCancellationRequestInputSchema,
   ZDeskCheckInInputSchema,
   ZDeskCreateBookingInputSchema,
   ZDeskDayInputSchema,
+  ZDeskQuoteInputSchema,
+  ZDeskResumePaymentInputSchema,
   ZDeskSearchInputSchema,
 } from "./desk.schema";
 import { ZIssueCreditNoteInputSchema } from "./issueCreditNote.schema";
@@ -281,6 +284,167 @@ export const roomsRouter = router({
       detail: input.arrived ? "Marked as arrived" : "Cleared a check-in",
     });
     return { ok: true };
+  }),
+
+  /**
+   * What this sale comes to, before anybody is asked for a card.
+   *
+   * The counter screen carried no figure at all, so a hostess could take an
+   * exhibitor through five steps and still not be able to answer "how much?" —
+   * the first time either of them saw a total was on the Stripe page. The
+   * country typed into the form is part of the question, since it decides the
+   * VAT, which is why the quote is asked for here rather than assembled from
+   * the catalogue on the tablet.
+   */
+  deskQuote: authedProcedure.input(ZDeskQuoteInputSchema).query(async ({ ctx, input }) => {
+    await requireDesk(ctx);
+    const { getRoomVatPreviewService } = await import(
+      "@calcom/features/ne26-rooms/di/RoomVatPreviewService.container"
+    );
+    return getRoomVatPreviewService().preview({
+      billing: { country: input.country ?? null, vatNumber: input.vatNumber ?? null },
+      slug: input.slug,
+      durationHours: input.durationHours,
+      startUtc: input.startUtc,
+      addOns: input.addOns,
+    });
+  }),
+
+  /**
+   * Take an exhibitor's request to cancel a room — and only take it.
+   *
+   * The desk cannot cancel, refund or free a slot, and this does not give it
+   * any of those: it writes who asked, who took it and what they said, then
+   * tells sales. Everything that costs money stays in the admin, where it is
+   * decided by somebody who can see the amount.
+   *
+   * It exists because the alternative at the counter was "write to sales",
+   * which leaves no trace, no owner and no clock — and because from the moment
+   * self-service cancellation closes, the desk is the only door left.
+   */
+  deskRequestCancellation: authedProcedure
+    .input(ZDeskCancellationRequestInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { repo, principal, role, actorEmail } = await requireDesk(ctx);
+      const { getResourceBookingRepository } = await import(
+        "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container"
+      );
+      const { canRequestCancellation, cancellationRequestNotification, requestRefusalMessage } = await import(
+        "@calcom/features/ne26-rooms/lib/cancellationRequest"
+      );
+      const bookings = getResourceBookingRepository();
+      const booking = await bookings.findForCancellationRequest(input.uid);
+      if (!booking) throw new TRPCError({ code: "NOT_FOUND", message: "No such booking." });
+
+      const verdict = canRequestCancellation(booking);
+      if (!verdict.allowed) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: requestRefusalMessage(verdict.reason) });
+      }
+
+      const note = input.note?.trim() ? input.note.trim() : null;
+      const taken = await bookings.requestCancellation(input.uid, actorEmail, note);
+      if (!taken) {
+        // Lost a race with another tablet, or with the exhibitor cancelling it
+        // themselves a moment ago. One ask, one mail.
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: requestRefusalMessage("already-requested"),
+        });
+      }
+
+      await repo.recordAction({
+        actorUserId: principal.userId,
+        actorEmail,
+        actorRole: role,
+        action: "booking.cancellation.requested",
+        targetType: "booking",
+        targetId: input.uid,
+        detail: note ? `Cancellation asked at the desk: ${note}` : "Cancellation asked at the desk",
+      });
+
+      const { roomFullLabel } = await import("@calcom/features/ne26-rooms/lib/roomNames");
+      const { formatSlotRange } = await import("@calcom/features/ne26-rooms/lib/teamNotification");
+      const { orderRef } = await import("@calcom/features/ne26-rooms/lib/orderRef");
+      const { notifyTeam } = await import("@calcom/features/ne26-rooms/lib/notifyTeam");
+      const { WEBAPP_URL } = await import("@calcom/lib/constants");
+
+      const mail = cancellationRequestNotification({
+        roomLabel: roomFullLabel(booking.resource),
+        slotLabel: formatSlotRange(booking.startTime, booking.endTime),
+        bookerName: booking.bookerName,
+        bookerEmail: booking.bookerEmail,
+        company: booking.order?.bookerLegalName ?? null,
+        takenBy: actorEmail,
+        note,
+        orderUrl: booking.order ? `${WEBAPP_URL}/rooms/admin/order/${booking.order.uid}` : WEBAPP_URL,
+        orderRef: booking.order ? orderRef(booking.order.orderNumber) : "—",
+      });
+      // Never throws: the ask is recorded either way, and a mail that failed
+      // must not tell the hostess the request was refused.
+      await notifyTeam("sales", mail.subject, mail.body, mail.html);
+
+      return { taken: true };
+    }),
+
+  /**
+   * The payment page for a hold, again.
+   *
+   * A sale started at the counter lived on one screen: once it was left, the
+   * link was gone and the room stayed held by a payment nobody could reach any
+   * more. The desk is staff, so it may reopen anybody's hold — unlike the
+   * exhibitor's own resume, which is scoped to their account.
+   */
+  deskResumePayment: authedProcedure.input(ZDeskResumePaymentInputSchema).mutation(async ({ ctx, input }) => {
+    const { repo, principal, role, actorEmail } = await requireDesk(ctx);
+    const { getResourceBookingRepository } = await import(
+      "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container"
+    );
+    const booking = await getResourceBookingRepository().findForCancellationRequest(input.uid);
+    if (!booking?.order) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "That booking has no payment to reopen." });
+    }
+
+    const { resumeOrderCheckout } = await import("@calcom/features/ne26-rooms/services/startOrderCheckout");
+    const { WEBAPP_URL } = await import("@calcom/lib/constants");
+    let checkoutUrl: string;
+    try {
+      const resumed = await resumeOrderCheckout({
+        orderUid: booking.order.uid,
+        buyerEmail: booking.bookerEmail,
+        webappUrl: WEBAPP_URL,
+        // Staff: the desk reopens the hold of whoever is standing there, which
+        // is not necessarily an account at all.
+        asStaff: true,
+      });
+      checkoutUrl = resumed.checkoutUrl;
+    } catch (e) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: e instanceof Error ? e.message : "That hold can no longer be paid for.",
+      });
+    }
+
+    if (input.email) {
+      const { sendPaymentLinkEmail } = await import("@calcom/features/ne26-rooms/lib/paymentLinkEmail");
+      await sendPaymentLinkEmail({
+        to: booking.bookerEmail,
+        bookerName: booking.bookerName,
+        roomLabel: booking.resource.name,
+        checkoutUrl,
+      });
+    }
+
+    await repo.recordAction({
+      actorUserId: principal.userId,
+      actorEmail,
+      actorRole: role,
+      action: input.email ? "booking.payment.link.emailed" : "booking.payment.reopened",
+      targetType: "booking",
+      targetId: input.uid,
+      detail: input.email ? `Payment link sent to ${booking.bookerEmail}` : "Payment page reopened",
+    });
+
+    return { checkoutUrl, emailed: Boolean(input.email) };
   }),
 
   /**

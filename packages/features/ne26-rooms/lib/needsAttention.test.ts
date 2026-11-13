@@ -19,7 +19,15 @@ const room = (
 });
 
 const run = (over: Partial<AttentionInput>) =>
-  needsAttention({ now: NOW, orphanOrders: [], staleCancellations: [], bookings: [], configIssues: [], ...over });
+  needsAttention({
+    now: NOW,
+    orphanOrders: [],
+    staleCancellations: [],
+    cancellationRequests: [],
+    bookings: [],
+    configIssues: [],
+    ...over,
+  });
 
 describe("needsAttention", () => {
   it("is empty when nothing needs a person", () => {
@@ -113,5 +121,41 @@ describe("needsAttention", () => {
       bookings: [room({ orderUid: "o4", invoiceNumber: null })],
     });
     expect(attentionCount(items)).toBe(1);
+  });
+});
+
+describe("a cancellation asked at the welcome desk", () => {
+  const REQUEST = {
+    uid: "b1",
+    orderUid: "o1",
+    roomName: "Large Room 1",
+    bookerName: "Jean Dupont",
+    amountTotal: 107100,
+    currency: "EUR",
+    requestedBy: "Zeynep",
+    note: "Flight cancelled",
+  };
+
+  it("is raised as a warning, with the room, the money and who took it", () => {
+    const [item] = run({ cancellationRequests: [REQUEST] });
+    expect(item.kind).toBe("cancellation-requested");
+    expect(item.severity).toBe("warning");
+    expect(item.detail).toContain("Large Room 1");
+    expect(item.detail).toContain("Zeynep");
+    expect(item.detail).toContain("Flight cancelled");
+    expect(item.href).toBe("/rooms/admin/order/o1");
+  });
+
+  it("says the money has not moved, because at the desk it never does", () => {
+    const [item] = run({ cancellationRequests: [REQUEST] });
+    expect(item.detail).toContain("Still sold, still unrefunded");
+  });
+
+  it("outranks a configuration warning: somebody is waiting on an answer", () => {
+    const items = run({
+      cancellationRequests: [REQUEST],
+      configIssues: [{ key: "k", level: "warning", title: "Something", detail: "…" }],
+    });
+    expect(items[0].kind).toBe("cancellation-requested");
   });
 });

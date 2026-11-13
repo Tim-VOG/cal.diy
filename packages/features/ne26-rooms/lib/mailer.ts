@@ -126,6 +126,30 @@ export async function sendTeamEmail(input: {
 }
 
 /**
+ * Send one already-built message to one exhibitor.
+ *
+ * The mails above each assemble their own subject and body inside their own
+ * sender, which is fine while the message and the sending are one thought. The
+ * newer builders are pure functions tested on their own words, and they only
+ * need a way out — this is it. Honours the test redirect like everything else.
+ */
+export async function sendRoomsEmail(input: {
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+}): Promise<void> {
+  const { transport, from } = transportOrThrow();
+  await transport.sendMail({
+    from,
+    to: process.env.NE26_EMAIL_REDIRECT_TO || input.to,
+    subject: input.subject,
+    text: input.text,
+    html: input.html,
+  });
+}
+
+/**
  * The rooms are held, but only for a while — say until when.
  *
  * Sent twice for one order: once when the hold is taken, and once when a

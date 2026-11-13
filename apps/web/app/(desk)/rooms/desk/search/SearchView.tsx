@@ -21,6 +21,11 @@ export default function SearchView(): JSX.Element {
     { query: typed },
     { enabled: typed.length >= 2, placeholderData: (previous) => previous }
   );
+  const resume = trpc.viewer.rooms.deskResumePayment.useMutation({
+    onSuccess: (r) => {
+      window.location.href = r.checkoutUrl;
+    },
+  });
   const checkIn = trpc.viewer.rooms.deskCheckIn.useMutation({
     onSuccess: () => void results.refetch(),
   });
@@ -70,8 +75,10 @@ export default function SearchView(): JSX.Element {
                 key={booking.uid}
                 booking={booking}
                 showDay
-                busy={checkIn.isPending}
+                busy={checkIn.isPending || resume.isPending}
                 onToggle={(uid, arrived) => checkIn.mutate({ uid, arrived })}
+                onResume={(uid) => resume.mutate({ uid })}
+                onRequested={() => void results.refetch()}
               />
             ))}
           </ul>

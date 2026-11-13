@@ -448,11 +448,23 @@ export class ResourceBookingRepository {
    * at the desk would have a hostess welcoming someone who has not bought
    * anything. Admin blocks are excluded for the same reason.
    */
-  findForDesk(fromUtc: Date, toUtc: Date) {
+  /**
+   * The day's rooms as the welcome desk reads them.
+   *
+   * Live unpaid holds are included, not only paid rooms. They were excluded on
+   * the grounds that a hold is not an arrival — true, and it left the counter
+   * unable to see the exhibitor standing in front of it saying "I booked this
+   * morning and the card was refused". The desk can now find that hold and
+   * reopen its payment; checking it in stays impossible until it is paid.
+   */
+  findForDesk(fromUtc: Date, toUtc: Date, now: Date = new Date()) {
     return this.prismaClient.resourceBooking.findMany({
       where: {
         isBlock: false,
-        status: ResourceBookingStatus.CONFIRMED,
+        OR: [
+          { status: ResourceBookingStatus.CONFIRMED },
+          { status: ResourceBookingStatus.PENDING, holdExpiresAt: { gt: now } },
+        ],
         startTime: { lt: toUtc },
         endTime: { gt: fromUtc },
       },
@@ -464,8 +476,16 @@ export class ResourceBookingRepository {
         durationMinutes: true,
         bookerName: true,
         bookerEmail: true,
+        // NE26: a live hold is shown differently from a paid room, and frees
+        // itself at a time the counter has to be able to read.
+        status: true,
+        holdExpiresAt: true,
         checkedInAt: true,
         checkedInByEmail: true,
+        // NE26: an ask the desk already took, so it says so instead of taking
+        // it again.
+        cancellationRequestedAt: true,
+        cancellationRequestedBy: true,
         // NE26: the company is how an exhibitor introduces themselves at the
         // counter ("I'm with AWS"), so the desk reads it as well as the name.
         order: { select: { bookerLegalName: true } },
@@ -504,8 +524,14 @@ export class ResourceBookingRepository {
         bookerEmail: true,
         status: true,
         isBlock: true,
+        // NE26: an unpaid hold frees itself; the counter has to see that clock.
+        holdExpiresAt: true,
         checkedInAt: true,
         checkedInByEmail: true,
+        // NE26: an ask the desk already took, so it says so instead of taking
+        // it again.
+        cancellationRequestedAt: true,
+        cancellationRequestedBy: true,
         // NE26: the company is how an exhibitor introduces themselves at the
         // counter ("I'm with AWS"), so the desk reads it as well as the name.
         order: { select: { bookerLegalName: true } },
@@ -522,12 +548,23 @@ export class ResourceBookingRepository {
    * Matches the booker's name, their email or their company; the caller decides
    * how many to show.
    */
-  searchForDesk(query: string, limit = 25) {
+  searchForDesk(query: string, limit = 25, now: Date = new Date()) {
     const q = query.trim();
     return this.prismaClient.resourceBooking.findMany({
       where: {
         isBlock: false,
-        status: ResourceBookingStatus.CONFIRMED,
+        // Live holds too: "I booked this morning" is said at the counter by
+        // people whose payment never went through, and a search that cannot
+        // find them leaves the hostess with nothing to offer but a new sale on
+        // a room the exhibitor is already holding.
+        AND: [
+          {
+            OR: [
+              { status: ResourceBookingStatus.CONFIRMED },
+              { status: ResourceBookingStatus.PENDING, holdExpiresAt: { gt: now } },
+            ],
+          },
+        ],
         OR: [
           { bookerName: { contains: q, mode: "insensitive" } },
           { bookerEmail: { contains: q, mode: "insensitive" } },
@@ -545,8 +582,16 @@ export class ResourceBookingRepository {
         durationMinutes: true,
         bookerName: true,
         bookerEmail: true,
+        // NE26: a live hold is shown differently from a paid room, and frees
+        // itself at a time the counter has to be able to read.
+        status: true,
+        holdExpiresAt: true,
         checkedInAt: true,
         checkedInByEmail: true,
+        // NE26: an ask the desk already took, so it says so instead of taking
+        // it again.
+        cancellationRequestedAt: true,
+        cancellationRequestedBy: true,
         // NE26: the company is how an exhibitor introduces themselves at the
         // counter ("I'm with AWS"), so the desk reads it as well as the name.
         order: { select: { bookerLegalName: true } },
@@ -563,6 +608,83 @@ export class ResourceBookingRepository {
    * returns whether a row actually changed so the caller can tell the difference
    * between "done" and "that booking is not checkable".
    */
+  /**
+   * The room an exhibitor is asking to give back, with everything the desk and
+   * the notification need to decide and to write.
+   */
+  findForCancellationRequest(uid: string) {
+    return this.prismaClient.resourceBooking.findUnique({
+      where: { uid },
+      select: {
+        uid: true,
+        status: true,
+        startTime: true,
+        endTime: true,
+        bookerName: true,
+        bookerEmail: true,
+        creditNoteId: true,
+        bookerCancelledAt: true,
+        cancellationRequestedAt: true,
+        resource: { select: { name: true, venueName: true } },
+        order: { select: { uid: true, orderNumber: true, bookerLegalName: true } },
+      },
+    });
+  }
+
+  /**
+   * Record that someone asked the welcome desk to cancel a room.
+   *
+   * Writes nothing but the trace: the status, the slot and the money are
+   * untouched, because the desk is not where a refund is decided. Scoped to a
+   * CONFIRMED room that has not been asked about already, and returns whether a
+   * row actually changed — so two taps on a tablet produce one notification.
+   */
+  async requestCancellation(uid: string, byEmail: string, note: string | null): Promise<boolean> {
+    const result = await this.prismaClient.resourceBooking.updateMany({
+      where: {
+        uid,
+        isBlock: false,
+        status: ResourceBookingStatus.CONFIRMED,
+        creditNoteId: null,
+        bookerCancelledAt: null,
+        cancellationRequestedAt: null,
+      },
+      data: {
+        cancellationRequestedAt: new Date(),
+        cancellationRequestedBy: byEmail,
+        cancellationRequestNote: note,
+      },
+    });
+    return result.count > 0;
+  }
+
+  /** Asks the desk has taken that nobody has acted on yet, for the dashboard. */
+  findOpenCancellationRequests() {
+    return this.prismaClient.resourceBooking.findMany({
+      where: {
+        isBlock: false,
+        status: ResourceBookingStatus.CONFIRMED,
+        cancellationRequestedAt: { not: null },
+        creditNoteId: null,
+        bookerCancelledAt: null,
+      },
+      orderBy: [{ cancellationRequestedAt: "asc" }],
+      select: {
+        uid: true,
+        startTime: true,
+        endTime: true,
+        bookerName: true,
+        amountTotal: true,
+        currency: true,
+        cancellationRequestedAt: true,
+        cancellationRequestedBy: true,
+        cancellationRequestNote: true,
+        resource: { select: { name: true, venueName: true } },
+        order: { select: { uid: true, orderNumber: true } },
+      },
+    });
+  }
+
   async setCheckedIn(uid: string, at: Date | null, byEmail: string | null): Promise<boolean> {
     const result = await this.prismaClient.resourceBooking.updateMany({
       where: { uid, isBlock: false, status: ResourceBookingStatus.CONFIRMED },
@@ -583,6 +705,10 @@ export class ResourceBookingRepository {
         durationMinutes: true,
         bookerName: true,
         bookerEmail: true,
+        // NE26: an ask the welcome desk took and nobody has acted on yet.
+        cancellationRequestedAt: true,
+        cancellationRequestedBy: true,
+        cancellationRequestNote: true,
         amountTotal: true,
         currency: true,
         stripePaymentId: true,

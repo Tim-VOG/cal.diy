@@ -22,6 +22,7 @@ export type AttentionSeverity = "critical" | "warning" | "info";
 export type AttentionKind =
   | "refund-not-credited"
   | "paid-no-room"
+  | "cancellation-requested"
   | "config"
   | "hold-expiring"
   | "invoice-missing"
@@ -77,6 +78,23 @@ export interface AttentionInput {
     invoiceNumber: string | null;
     holdExpiresAt: string | null;
   }[];
+  /**
+   * Rooms an exhibitor asked the welcome desk to cancel.
+   *
+   * The desk can only take the message — no refund, no slot freed — so these sit
+   * here until somebody decides. Left alone they are a promise made at a counter
+   * and not kept, which is why they rank above a configuration warning.
+   */
+  cancellationRequests: {
+    uid: string;
+    orderUid: string | null;
+    roomName: string;
+    bookerName: string;
+    amountTotal: number;
+    currency: string;
+    requestedBy: string | null;
+    note: string | null;
+  }[];
   configIssues: { key: string; level: "error" | "warning"; title: string; detail: string }[];
 }
 
@@ -87,11 +105,14 @@ const SEVERITY_RANK: Record<AttentionSeverity, number> = { critical: 0, warning:
 const KIND_RANK: Record<AttentionKind, number> = {
   "refund-not-credited": 0,
   "paid-no-room": 1,
-  config: 2,
-  "hold-expiring": 3,
-  "invoice-missing": 4,
-  "holds-running": 5,
-  abandoned: 6,
+  // Above the configuration warnings on purpose: somebody asked a person at a
+  // counter for their money back and was told it would be looked at.
+  "cancellation-requested": 2,
+  config: 3,
+  "hold-expiring": 4,
+  "invoice-missing": 5,
+  "holds-running": 6,
+  abandoned: 7,
 };
 
 function money(cents: number, currency: string): string {
@@ -124,6 +145,20 @@ export function needsAttention(input: AttentionInput): AttentionItem[] {
       detail: `${o.bookerName} · ${money(o.amountTotal, o.currency)} — refund in Stripe, then close the order.`,
       href: `/rooms/admin/order/${o.uid}`,
       actionLabel: "Open order",
+    });
+  }
+
+  for (const r of input.cancellationRequests) {
+    items.push({
+      id: `cancellation-requested:${r.uid}`,
+      severity: "warning",
+      kind: "cancellation-requested",
+      title: "Cancellation asked at the desk",
+      detail: `${r.roomName} · ${r.bookerName} · ${money(r.amountTotal, r.currency)}${
+        r.requestedBy ? ` — taken by ${r.requestedBy}` : ""
+      }${r.note ? ` · “${r.note}”` : ""}. Still sold, still unrefunded.`,
+      href: r.orderUid ? `/rooms/admin/order/${r.orderUid}` : undefined,
+      actionLabel: "Decide",
     });
   }
 

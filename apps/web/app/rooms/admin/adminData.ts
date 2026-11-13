@@ -21,20 +21,31 @@ export async function loadAdminBookings() {
   // Drop abandoned, unpaid bookings whose hold expired before listing.
   await getResourceBookingRepository().deleteExpiredHolds(new Date());
 
-  const [bookings, allRooms, roomSettings, settings, orphanOrders, staleCancellations, blocks] =
-    await Promise.all([
-      getResourceBookingRepository().findAllWithDetails(),
-      getResourceRepository().findAllForAdmin(),
-      getNe26RoomSettingsRepository().get(),
-      getInvoiceSettingsRepository().get(),
-      // An order whose rooms are gone appears nowhere in a list of rooms.
-      getNe26OrderRepository().findOrdersWithoutRooms(),
-      // A self-service refund whose webhook never landed: money out, room still
-      // sold. Five minutes is long enough that a webhook in flight is not raised
-      // as a problem, short enough to catch one that will never come.
-      getNe26OrderRepository().findCancellationsWithoutCreditNote(new Date(Date.now() - 5 * 60_000)),
-      getResourceBookingRepository().findBlocks(),
-    ]);
+  const [
+    bookings,
+    allRooms,
+    roomSettings,
+    settings,
+    orphanOrders,
+    staleCancellations,
+    cancellationRequests,
+    blocks,
+  ] = await Promise.all([
+    getResourceBookingRepository().findAllWithDetails(),
+    getResourceRepository().findAllForAdmin(),
+    getNe26RoomSettingsRepository().get(),
+    getInvoiceSettingsRepository().get(),
+    // An order whose rooms are gone appears nowhere in a list of rooms.
+    getNe26OrderRepository().findOrdersWithoutRooms(),
+    // A self-service refund whose webhook never landed: money out, room still
+    // sold. Five minutes is long enough that a webhook in flight is not raised
+    // as a problem, short enough to catch one that will never come.
+    getNe26OrderRepository().findCancellationsWithoutCreditNote(new Date(Date.now() - 5 * 60_000)),
+    // Asks the welcome desk has taken and nobody has acted on. The desk can
+    // only record them, so this list is where they wait for a decision.
+    getResourceBookingRepository().findOpenCancellationRequests(),
+    getResourceBookingRepository().findBlocks(),
+  ]);
 
   const rows: AdminBookingRow[] = bookings.map((b) => {
     const docs = bookingDocuments(b);
@@ -44,6 +55,9 @@ export async function loadAdminBookings() {
       roomName: b.resource.name,
       // NE26: the sticker on the door, for the sheets the floor reads.
       roomVenueName: b.resource.venueName,
+      cancellationRequestedAt: b.cancellationRequestedAt?.toISOString() ?? null,
+      cancellationRequestedBy: b.cancellationRequestedBy,
+      cancellationRequestNote: b.cancellationRequestNote,
       category: b.resource.category,
       startUtc: b.startTime.toISOString(),
       endUtc: b.endTime.toISOString(),
@@ -92,6 +106,16 @@ export async function loadAdminBookings() {
         amountTotal: c.amountTotal,
         currency: c.currency,
       })),
+    cancellationRequests: cancellationRequests.map((r) => ({
+      uid: r.uid,
+      orderUid: r.order?.uid ?? null,
+      roomName: r.resource.name,
+      bookerName: r.bookerName,
+      amountTotal: r.amountTotal,
+      currency: r.currency,
+      requestedBy: r.cancellationRequestedBy,
+      note: r.cancellationRequestNote,
+    })),
     bookings: rows,
     configIssues,
   });

@@ -127,6 +127,23 @@ export default function BookingSidePanel({
           ) : null}
         </dl>
 
+        {booking.cancellationRequestedAt && !booking.creditNoteNumber ? (
+          // Taken at the counter, where nothing could be decided. It sits here
+          // until somebody does — the room is still sold and still unrefunded.
+          <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2.5">
+            <p className="font-medium text-amber-900 text-sm">
+              The exhibitor asked to cancel this room
+              {booking.cancellationRequestedBy ? ` — taken by ${booking.cancellationRequestedBy}` : ""}.
+            </p>
+            {booking.cancellationRequestNote ? (
+              <p className="mt-1 text-amber-900 text-sm">“{booking.cancellationRequestNote}”</p>
+            ) : null}
+            <p className="mt-1 text-amber-800 text-xs">
+              Nothing has moved. Cancel &amp; credit below, then refund in Stripe — or leave it and tell them.
+            </p>
+          </div>
+        ) : null}
+
         <div className="mt-3 border-gray-100 border-t pt-3">
           {booking.orderUid ? (
             <BookingActions

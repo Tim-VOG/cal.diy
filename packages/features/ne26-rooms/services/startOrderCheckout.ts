@@ -233,16 +233,22 @@ export async function startOrderCheckout(input: StartOrderCheckoutInput) {
  */
 export async function resumeOrderCheckout(input: {
   orderUid: string;
-  buyerUserId: number | null;
+  buyerUserId?: number | null;
   buyerEmail: string;
   webappUrl: string;
+  /**
+   * The welcome desk reopening a hold that is not its own. Staff stand in front
+   * of the person who owns it, so the ownership check — which exists to stop one
+   * exhibitor reaching another's payment page — would only get in the way.
+   */
+  asStaff?: boolean;
 }): Promise<{ checkoutUrl: string }> {
   const orders = getNe26OrderRepository();
   const order = await orders.findByUid(input.orderUid);
   if (!order || order.status !== "PENDING" || !order.holdExpiresAt) {
     throw new ErrorWithCode(ErrorCode.NotFound, "That order is no longer awaiting payment.");
   }
-  if (order.bookerUserId !== input.buyerUserId) {
+  if (!input.asStaff && order.bookerUserId !== (input.buyerUserId ?? null)) {
     throw new ErrorWithCode(ErrorCode.NotFound, "That order is no longer awaiting payment.");
   }
   if (order.holdExpiresAt.getTime() <= Date.now()) {

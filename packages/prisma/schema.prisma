@@ -3000,6 +3000,14 @@ model ResourceBooking {
   // mistaken check-in can be cleared without losing that it happened.
   checkedInAt             DateTime?
   checkedInByEmail        String?
+  // NE26: an exhibitor asked the welcome desk to cancel this room. Recording
+  // the ask is ALL the desk may do: no money moves and the slot stays sold,
+  // because a refund is a decision and a tablet on a counter is not where it is
+  // taken. An admin acts on it from the order. The three columns are the trace
+  // — when it was asked, who took it, and what the exhibitor said.
+  cancellationRequestedAt DateTime?
+  cancellationRequestedBy String?
+  cancellationRequestNote String?
   slots                   ResourceSlot[]
   addOns                  BookingAddOn[]
   createdAt               DateTime              @default(now())

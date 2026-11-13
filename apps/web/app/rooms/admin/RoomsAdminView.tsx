@@ -22,6 +22,10 @@ export interface AdminBookingRow {
   roomName: string;
   /** The name on the door, when it differs from the one above. */
   roomVenueName: string | null;
+  /** Set when the welcome desk took a cancellation request nobody has acted on. */
+  cancellationRequestedAt: string | null;
+  cancellationRequestedBy: string | null;
+  cancellationRequestNote: string | null;
   category: string;
   startUtc: string;
   endUtc: string;

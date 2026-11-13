@@ -42,3 +42,38 @@ export const ZDeskCreateBookingInputSchema = z.object({
     .optional(),
 });
 export type TDeskCreateBookingInputSchema = z.infer<typeof ZDeskCreateBookingInputSchema>;
+
+export const ZDeskCancellationRequestInputSchema = z.object({
+  uid: z.string().min(1),
+  /**
+   * What the exhibitor said, in the hostess's words. Optional and short: it is
+   * context for whoever decides, not a case file.
+   */
+  note: z.string().max(400).optional(),
+});
+export type TDeskCancellationRequestInputSchema = z.infer<typeof ZDeskCancellationRequestInputSchema>;
+
+export const ZDeskResumePaymentInputSchema = z.object({
+  /** The room whose unpaid order needs its payment page again. */
+  uid: z.string().min(1),
+  /** true mails the link to the exhibitor instead of opening it on the tablet. */
+  email: z.boolean().optional(),
+});
+export type TDeskResumePaymentInputSchema = z.infer<typeof ZDeskResumePaymentInputSchema>;
+
+export const ZDeskQuoteInputSchema = z.object({
+  slug: z.string().min(1),
+  durationHours: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  startUtc: z.string().datetime().optional(),
+  addOns: z
+    .array(z.object({ slug: z.string().min(1), quantity: z.number().int().min(1).max(500) }))
+    .max(20)
+    .optional(),
+  /**
+   * Typed at the counter, not read from an account: it is what decides the VAT
+   * the exhibitor is about to be charged.
+   */
+  country: z.string().length(2).optional(),
+  vatNumber: z.string().max(40).optional(),
+});
+export type TDeskQuoteInputSchema = z.infer<typeof ZDeskQuoteInputSchema>;

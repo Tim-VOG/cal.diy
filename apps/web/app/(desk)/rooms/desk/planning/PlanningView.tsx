@@ -53,6 +53,9 @@ interface PlanningBooking {
   arrived: boolean;
   arrivedAt: string | null;
   arrivedBy: string | null;
+  holdExpiresAt: string | null;
+  cancellationRequestedAt: string | null;
+  cancellationRequestedBy: string | null;
 }
 
 /**
@@ -116,6 +119,11 @@ export default function PlanningView(): JSX.Element {
         arrived: Boolean(b.checkedInAt),
         arrivedAt: b.checkedInAt ? new Date(b.checkedInAt as unknown as string).toISOString() : null,
         arrivedBy: b.checkedInByEmail,
+        holdExpiresAt: b.holdExpiresAt ? new Date(b.holdExpiresAt as unknown as string).toISOString() : null,
+        cancellationRequestedAt: b.cancellationRequestedAt
+          ? new Date(b.cancellationRequestedAt as unknown as string).toISOString()
+          : null,
+        cancellationRequestedBy: b.cancellationRequestedBy,
       })),
     [payloadBookings]
   );
@@ -137,9 +145,24 @@ export default function PlanningView(): JSX.Element {
   const checkIn = trpc.viewer.rooms.deskCheckIn.useMutation({
     onSuccess: () => void planning.refetch(),
   });
+  const [emailedTo, setEmailedTo] = useState<string | null>(null);
+  const resume = trpc.viewer.rooms.deskResumePayment.useMutation({
+    onSuccess: (r, variables) => {
+      if (r.emailed) {
+        const b = bookings.find((x) => x.uid === variables.uid);
+        setEmailedTo(b?.bookerEmail ?? "the exhibitor");
+        return;
+      }
+      // Same tab: the tablet IS the payment terminal at the counter, and a new
+      // window on a kiosk browser is a window nobody can find again.
+      window.location.href = r.checkoutUrl;
+    },
+  });
   const dismiss = () => {
     setOpenUid(null);
     checkIn.reset();
+    resume.reset();
+    setEmailedTo(null);
   };
   const panel: PanelBooking | null = useMemo(() => {
     const b = bookings.find((x) => x.uid === openUid);
@@ -157,8 +180,11 @@ export default function PlanningView(): JSX.Element {
       company: b.company,
       addOns: b.addOns,
       held: b.status === "PENDING",
+      holdExpiresAt: b.holdExpiresAt,
       arrivedAt: b.arrivedAt,
       arrivedBy: b.arrivedBy,
+      cancellationRequestedAt: b.cancellationRequestedAt,
+      cancellationRequestedBy: b.cancellationRequestedBy,
     };
   }, [bookings, rooms, openUid]);
 
@@ -286,6 +312,8 @@ export default function PlanningView(): JSX.Element {
                         block={block}
                         onOpen={() => {
                           checkIn.reset();
+                          resume.reset();
+                          setEmailedTo(null);
                           setOpenUid(block.booking.uid);
                         }}
                       />
@@ -318,8 +346,13 @@ export default function PlanningView(): JSX.Element {
           booking={panel}
           onClose={dismiss}
           onToggle={(uid, arrived) => checkIn.mutate({ uid, arrived })}
+          onResume={(uid, email) => resume.mutate({ uid, email })}
+          resuming={resume.isPending}
+          resumeError={resume.error?.message ?? null}
+          emailedTo={emailedTo}
           busy={checkIn.isPending}
           error={checkIn.error?.message ?? null}
+          onRequested={() => void planning.refetch()}
         />
       ) : null}
     </div>

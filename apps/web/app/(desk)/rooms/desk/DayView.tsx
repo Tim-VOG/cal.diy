@@ -42,6 +42,13 @@ export default function DayView(): JSX.Element {
   const checkIn = trpc.viewer.rooms.deskCheckIn.useMutation({
     onSuccess: () => void bookings.refetch(),
   });
+  // The counter's fallback for a hold that was never paid: the same payment
+  // page, in the same tab, because the tablet is the terminal.
+  const resume = trpc.viewer.rooms.deskResumePayment.useMutation({
+    onSuccess: (r) => {
+      window.location.href = r.checkoutUrl;
+    },
+  });
 
   const rows = (bookings.data ?? []) as unknown as DeskBooking[];
   const arrived = rows.filter((r) => r.checkedInAt).length;
@@ -93,8 +100,8 @@ export default function DayView(): JSX.Element {
 
       <h1 className="mt-4 font-bold text-2xl text-[#000643]">{label(date)}</h1>
       <p className="mt-1 text-gray-600 text-sm">
-        Paid bookings only. A room someone has reserved but not paid for is not an arrival, so it does not
-        appear here.
+        Everyone expected today. A room held but not paid for is shown in amber — it is not an arrival until
+        the payment goes through.
       </p>
 
       {bookings.isPending ? (
@@ -105,8 +112,10 @@ export default function DayView(): JSX.Element {
             <BookingRow
               key={booking.uid}
               booking={booking}
-              busy={checkIn.isPending}
+              busy={checkIn.isPending || resume.isPending}
               onToggle={(uid, isArrived) => checkIn.mutate({ uid, arrived: isArrived })}
+              onResume={(uid) => resume.mutate({ uid })}
+              onRequested={() => void bookings.refetch()}
             />
           ))}
         </ul>
@@ -116,8 +125,10 @@ export default function DayView(): JSX.Element {
         </p>
       )}
 
-      {checkIn.error ? (
-        <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-red-700 text-sm">{checkIn.error.message}</p>
+      {checkIn.error || resume.error ? (
+        <p role="alert" className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-red-700 text-sm">
+          {checkIn.error?.message ?? resume.error?.message}
+        </p>
       ) : null}
     </div>
   );

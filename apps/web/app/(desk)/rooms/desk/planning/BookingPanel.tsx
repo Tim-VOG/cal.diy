@@ -1,7 +1,8 @@
 "use client";
 
-import { Check, Clock, DoorOpen, Mail, Undo2, UserCheck, X } from "lucide-react";
-import { useEffect } from "react";
+import { Check, Clock, CreditCard, DoorOpen, Mail, Send, Undo2, UserCheck, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import CancelRequestButton from "../CancelRequestButton";
 
 export interface PanelBooking {
   uid: string;
@@ -15,8 +16,12 @@ export interface PanelBooking {
   company: string | null;
   addOns: { name: string; quantity: number }[];
   held: boolean;
+  /** When an unpaid hold frees itself, so the counter can see the clock. */
+  holdExpiresAt: string | null;
   arrivedAt: string | null;
   arrivedBy: string | null;
+  cancellationRequestedAt: string | null;
+  cancellationRequestedBy: string | null;
 }
 
 function hhmm(iso: string): string {
@@ -48,19 +53,36 @@ function dayLabel(iso: string): string {
  * Still no prices: the panel says what was bought, never what it cost. And
  * check-in stays shut on an unpaid hold, the same rule the server enforces, so
  * the button is simply absent rather than failing when pressed.
+ *
+ * What it does with an unpaid hold instead is reopen its payment page, or mail
+ * the link — the counter's only fallback for a refused card, and the only way
+ * back to a sale whose one screen has been left. And what it does with a room
+ * somebody wants to give back is take the message, never the decision.
  */
 export default function BookingPanel({
   booking,
   onClose,
   onToggle,
+  onResume,
+  resuming,
+  resumeError,
+  emailedTo,
   busy,
   error,
+  onRequested,
 }: {
   booking: PanelBooking;
   onClose: () => void;
   onToggle: (uid: string, arrived: boolean) => void;
+  /** Reopens the payment page for a hold, or mails the link. */
+  onResume: (uid: string, email: boolean) => void;
+  resuming: boolean;
+  resumeError: string | null;
+  /** Set once a link has been mailed, so the screen says so. */
+  emailedTo: string | null;
   busy: boolean;
   error: string | null;
+  onRequested: () => void;
 }): JSX.Element {
   // A tablet has no Escape key, but the admin works this board on a laptop.
   useEffect(() => {
@@ -140,10 +162,59 @@ export default function BookingPanel({
           </div>
 
           {booking.held ? (
-            <p className="rounded-lg bg-amber-50 px-3 py-2.5 text-amber-900 text-sm">
-              This room is held but not paid for. It only becomes an arrival once the payment goes through.
-            </p>
-          ) : null}
+            <div className="rounded-lg bg-amber-50 px-3 py-3">
+              <p className="text-amber-900 text-sm">
+                This room is held but not paid for. It only becomes an arrival once the payment goes through.
+              </p>
+              {booking.holdExpiresAt ? (
+                <p className="mt-1 font-medium text-amber-900 text-sm tabular-nums">
+                  <TimeLeft iso={booking.holdExpiresAt} />
+                </p>
+              ) : null}
+
+              {emailedTo ? (
+                <p className="mt-3 flex items-start gap-1.5 text-amber-900 text-sm">
+                  <Check className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                  Link sent to {emailedTo}. The room stays held until the clock runs out.
+                </p>
+              ) : (
+                <div className="mt-3 grid gap-2">
+                  <button
+                    type="button"
+                    disabled={resuming}
+                    onClick={() => onResume(booking.uid, false)}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#000643] px-4 py-2.5 font-medium text-sm text-white transition hover:bg-[#000643]/90 disabled:opacity-50">
+                    <CreditCard className="h-4 w-4 shrink-0" aria-hidden />
+                    {resuming ? "Opening…" : "Open the payment page"}
+                  </button>
+                  <EmailLinkButton
+                    email={booking.bookerEmail}
+                    busy={resuming}
+                    onSend={() => onResume(booking.uid, true)}
+                  />
+                </div>
+              )}
+
+              {resumeError ? (
+                <p role="alert" className="mt-2 text-red-700 text-sm">
+                  {resumeError}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="border-gray-100 border-t pt-4">
+              <p className="font-medium text-[11px] text-gray-400 uppercase tracking-wide">Wants to cancel</p>
+              <div className="mt-2">
+                <CancelRequestButton
+                  uid={booking.uid}
+                  roomLabel={booking.doorName}
+                  requestedAt={booking.cancellationRequestedAt}
+                  requestedBy={booking.cancellationRequestedBy}
+                  onDone={onRequested}
+                />
+              </div>
+            </div>
+          )}
 
           {error ? (
             <p role="alert" className="rounded-lg bg-red-50 px-3 py-2.5 text-red-700 text-sm">
@@ -185,6 +256,79 @@ export default function BookingPanel({
           </div>
         )}
       </aside>
+    </div>
+  );
+}
+
+/**
+ * How long an unpaid hold has left, counting down.
+ *
+ * A hold that frees itself at a time nobody can see is how a room gets sold
+ * twice in one conversation: the hostess believes it is held, the clock runs
+ * out mid-sentence, and the board shows it free to the next person asking.
+ */
+function TimeLeft({ iso }: { iso: string }): JSX.Element {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const msLeft = new Date(iso).getTime() - now;
+  if (msLeft <= 0) return <>The hold has run out — the room is back on sale.</>;
+  const minutes = Math.ceil(msLeft / 60_000);
+  return <>{minutes === 1 ? "1 minute left to pay" : `${minutes} minutes left to pay`}</>;
+}
+
+/**
+ * Mailing the payment link is the counter's fallback for a refused card. It
+ * leaves the building, so it is asked twice.
+ */
+function EmailLinkButton({
+  email,
+  busy,
+  onSend,
+}: {
+  email: string;
+  busy: boolean;
+  onSend: () => void;
+}): JSX.Element {
+  const [asking, setAsking] = useState(false);
+
+  if (!asking) {
+    return (
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => setAsking(true)}
+        className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-300 bg-white px-4 py-2.5 font-medium text-amber-900 text-sm transition hover:border-amber-500 disabled:opacity-50">
+        <Send className="h-4 w-4 shrink-0" aria-hidden />
+        Email the link instead
+      </button>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-amber-300 bg-white p-3">
+      <p className="break-all text-[#000643] text-sm">
+        Send the payment link to <span className="font-medium">{email}</span>?
+      </p>
+      <div className="mt-2 flex gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onSend}
+          className="flex-1 rounded-lg bg-[#000643] px-3 py-2 font-medium text-sm text-white transition hover:bg-[#000643]/90 disabled:opacity-50">
+          {busy ? "Sending…" : "Yes, send it"}
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => setAsking(false)}
+          className="flex-1 rounded-lg border border-gray-200 px-3 py-2 font-medium text-[#000643] text-sm transition hover:border-[#000643] disabled:opacity-50">
+          Not now
+        </button>
+      </div>
     </div>
   );
 }
