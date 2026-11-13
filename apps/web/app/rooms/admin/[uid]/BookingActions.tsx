@@ -7,6 +7,7 @@ import {
 } from "@calcom/features/ne26-rooms/lib/orderActions";
 import { trpc } from "@calcom/trpc/react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 const btnBase =
   "inline-flex w-full items-center justify-center rounded-lg px-3 py-2 font-semibold text-[13px] transition disabled:opacity-40";
@@ -100,35 +101,29 @@ export default function BookingActions({
       <h2 className="font-semibold text-[11px] text-gray-500 uppercase tracking-[0.07em]">Actions</h2>
       <div className="mt-2.5 grid gap-2">
         {can.confirmManually ? (
-          <button
-            type="button"
+          <ConfirmAction
+            label="Mark as paid manually"
+            busyLabel="Confirming…"
+            pending={confirmManually.isPending}
             disabled={busy}
-            onClick={() => {
-              if (
-                window.confirm(
-                  `Mark the order for ${rooms} as paid without going through Stripe? One invoice will be issued for the whole order. Only do this if you have confirmed the money another way — nothing is charged here.`
-                )
-              ) {
-                confirmManually.mutate({ uid: orderUid });
-              }
-            }}
-            className={`${btnBase} bg-[#000643] text-white hover:opacity-90`}>
-            {confirmManually.isPending ? "Confirming…" : "Mark as paid manually"}
-          </button>
+            tone="primary"
+            question={`Mark the order for ${rooms} as paid without going through Stripe? One invoice will be issued for the whole order. Only do this if you have confirmed the money another way — nothing is charged here.`}
+            confirmLabel="Yes, mark it paid"
+            onConfirm={() => confirmManually.mutate({ uid: orderUid })}
+          />
         ) : null}
 
         {can.cancelPending ? (
-          <button
-            type="button"
+          <ConfirmAction
+            label={`Cancel order (${rooms})`}
+            busyLabel="Cancelling…"
+            pending={cancelPending.isPending}
             disabled={busy}
-            onClick={() => {
-              if (window.confirm(`Cancel this pending order and free ${rooms}? No credit note is issued.`)) {
-                cancelPending.mutate({ uid: orderUid });
-              }
-            }}
-            className={`${btnBase} border border-red-200 bg-white text-red-600 hover:border-red-400`}>
-            {cancelPending.isPending ? "Cancelling…" : `Cancel order (${rooms})`}
-          </button>
+            tone="danger"
+            question={`Cancel this pending order and free ${rooms}? No credit note is issued.`}
+            confirmLabel="Yes, cancel it"
+            onConfirm={() => cancelPending.mutate({ uid: orderUid })}
+          />
         ) : null}
 
         {/* Nothing to sell and nothing to give back: the rooms went back on sale
@@ -137,23 +132,20 @@ export default function BookingActions({
             dashboard's red panel stops crying wolf for the rest of the event.
             The row keeps its payment id and its amount either way. */}
         {can.closeSettled ? (
-          <button
-            type="button"
+          <ConfirmAction
+            label={paid ? "Refunded in Stripe — close order" : "Close order"}
+            busyLabel="Closing…"
+            pending={closeOrder.isPending}
             disabled={busy}
-            onClick={() => {
-              if (
-                window.confirm(
-                  paid
-                    ? "Close this order? Do this only once the payment has been refunded in Stripe and the buyer has been told. Nothing is refunded from here — the order is marked settled so it stops being flagged."
-                    : "Close this abandoned checkout? It holds no rooms and took no money."
-                )
-              ) {
-                closeOrder.mutate({ uid: orderUid });
-              }
-            }}
-            className={`${btnBase} border border-gray-300 bg-white text-gray-700 hover:border-gray-500`}>
-            {closeOrder.isPending ? "Closing…" : paid ? "Refunded in Stripe — close order" : "Close order"}
-          </button>
+            tone="quiet"
+            question={
+              paid
+                ? "Close this order? Do this only once the payment has been refunded in Stripe and the buyer has been told. Nothing is refunded from here — the order is marked settled so it stops being flagged."
+                : "Close this abandoned checkout? It holds no rooms and took no money."
+            }
+            confirmLabel="Yes, close it"
+            onConfirm={() => closeOrder.mutate({ uid: orderUid })}
+          />
         ) : null}
 
         {/* Paid, but the invoice never came out — the PDF render or the disk
@@ -163,49 +155,42 @@ export default function BookingActions({
             (that path is PENDING-only), so its rooms stayed held until somebody
             edited the database by hand. issueInvoice is idempotent. */}
         {can.issueInvoice ? (
-          <button
-            type="button"
+          <ConfirmAction
+            label="Issue the missing invoice"
+            busyLabel="Issuing…"
+            pending={issueInvoice.isPending}
             disabled={busy}
-            onClick={() => {
-              if (
-                window.confirm(
-                  `Issue the missing invoice for ${rooms}? This spends the next invoice number and emails the booker. Safe to retry — it will not issue a second one.`
-                )
-              ) {
-                issueInvoice.mutate({ uid: orderUid });
-              }
-            }}
-            className={`${btnBase} bg-[#000643] text-white hover:opacity-90`}>
-            {issueInvoice.isPending ? "Issuing…" : "Issue the missing invoice"}
-          </button>
+            tone="primary"
+            question={`Issue the missing invoice for ${rooms}? This spends the next invoice number and emails the booker. Safe to retry — it will not issue a second one.`}
+            confirmLabel="Yes, issue it"
+            onConfirm={() => issueInvoice.mutate({ uid: orderUid })}
+          />
         ) : null}
 
         {can.resendInvoice ? (
-          <button
-            type="button"
+          <ConfirmAction
+            label="Resend invoice email"
+            busyLabel="Sending…"
+            pending={resend.isPending}
             disabled={busy}
-            onClick={() => resend.mutate({ uid: orderUid })}
-            className={`${btnBase} border border-gray-200 bg-white text-[#000643] hover:border-[#000643]`}>
-            {resend.isPending ? "Sending…" : "Resend invoice email"}
-          </button>
+            tone="quiet"
+            question="Send the invoice to the booker again?"
+            confirmLabel="Yes, send it"
+            onConfirm={() => resend.mutate({ uid: orderUid })}
+          />
         ) : null}
 
         {can.issueCreditNote ? (
-          <button
-            type="button"
+          <ConfirmAction
+            label="Cancel & credit"
+            busyLabel="Cancelling…"
+            pending={creditNote.isPending}
             disabled={busy}
-            onClick={() => {
-              if (
-                window.confirm(
-                  `Cancel the whole order? This cancels ${rooms}, frees the slots, issues a credit note and emails the booker. Refund the payment in Stripe separately.`
-                )
-              ) {
-                creditNote.mutate({ uid: orderUid });
-              }
-            }}
-            className={`${btnBase} border border-red-200 bg-white text-red-600 hover:border-red-400`}>
-            {creditNote.isPending ? "Cancelling…" : "Cancel & credit"}
-          </button>
+            tone="danger"
+            question={`Cancel the whole order? This cancels ${rooms}, frees the slots, issues a credit note and emails the booker. Refund the payment in Stripe separately.`}
+            confirmLabel="Yes, cancel & credit"
+            onConfirm={() => creditNote.mutate({ uid: orderUid })}
+          />
         ) : null}
 
         {/* For a test booking, or one that never became anything. Kept away
@@ -213,25 +198,20 @@ export default function BookingActions({
             removes the record, where every other action here preserves it. */}
         {can.deleteOrder ? <div className="my-1 h-px bg-gray-100" aria-hidden /> : null}
         {can.deleteOrder ? (
-          <button
-            type="button"
+          <ConfirmAction
+            label="Delete order"
+            busyLabel="Deleting…"
+            pending={deleteOrder.isPending}
             disabled={busy}
-            onClick={() => {
-              if (
-                window.confirm(
-                  `Delete this order permanently? ${
-                    roomCount > 0
-                      ? `${roomCount === 1 ? "The room goes" : `The ${roomCount} rooms go`} back on sale. `
-                      : ""
-                  }Nothing is kept — use this for a test or a mistake, not for a booking that was invoiced.`
-                )
-              ) {
-                deleteOrder.mutate({ uid: orderUid });
-              }
-            }}
-            className={`${btnBase} border border-red-300 bg-red-50 text-red-700 hover:bg-red-100`}>
-            {deleteOrder.isPending ? "Deleting…" : "Delete order"}
-          </button>
+            tone="destructive"
+            question={`Delete this order permanently? ${
+              roomCount > 0
+                ? `${roomCount === 1 ? "The room goes" : `The ${roomCount} rooms go`} back on sale. `
+                : ""
+            }Nothing is kept — use this for a test or a mistake, not for a booking that was invoiced.`}
+            confirmLabel="Yes, delete it"
+            onConfirm={() => deleteOrder.mutate({ uid: orderUid })}
+          />
         ) : null}
 
         {hasNoActions(can) ? (
@@ -274,6 +254,79 @@ export default function BookingActions({
         </p>
       ) : null}
       {error ? <p className="mt-2 text-red-600 text-sm">{error.message}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * One action, asked twice.
+ *
+ * These were browser dialogs. A dialog is not reliably shown — an embedded
+ * browser swallows it, and any browser lets somebody switch dialogs off for the
+ * rest of the session with the "don't let this page create more dialogs" box —
+ * and when it is suppressed the button silently does nothing at all. For a
+ * column of buttons that cancel orders, spend invoice numbers and delete
+ * records, the question has to be part of the page.
+ *
+ * The second step is in the same place as the first, so the answer lands where
+ * the eye already is, and the wording is the same sentence the dialog carried.
+ */
+function ConfirmAction({
+  label,
+  busyLabel,
+  pending,
+  disabled,
+  question,
+  confirmLabel,
+  tone,
+  onConfirm,
+}: {
+  label: string;
+  busyLabel: string;
+  pending: boolean;
+  disabled: boolean;
+  question: string;
+  confirmLabel: string;
+  tone: "primary" | "danger" | "destructive" | "quiet";
+  onConfirm: () => void;
+}): JSX.Element {
+  const [asking, setAsking] = useState(false);
+
+  const idle = {
+    primary: `${btnBase} bg-[#000643] text-white hover:opacity-90`,
+    danger: `${btnBase} border border-red-200 bg-white text-red-600 hover:border-red-400`,
+    destructive: `${btnBase} border border-red-300 bg-red-50 text-red-700 hover:bg-red-100`,
+    quiet: `${btnBase} border border-gray-300 bg-white text-gray-700 hover:border-gray-500`,
+  }[tone];
+
+  if (!asking) {
+    return (
+      <button type="button" disabled={disabled} onClick={() => setAsking(true)} className={idle}>
+        {pending ? busyLabel : label}
+      </button>
+    );
+  }
+
+  const confirm =
+    tone === "primary"
+      ? `${btnBase} bg-[#000643] text-white hover:opacity-90`
+      : `${btnBase} bg-red-600 text-white hover:bg-red-700`;
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+      <p className="text-[#000643] text-[13px] leading-snug">{question}</p>
+      <div className="mt-2.5 grid grid-cols-2 gap-2">
+        <button type="button" disabled={pending} onClick={onConfirm} className={confirm}>
+          {pending ? busyLabel : confirmLabel}
+        </button>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => setAsking(false)}
+          className={`${btnBase} border border-gray-200 bg-white text-[#000643] hover:border-[#000643]`}>
+          Not now
+        </button>
+      </div>
     </div>
   );
 }

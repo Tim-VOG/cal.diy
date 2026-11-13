@@ -21,6 +21,16 @@ function time(iso: string): string {
   }).format(new Date(iso));
 }
 
+/** What a room costs for a stay of this length, excl. VAT. */
+function roomPrice(room: { price1h: number; price2h: number; price3h: number }, hours: Duration): number {
+  return { 1: room.price1h, 2: room.price2h, 3: room.price3h }[hours];
+}
+
+/** Money as it is said out loud at a counter. */
+function money(cents: number, currency: string): string {
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(cents / 100);
+}
+
 function dayLabel(date: string): string {
   const [y, m, d] = date.split("-").map(Number);
   return new Intl.DateTimeFormat("en-GB", {
@@ -205,6 +215,22 @@ export default function NewBookingView(): JSX.Element {
 
   const ready = Boolean(startUtc && name.trim() && email.trim() && country);
 
+  const addOnLines = Object.entries(addOns).map(([s, quantity]) => ({ slug: s, quantity }));
+  // Priced by the server, with the country typed above: the VAT is what makes
+  // the difference between a figure said at the counter and the figure Stripe
+  // charges, and the two must not differ.
+  const quote = trpc.viewer.rooms.deskQuote.useQuery(
+    {
+      slug,
+      durationHours: duration,
+      startUtc: startUtc || undefined,
+      addOns: addOnLines.length ? addOnLines : undefined,
+      country: country || undefined,
+      vatNumber: vatNumber.trim() || undefined,
+    },
+    { enabled: Boolean(slug && startUtc), placeholderData: (previous) => previous }
+  );
+
   return (
     <div className="mx-auto max-w-2xl pb-24">
       <h1 className="font-bold text-2xl text-[#000643]">New booking</h1>
@@ -268,7 +294,10 @@ export default function NewBookingView(): JSX.Element {
                 onClick={() => {
                   setDuration(d);
                   setStartUtc("");
-                }}>
+                }}
+                // The price belongs on the choice that sets it. A hostess asked
+                // "how much for two hours?" should not have to go and find out.
+                sub={room ? `${money(roomPrice(room.room, d), room.room.currency)} excl. VAT` : undefined}>
                 {d}h
               </Choice>
             ))}
@@ -360,7 +389,17 @@ export default function NewBookingView(): JSX.Element {
                 <div
                   key={addOn.slug}
                   className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
-                  <span className="min-w-0 flex-1 text-sm">{addOn.name}</span>
+                  <span className="min-w-0 flex-1 text-sm">
+                    {addOn.name}
+                    <span className="block text-gray-500 text-xs">
+                      {money(addOn.price, addOn.currency)}
+                      {addOn.priceType === "PER_PERSON"
+                        ? " per person"
+                        : addOn.priceType === "PER_HOUR"
+                          ? " per hour"
+                          : ""}
+                    </span>
+                  </span>
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
@@ -464,15 +503,39 @@ export default function NewBookingView(): JSX.Element {
         </Step>
       ) : null}
 
-      {create.error ? (
-        <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-red-700 text-sm">{create.error.message}</p>
-      ) : null}
-
       {/* Pinned: on a tablet the form is longer than the screen, and the action
-          should not be something you have to scroll to find. */}
+          should not be something you have to scroll to find. The total and any
+          error live INSIDE it — rendered after the form they sat behind this
+          bar, which is how a refused payment became a button that did nothing. */}
       {startUtc ? (
         <div className="fixed inset-x-0 bottom-0 border-gray-200 border-t bg-white/95 p-3 backdrop-blur">
           <div className="mx-auto max-w-2xl">
+            {create.error ? (
+              <p role="alert" className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-red-700 text-sm">
+                {create.error.message}
+              </p>
+            ) : null}
+
+            {quote.data ? (
+              <div className="mb-2 flex items-end justify-between gap-3">
+                <span className="text-gray-500 text-xs">
+                  {money(quote.data.totalHt, quote.data.currency)} excl. VAT
+                  {quote.data.zeroRated
+                    ? " · no VAT"
+                    : quote.data.totalVat > 0
+                      ? ` + ${money(quote.data.totalVat, quote.data.currency)} VAT`
+                      : ""}
+                  {/* Until the country is typed the quote assumes the Belgian
+                      rate, which is what an unknown buyer is charged. Saying so
+                      is the difference between a figure and a guess. */}
+                  {country ? "" : " — Belgian rate until the country is set"}
+                </span>
+                <span className="font-bold text-[#000643] text-lg tabular-nums">
+                  {money(quote.data.totalTtc, quote.data.currency)}
+                </span>
+              </div>
+            ) : null}
+
             <button
               type="button"
               disabled={!ready || create.isPending}
