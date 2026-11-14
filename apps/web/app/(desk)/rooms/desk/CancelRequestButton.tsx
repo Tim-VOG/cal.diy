@@ -15,6 +15,12 @@ import { useState } from "react";
  *
  * Asked in two steps, like everything here that cannot be taken back by the
  * person pressing it. A counter is a place of elbows and interruptions.
+ *
+ * Red, on the button and on the question. Not because anything is destroyed —
+ * nothing is — but because this is the one thing at the desk that sets a refund
+ * in motion somewhere else, and it should not be reachable by a thumb aiming at
+ * Check in. The wording carries the rest: red says stop and read, the sentence
+ * says nothing has happened yet.
  */
 export default function CancelRequestButton({
   uid,
@@ -63,8 +69,8 @@ export default function CancelRequestButton({
         onClick={() => setAsking(true)}
         className={
           compact
-            ? "whitespace-nowrap rounded-md border border-gray-200 px-2 py-0.5 font-medium text-[11px] text-gray-600 transition hover:border-gray-400"
-            : "inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-3 font-medium text-[#000643] text-sm transition hover:border-[#000643]"
+            ? "whitespace-nowrap rounded-md border border-red-200 px-2 py-0.5 font-medium text-[11px] text-red-600 transition hover:border-red-400 hover:bg-red-50"
+            : "inline-flex w-full items-center justify-center gap-2 rounded-lg border border-red-300 bg-red-50 px-4 py-3 font-medium text-red-700 text-sm transition hover:bg-red-100"
         }>
         <MessageSquareWarning className={compact ? "hidden" : "h-4 w-4 shrink-0"} aria-hidden />
         They want to cancel
@@ -73,11 +79,11 @@ export default function CancelRequestButton({
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-      <p className="text-[#000643] text-sm">
-        Tell sales that <span className="font-medium">{roomLabel}</span> is being given back?
+    <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+      <p className="font-medium text-red-900 text-sm">
+        Tell sales that <span className="font-semibold">{roomLabel}</span> is being given back?
       </p>
-      <p className="mt-1 text-gray-600 text-xs">
+      <p className="mt-1 text-red-800/80 text-xs">
         Nothing is cancelled and nothing is refunded here — the room stays booked and stays theirs until sales
         decide. Say they will be contacted, not that it is done.
       </p>
@@ -90,7 +96,7 @@ export default function CancelRequestButton({
           onChange={(e) => setNote(e.target.value)}
           placeholder="Anything they said (optional)"
           aria-label="What the exhibitor said"
-          className="mt-3 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#000643] focus:outline-none"
+          className="mt-3 w-full rounded-lg border border-red-200 bg-white px-3 py-2 text-sm focus:border-red-500 focus:outline-none"
         />
       )}
 
@@ -99,7 +105,7 @@ export default function CancelRequestButton({
           type="button"
           disabled={request.isPending}
           onClick={() => request.mutate({ uid, note: note.trim() || undefined })}
-          className="flex-1 rounded-lg bg-[#000643] px-3 py-2.5 font-medium text-sm text-white transition hover:bg-[#000643]/90 disabled:opacity-50">
+          className="flex-1 rounded-lg bg-red-600 px-3 py-2.5 font-medium text-sm text-white transition hover:bg-red-700 disabled:opacity-50">
           {request.isPending ? "Sending…" : "Yes, tell sales"}
         </button>
         <button
@@ -110,13 +116,15 @@ export default function CancelRequestButton({
             setNote("");
             request.reset();
           }}
-          className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2.5 font-medium text-[#000643] text-sm transition hover:border-[#000643] disabled:opacity-50">
+          className="flex-1 rounded-lg border border-red-200 bg-white px-3 py-2.5 font-medium text-[#000643] text-sm transition hover:border-[#000643] disabled:opacity-50">
           Not now
         </button>
       </div>
 
       {request.error ? (
-        <p role="alert" className="mt-2 text-red-700 text-xs">
+        <p
+          role="alert"
+          className="mt-2 rounded-md border border-red-300 bg-white px-2.5 py-1.5 font-medium text-red-700 text-xs">
           {request.error.message}
         </p>
       ) : null}
