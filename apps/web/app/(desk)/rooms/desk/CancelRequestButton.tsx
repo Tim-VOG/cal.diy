@@ -54,10 +54,7 @@ export default function CancelRequestButton({
     return (
       <p className="flex items-start gap-1.5 text-[11px] text-gray-600 leading-snug">
         <Check className="mt-px h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
-        <span>
-          Cancellation asked for{requestedBy ? ` by ${requestedBy}` : ""} — sales have it. The room is still
-          booked until they decide.
-        </span>
+        <span>Sales told{requestedBy ? ` by ${requestedBy}` : ""} — still booked until they decide.</span>
       </p>
     );
   }
@@ -81,11 +78,10 @@ export default function CancelRequestButton({
   return (
     <div className="rounded-lg border border-red-200 bg-red-50 p-3">
       <p className="font-medium text-red-900 text-sm">
-        Tell sales that <span className="font-semibold">{roomLabel}</span> is being given back?
+        Tell sales about <span className="font-semibold">{roomLabel}</span>?
       </p>
       <p className="mt-1 text-red-800/80 text-xs">
-        Nothing is cancelled and nothing is refunded here — the room stays booked and stays theirs until sales
-        decide. Say they will be contacted, not that it is done.
+        Nothing is cancelled or refunded. Say sales will be in touch.
       </p>
 
       {compact ? null : (
