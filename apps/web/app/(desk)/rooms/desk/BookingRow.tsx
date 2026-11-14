@@ -3,7 +3,6 @@
 import { roomDoorName, roomSoldName } from "@calcom/features/ne26-rooms/lib/roomNames";
 import { Check, Clock, CreditCard, Undo2, UserCheck } from "lucide-react";
 import { useEffect, useState } from "react";
-import CancelRequestButton from "./CancelRequestButton";
 
 export interface DeskBooking {
   uid: string;
@@ -18,6 +17,11 @@ export interface DeskBooking {
   holdExpiresAt: string | Date | null;
   checkedInAt: string | Date | null;
   checkedInByEmail: string | null;
+  /**
+   * Still carried in the payload, read by nobody here: the desk shows nothing
+   * about cancellation since an order became binding on payment. Left in place
+   * so the admin keeps reading the same shape.
+   */
   cancellationRequestedAt: string | Date | null;
   cancellationRequestedBy: string | null;
   /** The company on the order — how an exhibitor introduces themselves. */
@@ -65,7 +69,6 @@ export default function BookingRow({
   onToggle,
   onResume,
   busy,
-  onRequested,
 }: {
   booking: DeskBooking;
   showDay?: boolean;
@@ -73,7 +76,6 @@ export default function BookingRow({
   /** Reopens the payment page for an unpaid hold. */
   onResume?: (uid: string) => void;
   busy?: boolean;
-  onRequested?: () => void;
 }): JSX.Element {
   const arrived = Boolean(booking.checkedInAt);
   const held = booking.status === "PENDING";
@@ -131,18 +133,6 @@ export default function BookingRow({
               .join(" · ")}
           </span>
         ) : null}
-        {held ? null : (
-          <span className="mt-1.5 block">
-            <CancelRequestButton
-              uid={booking.uid}
-              roomLabel={roomDoorName(booking.resource)}
-              requestedAt={iso(booking.cancellationRequestedAt)}
-              requestedBy={booking.cancellationRequestedBy}
-              onDone={onRequested}
-              compact
-            />
-          </span>
-        )}
       </div>
 
       {held ? (

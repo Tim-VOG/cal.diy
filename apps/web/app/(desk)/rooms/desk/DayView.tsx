@@ -115,7 +115,6 @@ export default function DayView(): JSX.Element {
               busy={checkIn.isPending || resume.isPending}
               onToggle={(uid, isArrived) => checkIn.mutate({ uid, arrived: isArrived })}
               onResume={(uid) => resume.mutate({ uid })}
-              onRequested={() => void bookings.refetch()}
             />
           ))}
         </ul>

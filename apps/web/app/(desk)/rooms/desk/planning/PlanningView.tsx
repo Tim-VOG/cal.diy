@@ -352,7 +352,6 @@ export default function PlanningView(): JSX.Element {
           emailedTo={emailedTo}
           busy={checkIn.isPending}
           error={checkIn.error?.message ?? null}
-          onRequested={() => void planning.refetch()}
         />
       ) : null}
     </div>

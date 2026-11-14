@@ -78,7 +78,6 @@ export default function SearchView(): JSX.Element {
                 busy={checkIn.isPending || resume.isPending}
                 onToggle={(uid, arrived) => checkIn.mutate({ uid, arrived })}
                 onResume={(uid) => resume.mutate({ uid })}
-                onRequested={() => void results.refetch()}
               />
             ))}
           </ul>

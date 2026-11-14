@@ -2,7 +2,6 @@
 
 import { Check, Clock, CreditCard, DoorOpen, Mail, Send, Undo2, UserCheck, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import CancelRequestButton from "../CancelRequestButton";
 
 export interface PanelBooking {
   uid: string;
@@ -20,6 +19,11 @@ export interface PanelBooking {
   holdExpiresAt: string | null;
   arrivedAt: string | null;
   arrivedBy: string | null;
+  /**
+   * Still carried in the payload, read by nobody here: the desk shows nothing
+   * about cancellation since an order became binding on payment. Left in place
+   * so the admin keeps reading the same shape.
+   */
   cancellationRequestedAt: string | null;
   cancellationRequestedBy: string | null;
 }
@@ -69,7 +73,6 @@ export default function BookingPanel({
   emailedTo,
   busy,
   error,
-  onRequested,
 }: {
   booking: PanelBooking;
   onClose: () => void;
@@ -82,7 +85,6 @@ export default function BookingPanel({
   emailedTo: string | null;
   busy: boolean;
   error: string | null;
-  onRequested: () => void;
 }): JSX.Element {
   // A tablet has no Escape key, but the admin works this board on a laptop.
   useEffect(() => {
@@ -201,20 +203,7 @@ export default function BookingPanel({
                 </p>
               ) : null}
             </div>
-          ) : (
-            <div className="border-gray-100 border-t pt-4">
-              <p className="font-medium text-[11px] text-gray-400 uppercase tracking-wide">Wants to cancel</p>
-              <div className="mt-2">
-                <CancelRequestButton
-                  uid={booking.uid}
-                  roomLabel={booking.doorName}
-                  requestedAt={booking.cancellationRequestedAt}
-                  requestedBy={booking.cancellationRequestedBy}
-                  onDone={onRequested}
-                />
-              </div>
-            </div>
-          )}
+          ) : null}
 
           {error ? (
             <p role="alert" className="rounded-lg bg-red-50 px-3 py-2.5 text-red-700 text-sm">
