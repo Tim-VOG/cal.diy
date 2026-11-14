@@ -4,7 +4,6 @@ import { type EventDayDefinition, normalizeEventDays } from "../lib/eventSchedul
 
 const settingsSelect = {
   cateringSalesOpen: true,
-  cancellationDeadlineDays: true,
   bufferMinutes: true,
   slotGranularityMinutes: true,
   eventDays: true,
@@ -24,7 +23,6 @@ export interface RoomSettings {
    * Days before the event's first bookable minute that self-service
    * cancellation closes. 0 keeps it open until the event opens.
    */
-  cancellationDeadlineDays: number;
   /** Turnover buffer in minutes required after each booking. */
   bufferMinutes: number;
   /** Start step offered to bookers (60/30/15). Atomic slot stays 15 min. */
@@ -39,7 +37,6 @@ export interface RoomSettings {
 
 interface SettingsRow {
   cateringSalesOpen: boolean;
-  cancellationDeadlineDays: number;
   bufferMinutes: number;
   slotGranularityMinutes: number;
   eventDays: Prisma.JsonValue | null;
@@ -50,7 +47,6 @@ interface SettingsRow {
 function toSettings(row: SettingsRow): RoomSettings {
   return {
     cateringSalesOpen: row.cateringSalesOpen,
-    cancellationDeadlineDays: row.cancellationDeadlineDays,
     bufferMinutes: row.bufferMinutes,
     slotGranularityMinutes: row.slotGranularityMinutes,
     eventDays: normalizeEventDays(row.eventDays),
@@ -130,7 +126,6 @@ export class Ne26RoomSettingsRepository {
   async update(data: Partial<RoomSettings>): Promise<RoomSettings> {
     const patch: {
       cateringSalesOpen?: boolean;
-      cancellationDeadlineDays?: number;
       bufferMinutes?: number;
       slotGranularityMinutes?: number;
       eventDays?: Prisma.InputJsonValue;
@@ -138,8 +133,6 @@ export class Ne26RoomSettingsRepository {
       landingIntro?: string | null;
     } = {};
     if (data.cateringSalesOpen !== undefined) patch.cateringSalesOpen = data.cateringSalesOpen;
-    if (data.cancellationDeadlineDays !== undefined)
-      patch.cancellationDeadlineDays = data.cancellationDeadlineDays;
     if (data.bufferMinutes !== undefined) patch.bufferMinutes = data.bufferMinutes;
     if (data.slotGranularityMinutes !== undefined) patch.slotGranularityMinutes = data.slotGranularityMinutes;
     if (data.eventDays !== undefined) patch.eventDays = data.eventDays;

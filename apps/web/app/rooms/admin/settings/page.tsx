@@ -5,10 +5,7 @@ import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
-import { cancellationDeadline } from "@calcom/features/ne26-rooms/lib/cancellationPolicy";
-import { buildEventSchedule } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { requireNotDeskMode } from "../requireNotDeskMode";
-import CancellationWindowForm from "./CancellationWindowForm";
 import InvoiceSettingsForm from "./InvoiceSettingsForm";
 import LandingContentForm from "./LandingContentForm";
 
@@ -28,20 +25,9 @@ export default async function SettingsPage(): Promise<JSX.Element> {
     getNe26RoomSettingsRepository().get(),
   ]);
 
-  // Computed here, from the event's own days, so the screen states the real
-  // instant rather than asking an admin to count backwards from it.
-  const deadline = cancellationDeadline(
-    buildEventSchedule(roomSettings.eventDays),
-    roomSettings.cancellationDeadlineDays
-  );
-
   return (
     <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
       <InvoiceSettingsForm initial={invoiceSettings} />
-      <CancellationWindowForm
-        days={roomSettings.cancellationDeadlineDays}
-        deadlineUtc={deadline ? deadline.toISOString() : null}
-      />
       <LandingContentForm
         initialTitle={roomSettings.landingTitle ?? ""}
         initialIntro={roomSettings.landingIntro ?? ""}

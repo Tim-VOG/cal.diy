@@ -4,7 +4,6 @@ import authedProcedure, { authedAdminProcedure } from "../../../procedures/authe
 import { router } from "../../../trpc";
 import { ZBookingUidInputSchema } from "./bookingUid.schema";
 import { ZChangeBookerEmailInputSchema, ZChangeMyEmailInputSchema } from "./accountEmail.schema";
-import { ZCancelMyBookingInputSchema } from "./cancelMyBooking.schema";
 import { ZCorrectBillingInputSchema } from "./correctBilling.schema";
 import { ZCreateBlockInputSchema } from "./createBlock.schema";
 import { ZCreateBookingInputSchema, ZCreateOrderInputSchema } from "./createBooking.schema";
@@ -1035,54 +1034,20 @@ export const roomsRouter = router({
     });
   }),
 
-  // Resume an abandoned PENDING booking: rebuild its checkout and return the URL.
-  /** Rebuild the payment page for an order held but never paid. */
-  /**
-   * Give up a hold without paying for it. The rooms go back on sale at once.
+  /*
+   * There is no procedure here for an exhibitor cancelling a room.
    *
-   * The exhibitor could start a hold but not end one: the only way out was to
-   * wait thirty-five minutes, during which the rooms were unbookable by anyone,
-   * including by them under a corrected basket.
+   * There was one, and it refunded the card in full by itself. Article 4 of the
+   * terms says the opposite — an order is binding on payment and Extra Services
+   * are not refundable, with the exceptions (postponement, cancellation by the
+   * organiser, force majeure) being the organiser's to declare, not a button's.
+   * Removed rather than guarded: a procedure that spends money is a liability
+   * even when every caller is supposed to be unreachable.
+   *
+   * A room now comes back only through the admin, which refunds in Stripe by
+   * hand and raises the credit note against it. The welcome desk cannot do it
+   * either — it records that an exhibitor asked, and tells sales.
    */
-  /**
-   * The exhibitor cancels ONE room they have already paid for.
-   *
-   * Room by room, because a payment can cover three of them: cancelling the
-   * Wednesday refunds the Wednesday and leaves the Tuesday booked and invoiced.
-   *
-   * The money goes back first, then the paperwork: Stripe refunds exactly what
-   * the credit note will say, the note is raised against that room, the room
-   * goes back on sale and the exhibitor is emailed. The room is claimed BEFORE
-   * the refund, so two clicks cannot pay out twice; if Stripe refuses, the claim
-   * is handed back and they can try again.
-   */
-  cancelMyBooking: authedProcedure.input(ZCancelMyBookingInputSchema).mutation(async ({ ctx, input }) => {
-    const { getBookerCancellationService } = await import(
-      "@calcom/features/ne26-rooms/di/BookerCancellationService.container"
-    );
-    const { CancellationRefused } = await import(
-      "@calcom/features/ne26-rooms/services/BookerCancellationService"
-    );
-    try {
-      const done = await getBookerCancellationService().cancel(input.uid, ctx.user.id);
-      return { refunded: true, ...done };
-    } catch (e) {
-      if (e instanceof CancellationRefused) {
-        // "Already being cancelled" is a race, not a mistake; the rest is the
-        // policy saying no, and the message is what the exhibitor reads.
-        const code =
-          e.reason === "not-found" ? "NOT_FOUND" : e.reason === "in-progress" ? "CONFLICT" : "BAD_REQUEST";
-        throw new TRPCError({ code, message: e.message });
-      }
-      // Stripe refused the refund. Nothing was cancelled — the service handed
-      // the room back before throwing.
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "The refund could not be sent. Nothing was cancelled — please try again.",
-        cause: e,
-      });
-    }
-  }),
 
   /**
    * The exhibitor changes the address they sign in with.

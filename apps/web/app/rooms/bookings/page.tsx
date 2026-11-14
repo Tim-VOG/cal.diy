@@ -1,11 +1,10 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
 import { getResourceBookingRepository } from "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container";
+import { buildEventSchedule, SLOT_GRANULARITY_MS } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { buildInvoiceModel, ROOM_VAT_RATE_BP } from "@calcom/features/ne26-rooms/lib/invoice";
 import { orderRef } from "@calcom/features/ne26-rooms/lib/orderRef";
 import { roomDoorName, roomFullLabel, roomSoldName } from "@calcom/features/ne26-rooms/lib/roomNames";
-import { canBookerCancel, cancellationDeadline } from "@calcom/features/ne26-rooms/lib/cancellationPolicy";
-import { buildEventSchedule, SLOT_GRANULARITY_MS } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 import { CalendarPlus, Clock3, FileText } from "lucide-react";
 import type { Metadata } from "next";
@@ -15,7 +14,6 @@ import { redirect } from "next/navigation";
 import { displayStatus, fmtDay, fmtDayLong, fmtMoney, fmtTime } from "../admin/format";
 import { HATCH, StatusPill } from "../admin/ui";
 import { requireBillingProfile } from "../requireBillingProfile";
-import CancelBookingButton from "./CancelBookingButton";
 import HoldCountdown from "./HoldCountdown";
 import ResumePaymentButton from "./ResumePaymentButton";
 
@@ -77,52 +75,12 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
   );
   const axisHours = Math.max(1, Math.round((closeOffset - openOffset) / HOUR));
 
-  // Cancelling refunds the card, so the page decides with the same rule the
-  // procedure enforces — the button is a courtesy, the rule is behind it.
-  const now = new Date();
-  const deadline = cancellationDeadline(
-    buildEventSchedule(roomSettings.eventDays),
-    roomSettings.cancellationDeadlineDays
-  );
-  const cancellable = (b: (typeof rows)[number]) => canBookerCancel(b, now, deadline).allowed;
-  /** A refund asked for and not yet credited: say so rather than show the button again. */
-  const refundPending = (b: (typeof rows)[number]) => Boolean(b.bookerCancelledAt) && !b.creditNoteId;
   /**
-   * What this one room would come back as, VAT included — the figure that lands
-   * on the card. Built from the same model as the credit note, with the VAT
-   * frozen on the order, so the page cannot promise an amount the refund will
-   * not match.
+   * A refund that was made before bookings became non-refundable, and has not
+   * been credited yet. Kept because those rows still exist: the page must keep
+   * explaining them even though nothing new can enter this state.
    */
-  const refundable = (b: (typeof rows)[number]) =>
-    buildInvoiceModel(
-      {
-        currency: b.currency,
-        roomVatRate: b.order?.roomVatRate ?? ROOM_VAT_RATE_BP,
-        rooms: [
-          {
-            amountTotal: b.amountTotal,
-            // The name it was SOLD under, deliberately — this model is the one
-            // the credit note is built from, and a document must not start
-            // calling the room something else.
-            roomName: b.resource.name,
-            durationMinutes: b.durationMinutes,
-            addOns: b.addOns.map((a) => ({
-              name: a.addOn.name,
-              quantity: a.quantity,
-              lineTotal: a.lineTotal,
-              vatRate: a.vatRate,
-            })),
-          },
-        ],
-      },
-      { zeroRated: b.order?.vatZeroRated ?? false, mention: b.order?.vatMention ?? null }
-    ).totalTtc;
-  const cancelProps = (b: (typeof rows)[number]) => ({
-    bookingUid: b.uid,
-    amountLabel: fmtMoney(refundable(b), b.currency),
-    roomLabel: roomFullLabel(b.resource),
-    dayLabel: fmtDay(b.startTime.toISOString()),
-  });
+  const refundPending = (b: (typeof rows)[number]) => Boolean(b.bookerCancelledAt) && !b.creditNoteId;
 
   const link =
     "text-[#000643] underline decoration-[#000643]/30 underline-offset-2 hover:decoration-[#000643]";
@@ -132,6 +90,15 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
       <header>
         <h1 className="font-bold text-2xl text-[#000643] tracking-tight">My bookings</h1>
         <p className="mt-1 text-gray-600 text-sm">One room per day at NATO Edge 26 · Türkiye time (TRT)</p>
+        {/* Said once, where the rooms are listed. Article 4 of the terms: an
+            order is binding on payment, so there is no button here — the page
+            must not leave an exhibitor looking for one. */}
+        <p className="mt-1 text-gray-500 text-xs">
+          Bookings are binding once paid and are not refundable —{" "}
+          <Link href="/rooms/legal/practical-information" className={link}>
+            practical information
+          </Link>
+        </p>
       </header>
 
       {Array.from(holds.values()).map((h) => (
@@ -289,7 +256,6 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                   <th className="whitespace-nowrap px-4 py-2.5 text-right font-semibold">Excl. VAT</th>
                   <th className="px-4 py-2.5 font-semibold">Document</th>
                   <th className="px-4 py-2.5 font-semibold">Calendar</th>
-                  <th className="px-4 py-2.5 font-semibold">Cancel</th>
                 </tr>
               </thead>
               <tbody>
@@ -320,6 +286,9 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                     </td>
                     <td className="px-4 py-3">
                       <StatusPill status={b.shown} />
+                      {refundPending(b) ? (
+                        <div className="mt-1 whitespace-nowrap text-amber-800 text-xs">Refund on its way</div>
+                      ) : null}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums">
                       {fmtMoney(b.amountTotal, b.currency)}
@@ -370,15 +339,6 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                           <CalendarPlus className="h-3.5 w-3.5" aria-hidden />
                           .ics
                         </a>
-                      ) : (
-                        <span className="text-gray-300">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      {refundPending(b) ? (
-                        <span className="whitespace-nowrap text-amber-800 text-xs">Refund on its way</span>
-                      ) : cancellable(b) ? (
-                        <CancelBookingButton {...cancelProps(b)} />
                       ) : (
                         <span className="text-gray-300">—</span>
                       )}
@@ -467,8 +427,6 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
                     ) : null}
                     {refundPending(b) ? (
                       <span className="text-amber-800 text-xs">Refund on its way</span>
-                    ) : cancellable(b) ? (
-                      <CancelBookingButton {...cancelProps(b)} />
                     ) : null}
                     {b.status === "PENDING" ? (
                       <span className="text-amber-800 text-xs">Awaiting payment — see above</span>
@@ -486,14 +444,6 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
               <CalendarPlus className="h-4 w-4" aria-hidden />
               Add all my confirmed bookings to my calendar
             </a>
-          ) : null}
-
-          {live.some((b) => b.status === "CONFIRMED") && deadline ? (
-            <p className="text-gray-500 text-xs">
-              Cancel a room online until {fmtDayLong(deadline.toISOString())} and that room is refunded to
-              your card in full, VAT included. Any other room on the same payment stays booked. After that
-              date, write to us and we will see what we can do.
-            </p>
           ) : null}
         </>
       )}
