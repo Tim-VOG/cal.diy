@@ -177,6 +177,30 @@ export default function NewBookingView(): JSX.Element {
     });
   }
 
+  const addOnLines = Object.entries(addOns).map(([s, quantity]) => ({ slug: s, quantity }));
+  // Priced by the server, with the country typed above: the VAT is what makes
+  // the difference between a figure said at the counter and the figure Stripe
+  // charges, and the two must not differ.
+  //
+  // Called ABOVE the "room held" screen below, and not under it where it used
+  // to sit. A hook placed after an early return is not called on the render
+  // that takes it, so React counted one hook fewer the moment a booking
+  // succeeded and tore the page down: the sale reached Stripe, the room was
+  // held, and the hostess saw the error screen instead of the payment link.
+  // Disabled once a booking exists, so the success screen still costs no
+  // request.
+  const quote = trpc.viewer.rooms.deskQuote.useQuery(
+    {
+      slug,
+      durationHours: duration,
+      startUtc: startUtc || undefined,
+      addOns: addOnLines.length ? addOnLines : undefined,
+      country: country || undefined,
+      vatNumber: vatNumber.trim() || undefined,
+    },
+    { enabled: Boolean(slug && startUtc) && !create.data, placeholderData: (previous) => previous }
+  );
+
   if (create.data) {
     return (
       <div className="mx-auto max-w-lg text-center">
@@ -214,22 +238,6 @@ export default function NewBookingView(): JSX.Element {
   }
 
   const ready = Boolean(startUtc && name.trim() && email.trim() && country);
-
-  const addOnLines = Object.entries(addOns).map(([s, quantity]) => ({ slug: s, quantity }));
-  // Priced by the server, with the country typed above: the VAT is what makes
-  // the difference between a figure said at the counter and the figure Stripe
-  // charges, and the two must not differ.
-  const quote = trpc.viewer.rooms.deskQuote.useQuery(
-    {
-      slug,
-      durationHours: duration,
-      startUtc: startUtc || undefined,
-      addOns: addOnLines.length ? addOnLines : undefined,
-      country: country || undefined,
-      vatNumber: vatNumber.trim() || undefined,
-    },
-    { enabled: Boolean(slug && startUtc), placeholderData: (previous) => previous }
-  );
 
   return (
     <div className="mx-auto max-w-2xl pb-24">
