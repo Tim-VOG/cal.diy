@@ -339,11 +339,14 @@ function RoomRowCard({
 export default function RoomsManager({
   rooms,
   bufferMinutes,
+  maxRoomsPerDayPerExhibitor,
   eventDays,
   occupancy,
 }: {
   rooms: RoomRow[];
   bufferMinutes: number;
+  /** Commercial cap on rooms one exhibitor may hold per event day. */
+  maxRoomsPerDayPerExhibitor: number;
   eventDays: EventDayDefinition[];
   /** Hours booked per room per event day, for the overview. */
   occupancy: Record<string, RoomDayOccupancy[]>;
@@ -462,7 +465,11 @@ export default function RoomsManager({
             }}
           />
         ) : tab === "schedule" ? (
-          <EventDaysForm initial={eventDays} bufferMinutes={bufferMinutes} />
+          <EventDaysForm
+            initial={eventDays}
+            bufferMinutes={bufferMinutes}
+            maxRoomsPerDayPerExhibitor={maxRoomsPerDayPerExhibitor}
+          />
         ) : (
           <>
             <p className="text-gray-600 text-sm">{CATEGORY_META[tab as Category].blurb}</p>

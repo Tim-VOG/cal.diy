@@ -12,6 +12,7 @@ import {
   type SlotWindow,
 } from "@calcom/features/ne26-rooms/lib/pricing";
 import { buildRoomPhotoList } from "@calcom/features/ne26-rooms/lib/roomImages";
+import { dayAlreadyFullNotice } from "@calcom/features/ne26-rooms/lib/roomsPerDay";
 import type { RoomAvailability } from "@calcom/features/ne26-rooms/services/RoomAvailabilityService";
 import { AddOnPriceType } from "@calcom/prisma/enums";
 import { trpc } from "@calcom/trpc/react";
@@ -575,8 +576,7 @@ export default function RoomBookingClient({
           <p
             className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800 text-sm"
             role="status">
-            You already have a meeting room that day. Each exhibitor can book one room per day — pick another
-            day, or cancel the room you have.
+            {dayAlreadyFullNotice(bookedDays.data?.maxRoomsPerDay ?? 1)}
           </p>
         ) : null}
 

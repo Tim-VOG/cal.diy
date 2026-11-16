@@ -57,6 +57,7 @@ export default async function ManageRoomsPage(): Promise<JSX.Element> {
   return (
     <RoomsManager
       bufferMinutes={roomSettings.bufferMinutes}
+      maxRoomsPerDayPerExhibitor={roomSettings.maxRoomsPerDayPerExhibitor}
       eventDays={roomSettings.eventDays}
       occupancy={occupancy}
       rooms={rooms.map((r) => ({

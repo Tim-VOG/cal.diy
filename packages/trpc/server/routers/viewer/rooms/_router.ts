@@ -916,32 +916,55 @@ export const roomsRouter = router({
   }),
 
   /**
-   * The event days this exhibitor already has a room on — confirmed or still
-   * held. One room per exhibitor per day is a commercial rule enforced in the
-   * order service; this lets the shortlist and the room page say so BEFORE the
-   * buyer commits, instead of the rule surfacing as a refusal at payment.
+   * The event days this exhibitor can no longer book — they already hold as
+   * many rooms there as the cap allows — plus the days carrying one of their own
+   * unpaid holds.
+   *
+   * The cap is a commercial rule enforced in the order service and settable by
+   * an admin. This lets the shortlist and the room page say so BEFORE the buyer
+   * commits, instead of the rule surfacing as a refusal at payment.
    */
   myBookedDays: authedProcedure.query(
     async ({
       ctx,
-    }): Promise<{ days: string[]; heldDays: string[]; paidSlots: { slug: string; startUtc: string }[] }> => {
+    }): Promise<{
+      days: string[];
+      heldDays: string[];
+      paidSlots: { slug: string; startUtc: string }[];
+      maxRoomsPerDay: number;
+    }> => {
       const { getNe26OrderRepository } = await import(
         "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container"
       );
-      const { eventDateOf } = await import("@calcom/features/ne26-rooms/lib/deskDay");
-      const occupied = await getNe26OrderRepository().findOccupiedDaysForUser(
-        { userId: ctx.user.id, email: ctx.user.email },
-        new Date()
+      const { getNe26RoomSettingsRepository } = await import(
+        "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container"
       );
+      const { eventDateOf } = await import("@calcom/features/ne26-rooms/lib/deskDay");
+      const [occupied, settings] = await Promise.all([
+        getNe26OrderRepository().findOccupiedDaysForUser(
+          { userId: ctx.user.id, email: ctx.user.email },
+          new Date()
+        ),
+        getNe26RoomSettingsRepository().get(),
+      ]);
+      const cap = settings.maxRoomsPerDayPerExhibitor;
       // `days` blocks, `heldDays` only informs. A day carrying the exhibitor's
       // own unpaid hold is not spent: paying for the basket replaces that hold.
       // Reporting both as "booked" greyed out the day they were shopping for.
-      const days = new Set<string>();
+      //
+      // A day blocks once their PAID rooms there reach the cap, counted room by
+      // room. Below the cap the day stays open, which is the whole point of the
+      // setting: at a cap of 1 this is exactly the old "has a room that day".
+      const paidPerDay: Record<string, number> = {};
       const heldDays = new Set<string>();
       for (const row of occupied) {
-        (row.paid ? days : heldDays).add(eventDateOf(row.startTime));
+        const day = eventDateOf(row.startTime);
+        if (row.paid) paidPerDay[day] = (paidPerDay[day] ?? 0) + 1;
+        else heldDays.add(day);
       }
+      const days = new Set(Object.keys(paidPerDay).filter((day) => (paidPerDay[day] ?? 0) >= cap));
       return {
+        maxRoomsPerDay: cap,
         days: Array.from(days).sort(),
         heldDays: Array.from(heldDays)
           .filter((d) => !days.has(d))

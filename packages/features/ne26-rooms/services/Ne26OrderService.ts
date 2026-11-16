@@ -9,6 +9,7 @@ import { getAtomicSlotStarts, getBufferSlotStarts } from "../lib/atomicSlots";
 import { eventDateOf, eventMinuteOfDay } from "../lib/deskDay";
 import { buildEventSchedule, buildOpenSlotMs, type DurationHours } from "../lib/eventSchedule";
 import { resolveAddOnLines } from "../lib/pricing";
+import { tooManyRoomsPerDayMessage } from "../lib/roomsPerDay";
 import { formatSlotRange } from "../lib/teamNotification";
 
 const MS_PER_MINUTE = 60 * 1000;
@@ -30,10 +31,18 @@ const MAX_ACTIVE_ORDERS_PER_USER = 3;
 const MAX_ACTIVE_ORDERS_AT_THE_DESK = 6;
 
 /**
- * One room per exhibitor per day, whatever the slot.
+ * Fallback cap on rooms per exhibitor per day, whatever the slot.
  *
  * A commercial rule, not a technical guard: with nine rooms and three days, one
- * exhibitor taking two rooms on the same day denies another exhibitor entirely.
+ * exhibitor taking several rooms on the same day denies another exhibitor
+ * entirely. What keeps two people out of the SAME room is the unique index on
+ * (resourceId, slotStart), which this has nothing to do with — raising the cap
+ * can oversell an exhibitor, it can never double-book a room.
+ *
+ * The live value is `Ne26RoomSettings.maxRoomsPerDayPerExhibitor`, because this
+ * is a decision an admin takes during the event rather than one that waits for
+ * a release. This constant is only what an install with no settings row reads.
+ *
  * It is enforced here rather than only in the UI, because the UI is a shortlist
  * held in the browser and anyone can post to the API directly.
  *
@@ -41,11 +50,11 @@ const MAX_ACTIVE_ORDERS_AT_THE_DESK = 6;
  * walk-in buying twice at the counter is caught the same way — see
  * findBookedStartsForUser.
  */
-export const MAX_ROOMS_PER_DAY = 1;
+export const DEFAULT_MAX_ROOMS_PER_DAY = 1;
 
-/** Shown wherever the rule bites, so it never reads as an unexplained refusal. */
-export const ONE_ROOM_PER_DAY_MESSAGE =
-  "Each exhibitor can book one meeting room per day. You already have a room that day — choose another day, or cancel the one you have.";
+// The refusal's wording lives with the rest of the cap's sentences, so the
+// server and the pages that promise the rule cannot drift apart.
+export { tooManyRoomsPerDayMessage };
 
 /**
  * The day is taken by another unpaid hold of the buyer's own, which this basket
@@ -114,6 +123,12 @@ export class Ne26OrderService {
     // committed, leaving one exhibitor holding two rooms on the same day.
     const basketDays = input.rooms.map((r) => eventDateOf(r.startUtc));
     const wantedDays = new Set(basketDays);
+    // How many rooms this basket wants on each day, not merely which days it
+    // touches: the cap is a number an admin sets, so a day is no longer either
+    // free or spent.
+    const basketRoomsPerDay: Record<string, number> = {};
+    for (const day of basketDays) basketRoomsPerDay[day] = (basketRoomsPerDay[day] ?? 0) + 1;
+    const roomsPerDayCap = settings.maxRoomsPerDayPerExhibitor;
     const cap = input.buyer.userId ? MAX_ACTIVE_ORDERS_PER_USER : MAX_ACTIVE_ORDERS_AT_THE_DESK;
 
     // Read before the superseded orders are deleted, and used after the new one
@@ -128,12 +143,13 @@ export class Ne26OrderService {
         tx
       );
 
-      const paidDays = new Set<string>();
+      // One row is one room, so these are counts, not flags.
+      const paidRoomsPerDay: Record<string, number> = {};
       const daysByHold: Record<string, string[]> = {};
       for (const row of occupied) {
         const day = eventDateOf(row.startTime);
         if (row.paid || !row.orderUid) {
-          paidDays.add(day);
+          paidRoomsPerDay[day] = (paidRoomsPerDay[day] ?? 0) + 1;
           continue;
         }
         const days = daysByHold[row.orderUid] ?? [];
@@ -141,9 +157,17 @@ export class Ne26OrderService {
         daysByHold[row.orderUid] = days;
       }
 
-      for (const day of basketDays) {
-        if (paidDays.has(day)) {
-          throw new ErrorWithCode(ErrorCode.BadRequest, ONE_ROOM_PER_DAY_MESSAGE);
+      // Their own unpaid holds are deliberately absent from this sum: the block
+      // below replaces them, and counting them would refuse an exhibitor the
+      // very rooms they are holding. The consequence is worth stating plainly —
+      // above a cap of 1, a second room on the same day has to be in the same
+      // basket, or the first one has to be paid for first. Two separate unpaid
+      // orders on one day are not a basket being revised, and guessing which of
+      // the two it is would either drop a room they still wanted or sell past
+      // the cap.
+      for (const day of Object.keys(basketRoomsPerDay)) {
+        if ((paidRoomsPerDay[day] ?? 0) + (basketRoomsPerDay[day] ?? 0) > roomsPerDayCap) {
+          throw new ErrorWithCode(ErrorCode.BadRequest, tooManyRoomsPerDayMessage(roomsPerDayCap));
         }
       }
 
@@ -206,15 +230,19 @@ export class Ne26OrderService {
       }
     }
 
-    // Two rooms on the same day inside ONE basket. Checked against the priced
-    // rooms rather than the request, so it reads the start the server resolved.
-    const daysInThisOrder = new Set<string>();
+    // Rooms on the same day inside ONE basket, against the same cap. Checked
+    // against the priced rooms rather than the request, so it reads the start
+    // the server resolved. The check under the lock above is the authoritative
+    // one; this one runs first and refuses a basket that cannot pass whatever
+    // the exhibitor already owns.
+    const roomsPerDayInThisOrder: Record<string, number> = {};
     for (const room of rooms) {
       const day = eventDateOf(room.startTime);
-      if (daysInThisOrder.has(day)) {
-        throw new ErrorWithCode(ErrorCode.BadRequest, ONE_ROOM_PER_DAY_MESSAGE);
+      const inDay = (roomsPerDayInThisOrder[day] ?? 0) + 1;
+      if (inDay > roomsPerDayCap) {
+        throw new ErrorWithCode(ErrorCode.BadRequest, tooManyRoomsPerDayMessage(roomsPerDayCap));
       }
-      daysInThisOrder.add(day);
+      roomsPerDayInThisOrder[day] = inDay;
     }
 
     const amountTotal = rooms.reduce((sum, r) => sum + r.amountTotal, 0);

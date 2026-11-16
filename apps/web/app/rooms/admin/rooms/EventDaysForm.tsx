@@ -3,7 +3,7 @@
 import type { EventDayDefinition } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { trpc } from "@calcom/trpc/react";
-import { CalendarClock, Check, Sparkles } from "lucide-react";
+import { CalendarClock, Check, DoorClosed, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -23,7 +23,8 @@ const select =
   "mt-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#000643] focus:outline-none";
 
 /**
- * Everything that governs *when* a room can be booked, in one place.
+ * The booking rules an admin owns, in one place: when a room can be booked,
+ * and how many one exhibitor may take in a day.
  *
  * Opening hours and the cleaning gap used to be two separate cards with two
  * Save buttons, which invited setting one and forgetting the other.
@@ -36,13 +37,16 @@ const select =
 export default function EventDaysForm({
   initial,
   bufferMinutes,
+  maxRoomsPerDayPerExhibitor,
 }: {
   initial: EventDayDefinition[];
   bufferMinutes: number;
+  maxRoomsPerDayPerExhibitor: number;
 }): JSX.Element {
   const router = useRouter();
   const [days, setDays] = useState<EventDayDefinition[]>(initial);
   const [buffer, setBuffer] = useState(bufferMinutes);
+  const [maxRooms, setMaxRooms] = useState(maxRoomsPerDayPerExhibitor);
   const save = trpc.viewer.rooms.updateRoomSettings.useMutation({ onSuccess: () => router.refresh() });
 
   function setHour(date: string, field: "openHour" | "closeHour", value: number): void {
@@ -123,11 +127,42 @@ export default function EventDaysForm({
         </label>
       </div>
 
+      <div className="mt-6 max-w-sm border-gray-100 border-t pt-5">
+        <label>
+          <span className="flex items-center gap-1.5 font-medium text-gray-700 text-sm">
+            <DoorClosed className="h-4 w-4 shrink-0 text-[#000643]" aria-hidden />
+            Rooms one exhibitor can book per day
+          </span>
+          <select
+            className={`${select} w-full`}
+            value={maxRooms}
+            onChange={(e) => setMaxRooms(Number(e.target.value))}>
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
+              <option key={n} value={n}>
+                {n === 1 ? "1 room — one per exhibitor per day" : `${n} rooms`}
+              </option>
+            ))}
+          </select>
+          <span className="mt-1 block text-gray-500 text-xs">
+            A commercial limit: with nine rooms over three days, one exhibitor taking several on the same day
+            can shut another out. Raising it never lets two exhibitors into the same room — that is the
+            database&rsquo;s job, and this does not touch it. Applies to the public site and the welcome desk
+            alike, and takes effect on the next booking.
+          </span>
+        </label>
+      </div>
+
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <button
           type="button"
           disabled={save.isPending || Boolean(invalid)}
-          onClick={() => save.mutate({ eventDays: days, bufferMinutes: buffer })}
+          onClick={() =>
+            save.mutate({
+              eventDays: days,
+              bufferMinutes: buffer,
+              maxRoomsPerDayPerExhibitor: maxRooms,
+            })
+          }
           className="rounded-lg bg-[#000643] px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90 disabled:opacity-40">
           {save.isPending ? "Saving…" : "Save"}
         </button>

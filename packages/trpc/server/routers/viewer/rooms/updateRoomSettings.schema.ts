@@ -24,6 +24,14 @@ export const ZUpdateRoomSettingsInputSchema = z.object({
    * Days before the event that self-service cancellation closes. 0 keeps it
    * open until the event opens; the ceiling is a sanity bound, not a rule.
    */
+  /**
+   * How many rooms one exhibitor may hold per event day.
+   *
+   * The ceiling is the nine rooms that exist, so "no limit in practice" is 9
+   * rather than an unbounded number nobody can reason about. 1 is the rule the
+   * event opened with. This never relaxes the no-double-booking index.
+   */
+  maxRoomsPerDayPerExhibitor: z.number().int().min(1).max(9).optional(),
   /** Turnover buffer in minutes after each booking (0 disables it). */
   bufferMinutes: z.number().int().min(0).max(240).optional(),
   /** Start step offered to bookers: hourly / half-hour / quarter-hour. */

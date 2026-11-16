@@ -78,13 +78,20 @@ describe("Ne26OrderService.createOrder", () => {
       ],
     });
 
-    // Pin the turnover buffer so the expected slot count is deterministic: it is
-    // a shared admin setting, and whatever another suite last wrote would
-    // otherwise decide it.
+    // Pin every shared admin setting this suite leans on. There is one settings
+    // row, so whatever another suite last wrote would otherwise decide these:
+    // the buffer decides the expected slot count, the catering switch decides
+    // whether an add-on can be sold at all, and the rooms-per-day cap decides
+    // the rule half these tests are about.
+    const pinned = {
+      bufferMinutes: 0,
+      cateringSalesOpen: true,
+      maxRoomsPerDayPerExhibitor: 1,
+    };
     await prisma.ne26RoomSettings.upsert({
       where: { id: 1 },
-      update: { bufferMinutes: 0 },
-      create: { id: 1, bufferMinutes: 0 },
+      update: pinned,
+      create: { id: 1, ...pinned },
     });
   });
 
@@ -571,6 +578,133 @@ describe("Ne26OrderService.createOrder", () => {
       const { order } = await service.createOrder({ buyer: other, rooms: [room(SLUG_B, TUE, 16)] });
       expect(order.bookings).toHaveLength(1);
       await prisma.ne26Order.deleteMany({ where: { bookerEmail: other.email } });
+    });
+  });
+
+  /**
+   * The cap is an admin setting, so the interesting cases are above 1 — and the
+   * number has to bite at whatever it is set to, not merely stop biting.
+   */
+  describe("when an admin raises the rooms-per-day cap", () => {
+    const SLUG_C = `test-order-c-${STAMP}`;
+    let roomC: number;
+
+    beforeAll(async () => {
+      const c = await prisma.resource.create({
+        data: {
+          name: "TEST Order Room C",
+          slug: SLUG_C,
+          category: "ENTRY",
+          capacity: 6,
+          surface: 18,
+          price1h: 35000,
+          price2h: 65000,
+          price3h: 90000,
+        },
+        select: { id: true },
+      });
+      roomC = c.id;
+      await prisma.ne26RoomSettings.update({
+        where: { id: 1 },
+        data: { maxRoomsPerDayPerExhibitor: 2 },
+      });
+    });
+
+    afterEach(async () => {
+      await prisma.resourceBooking.deleteMany({ where: { resourceId: roomC } });
+    });
+
+    afterAll(async () => {
+      // Back to the rule the event opened with: one settings row, and the suites
+      // that run after this one assume 1.
+      await prisma.ne26RoomSettings.update({
+        where: { id: 1 },
+        data: { maxRoomsPerDayPerExhibitor: 1 },
+      });
+      await prisma.resource.deleteMany({ where: { id: roomC } });
+    });
+
+    it("sells two rooms on one day in a single basket", async () => {
+      const { order } = await service.createOrder({
+        buyer: buyer(),
+        rooms: [room(SLUG_A, TUE, 14), room(SLUG_B, TUE, 16)],
+      });
+      expect(order.bookings).toHaveLength(2);
+    });
+
+    it("sells a second room on a day already paid for", async () => {
+      const first = await service.createOrder({ buyer: buyer(), rooms: [room(SLUG_A, TUE, 14)] });
+      await orders.confirmPaid(first.order.uid, null);
+
+      const { order } = await service.createOrder({ buyer: buyer(), rooms: [room(SLUG_B, TUE, 16)] });
+      expect(order.bookings).toHaveLength(1);
+    });
+
+    it("still refuses one room past the cap, in a single basket", async () => {
+      // Matched on the wording, not only on BadRequest: an earlier draft of
+      // this test put the third room outside opening hours, which is also a
+      // BadRequest, so it passed while proving nothing about the cap.
+      await expect(
+        service.createOrder({
+          buyer: buyer(),
+          rooms: [room(SLUG_A, TUE, 14), room(SLUG_B, TUE, 16), room(SLUG_C, TUE, 10)],
+        })
+      ).rejects.toThrow(/two rooms per day/i);
+    });
+
+    it("counts what is already paid for against the cap", async () => {
+      const first = await service.createOrder({
+        buyer: buyer(),
+        rooms: [room(SLUG_A, TUE, 14), room(SLUG_B, TUE, 16)],
+      });
+      await orders.confirmPaid(first.order.uid, null);
+
+      await expect(
+        service.createOrder({ buyer: buyer(), rooms: [room(SLUG_C, TUE, 10)] })
+      ).rejects.toThrow(/two rooms per day/i);
+    });
+
+    it("says how many rooms are allowed rather than naming one", async () => {
+      const first = await service.createOrder({
+        buyer: buyer(),
+        rooms: [room(SLUG_A, TUE, 14), room(SLUG_B, TUE, 16)],
+      });
+      await orders.confirmPaid(first.order.uid, null);
+
+      await expect(service.createOrder({ buyer: buyer(), rooms: [room(SLUG_C, TUE, 10)] })).rejects.toThrow(
+        /two rooms per day/i
+      );
+    });
+
+    it("never exceeds the cap, however many baskets are sent at once", async () => {
+      // The rule runs inside the create transaction under a lock on the buyer.
+      // Read beforehand it was not enforced at all — see planUnderLock — and a
+      // cap above 1 is exactly where a missing lock stops being obvious: each
+      // basket on its own is legal, and only the total is not.
+      const paid = await service.createOrder({ buyer: buyer(), rooms: [room(SLUG_A, TUE, 14)] });
+      await orders.confirmPaid(paid.order.uid, null);
+
+      const settled = await Promise.allSettled([
+        service.createOrder({ buyer: buyer(), rooms: [room(SLUG_B, TUE, 16)] }),
+        service.createOrder({ buyer: buyer(), rooms: [room(SLUG_C, TUE, 10)] }),
+      ]);
+      expect(settled.some((r) => r.status === "fulfilled")).toBe(true);
+
+      // One room paid plus whatever is still held, for this exhibitor, in the
+      // three rooms this suite owns — every booking it makes is on TUE, so this
+      // is that day's total without doing date arithmetic. The cap is about
+      // rooms, so the total is what has to hold.
+      const held = await prisma.resourceBooking.count({
+        where: {
+          bookerUserId: userId,
+          resourceId: { in: [roomA, roomB, roomC] },
+          OR: [
+            { status: ResourceBookingStatus.CONFIRMED },
+            { status: ResourceBookingStatus.PENDING, holdExpiresAt: { gt: new Date() } },
+          ],
+        },
+      });
+      expect(held).toBeLessThanOrEqual(2);
     });
   });
 

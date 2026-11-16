@@ -1,5 +1,6 @@
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
+import { roomsPerDayRule, roomsPerDayShort } from "@calcom/features/ne26-rooms/lib/roomsPerDay";
 import { getResourceBookingRepository } from "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container";
 import { buildEventSchedule, SLOT_GRANULARITY_MS } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { buildInvoiceModel, ROOM_VAT_RATE_BP } from "@calcom/features/ne26-rooms/lib/invoice";
@@ -89,7 +90,9 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
     <div className="grid gap-5">
       <header>
         <h1 className="font-bold text-2xl text-[#000643] tracking-tight">My bookings</h1>
-        <p className="mt-1 text-gray-600 text-sm">One room per day at NATO Edge 26 · Türkiye time (TRT)</p>
+        <p className="mt-1 text-gray-600 text-sm">
+          {roomsPerDayShort(roomSettings.maxRoomsPerDayPerExhibitor)} at NATO Edge 26 · Türkiye time (TRT)
+        </p>
         {/* Said once, where the rooms are listed. Article 4 of the terms: an
             order is binding on payment, so there is no button here — the page
             must not leave an exhibitor looking for one. */}
@@ -130,7 +133,9 @@ export default async function MyBookingsPage(): Promise<JSX.Element> {
       {rows.length === 0 ? (
         <section className="rounded-xl border border-gray-200 bg-white p-8 text-center">
           <p className="font-semibold text-[#000643]">You have no bookings yet.</p>
-          <p className="mt-1 text-gray-500 text-sm">Each exhibitor can book one meeting room per day.</p>
+          <p className="mt-1 text-gray-500 text-sm">
+            {roomsPerDayRule(roomSettings.maxRoomsPerDayPerExhibitor)}
+          </p>
           <Link
             href="/rooms"
             className="mt-4 inline-block rounded-lg bg-[#000643] px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90">

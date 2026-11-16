@@ -1,6 +1,7 @@
 "use client";
 
 import { EVENT_TIME_ZONE } from "@calcom/features/ne26-rooms/lib/eventSchedule";
+import { roomsPerDayRule } from "@calcom/features/ne26-rooms/lib/roomsPerDay";
 import { trpc } from "@calcom/trpc/react";
 import { ChevronUp, Clock, CreditCard, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -442,7 +443,7 @@ export default function ShortlistPanel({
 
           {clashing.size > 0 ? (
             <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-2 text-amber-800 text-xs leading-snug">
-              One meeting room per exhibitor per day, whatever the time. Change the day marked above and you
+              {roomsPerDayRule(bookedDays.data?.maxRoomsPerDay ?? 1)} Change the day marked above and you
               can pay for the rest together.
             </p>
           ) : null}

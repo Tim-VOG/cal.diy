@@ -3149,6 +3149,13 @@ model Ne26RoomSettings {
   // availability, the admin calendar and the block editor. Null = built-in
   // NE26 defaults (17/18/19 Nov 2026).
   eventDays              Json?
+  // NE26: how many rooms one exhibitor may hold per event day. A commercial
+  // rule, not a technical guard: with nine rooms and three days, one exhibitor
+  // taking several rooms on one day can deny another entirely. What stops two
+  // people taking the SAME room is the unique index on (resourceId, slotStart),
+  // which this has nothing to do with. Settled here rather than in code so an
+  // admin can change it mid-event. 1 is the rule the event opened with.
+  maxRoomsPerDayPerExhibitor Int    @default(1)
   // NE26: whether catering is on sale at all — on the public room page, at the
   // welcome desk, and as a top-up on a room already paid for. Closed by
   // default: the caterer needs notice, and once their order is placed nothing
