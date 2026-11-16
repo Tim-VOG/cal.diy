@@ -50,6 +50,8 @@ interface PlanningBooking {
   company: string | null;
   addOns: { name: string; quantity: number }[];
   isBlock: boolean;
+  /** Why the room is off sale, when it is a block. */
+  blockNote: string | null;
   arrived: boolean;
   arrivedAt: string | null;
   arrivedBy: string | null;
@@ -116,6 +118,7 @@ export default function PlanningView(): JSX.Element {
         company: b.order?.bookerLegalName ?? null,
         addOns: b.addOns.map((a) => ({ name: a.addOn.name, quantity: a.quantity })),
         isBlock: b.isBlock,
+        blockNote: (b as { blockNote?: string | null }).blockNote ?? null,
         arrived: Boolean(b.checkedInAt),
         arrivedAt: b.checkedInAt ? new Date(b.checkedInAt as unknown as string).toISOString() : null,
         arrivedBy: b.checkedInByEmail,
@@ -463,8 +466,13 @@ function BookingBlock({
         <span
           className="absolute top-1.5 bottom-1.5 z-[1] overflow-hidden rounded-md px-2 py-1 text-gray-600"
           style={{ ...position, background: HATCH.blocked, border: "1px solid #d1d5db" }}
-          title={`Blocked ${hhmm(b.startUtc)}–${hhmm(b.endUtc)}`}>
-          <span className="block truncate font-semibold text-[11.5px] leading-tight">Blocked</span>
+          title={`Blocked ${hhmm(b.startUtc)}–${hhmm(b.endUtc)}${b.blockNote ? ` — ${b.blockNote}` : ""}`}>
+          {/* The reason leads when there is one: at the counter, "being
+              rewired" and "blocked, no idea why" call for different answers to
+              the exhibitor standing there. */}
+          <span className="block truncate font-semibold text-[11.5px] leading-tight">
+            {b.blockNote || "Blocked"}
+          </span>
           <span className="block truncate text-[10.5px] tabular-nums">
             {hhmm(b.startUtc)}–{hhmm(b.endUtc)}
           </span>

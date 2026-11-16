@@ -38,7 +38,13 @@ export class ResourceBookingService {
    * atomic hours like a confirmed booking — the DB rejects a block that overlaps
    * an existing booking (surfaced as a BookingConflict).
    */
-  async createBlock(input: { slug: string; startUtc: Date; durationHours: DurationHours }): Promise<void> {
+  async createBlock(input: {
+    slug: string;
+    startUtc: Date;
+    durationHours: DurationHours;
+    /** Why the room is off sale, for the admin and the welcome desk. */
+    note?: string | null;
+  }): Promise<void> {
     const room = await this.deps.resourceRepository.findBySlug(input.slug);
     if (!room) throw new ErrorWithCode(ErrorCode.NotFound, `Room "${input.slug}" not found`);
 
@@ -62,6 +68,7 @@ export class ResourceBookingService {
       slotStarts,
       bookerEmail: "block@ne26.internal",
       bookerName: "BLOCKED (admin)",
+      blockNote: input.note?.trim() || null,
       amountTotal: 0,
       currency: room.currency,
       status: ResourceBookingStatus.CONFIRMED,

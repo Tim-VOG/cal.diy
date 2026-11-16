@@ -23,6 +23,7 @@ interface BlockRow {
   startUtc: string;
   endUtc: string;
   durationMinutes: number;
+  note?: string | null;
 }
 
 function fmtDateTime(iso: string): string {
@@ -73,9 +74,17 @@ export default function BlocksManager({
   const [slug, setSlug] = useState(rooms[0]?.slug ?? "");
   const [startUtc, setStartUtc] = useState(startOptions[0]?.iso ?? "");
   const [durationHours, setDurationHours] = useState<DurationHours>(1);
+  const [note, setNote] = useState("");
 
   const refresh = { onSuccess: () => router.refresh() };
-  const create = trpc.viewer.rooms.createBlock.useMutation(refresh);
+  const create = trpc.viewer.rooms.createBlock.useMutation({
+    onSuccess: () => {
+      // Cleared on purpose: the next block is rarely for the same reason, and a
+      // stale one carried over is worse than none at all.
+      setNote("");
+      router.refresh();
+    },
+  });
   const remove = trpc.viewer.rooms.removeBlock.useMutation(refresh);
 
   return (
@@ -126,10 +135,21 @@ export default function BlocksManager({
                 ))}
               </select>
             </label>
+            <label className="min-w-[14rem] flex-1 text-sm">
+              <span className="font-medium text-gray-700">Reason</span>
+              <input
+                type="text"
+                value={note}
+                maxLength={200}
+                placeholder="Rewiring, held for the organiser…"
+                onChange={(e) => setNote(e.target.value)}
+                className={`${inputClass} mt-1 w-full`}
+              />
+            </label>
             <button
               type="button"
               disabled={create.isPending || !slug || !startUtc}
-              onClick={() => create.mutate({ slug, startUtc, durationHours })}
+              onClick={() => create.mutate({ slug, startUtc, durationHours, note: note.trim() || undefined })}
               className="rounded-lg bg-[#000643] px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90 disabled:opacity-40">
               {create.isPending ? "Blocking…" : "Block slot"}
             </button>
@@ -143,13 +163,14 @@ export default function BlocksManager({
               <tr>
                 <th className="px-3 py-2">Room</th>
                 <th className="px-3 py-2">When (Istanbul)</th>
+                <th className="px-3 py-2">Reason</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
             <tbody>
               {blocks.length === 0 ? (
                 <tr>
-                  <td className="px-3 py-6 text-center text-gray-400" colSpan={3}>
+                  <td className="px-3 py-6 text-center text-gray-400" colSpan={4}>
                     No blocked slots
                   </td>
                 </tr>
@@ -159,6 +180,9 @@ export default function BlocksManager({
                     <td className="px-3 py-2 font-medium">{b.roomName}</td>
                     <td className="px-3 py-2">
                       {fmtDateTime(b.startUtc)} – {fmtDateTime(b.endUtc)} ({b.durationMinutes / 60}h)
+                    </td>
+                    <td className="px-3 py-2 text-gray-600">
+                      {b.note || <span className="text-gray-400">No reason given</span>}
                     </td>
                     <td className="px-3 py-2">
                       <button

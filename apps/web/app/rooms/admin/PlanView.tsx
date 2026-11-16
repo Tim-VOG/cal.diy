@@ -18,6 +18,8 @@ export interface PlanBlockedSlot {
   roomName: string;
   startUtc: string;
   endUtc: string;
+  /** Why the room is off sale, when whoever blocked it said. */
+  note?: string | null;
 }
 
 type Item = AdminBookingRow | (PlanBlockedSlot & { status: "BLOCKED" });
@@ -192,8 +194,10 @@ function PlanBlockView({
       <span
         className="absolute top-1.5 bottom-1.5 overflow-hidden rounded-md px-2 py-1 text-gray-600"
         style={{ ...position, background: HATCH.blocked, border: "1px solid #d1d5db" }}
-        title={`Blocked ${fmtTime(b.startUtc)}–${fmtTime(b.endUtc)}`}>
-        <span className="block truncate font-semibold text-[11.5px] leading-tight">Blocked</span>
+        title={`Blocked ${fmtTime(b.startUtc)}–${fmtTime(b.endUtc)}${b.note ? ` — ${b.note}` : ""}`}>
+        <span className="block truncate font-semibold text-[11.5px] leading-tight">
+          {b.note || "Blocked"}
+        </span>
         <span className="block truncate text-[10.5px] tabular-nums">
           {fmtTime(b.startUtc)}–{fmtTime(b.endUtc)}
         </span>

@@ -951,6 +951,7 @@ export const roomsRouter = router({
       slug: input.slug,
       startUtc: new Date(input.startUtc),
       durationHours: input.durationHours,
+      note: input.note ?? null,
     });
     return { created: true };
   }),

@@ -37,6 +37,7 @@ export default async function ManageBlocksPage(): Promise<JSX.Element> {
         startUtc: b.startTime.toISOString(),
         endUtc: b.endTime.toISOString(),
         durationMinutes: b.durationMinutes,
+        note: b.blockNote,
       }))}
     />
   );

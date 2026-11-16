@@ -24,6 +24,8 @@ export interface CreateResourceBookingWithSlotsInput {
   holdExpiresAt?: Date | null;
   /** Admin block rather than a real sale. */
   isBlock?: boolean;
+  /** Why the room is off sale. Only a block carries one. */
+  blockNote?: string | null;
   /** Add-on lines, with prices and VAT rates already frozen by the caller. */
   addOns?: { addOnId: number; quantity: number; unitPrice: number; lineTotal: number; vatRate: number }[];
 }
@@ -92,6 +94,7 @@ export class ResourceBookingRepository {
             status: input.status,
             holdExpiresAt: input.holdExpiresAt ?? null,
             isBlock: input.isBlock ?? false,
+            blockNote: input.blockNote ?? null,
           },
           select: {
             id: true,
@@ -585,6 +588,9 @@ export class ResourceBookingRepository {
         bookerEmail: true,
         status: true,
         isBlock: true,
+        // NE26: why the room is off sale. Both plan boards print it — a block
+        // with no reason is, to a hostess, the same as one made by mistake.
+        blockNote: true,
         // NE26: an unpaid hold frees itself; the counter has to see that clock.
         holdExpiresAt: true,
         checkedInAt: true,
@@ -995,6 +1001,7 @@ export class ResourceBookingRepository {
         startTime: true,
         endTime: true,
         durationMinutes: true,
+        blockNote: true,
         resource: { select: { name: true } },
       },
     });

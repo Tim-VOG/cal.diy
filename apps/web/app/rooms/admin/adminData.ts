@@ -133,6 +133,8 @@ export async function loadAdminBookings() {
       roomName: b.resource.name,
       startUtc: b.startTime.toISOString(),
       endUtc: b.endTime.toISOString(),
+      note: b.blockNote,
+      durationMinutes: b.durationMinutes,
     })),
     attention,
   };
