@@ -3005,6 +3005,13 @@ model ResourceBooking {
   // because a refund is a decision and a tablet on a counter is not where it is
   // taken. An admin acts on it from the order. The three columns are the trace
   // — when it was asked, who took it, and what the exhibitor said.
+  // NE26: the booking this one continues, in the same room and back to back.
+  // Sold as a second booking priced at its own duration, because the package
+  // prices are per duration and not proportional — there is no price for "a
+  // fourth hour". The link is what lets the invoice say what the charge
+  // continues, and explains to anyone reading the room's day why two bookings
+  // touch with no cleaning gap between them.
+  extendsBookingUid       String?
   cancellationRequestedAt DateTime?
   cancellationRequestedBy String?
   cancellationRequestNote String?

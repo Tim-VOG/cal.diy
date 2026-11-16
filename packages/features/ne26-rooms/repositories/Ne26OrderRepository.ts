@@ -11,6 +11,11 @@ export interface OrderRoomInput {
   durationMinutes: number;
   /** Atomic slot marks the room occupies, buffer included. */
   slotStarts: Date[];
+  /**
+   * The booking this one continues, back to back in the same room. Set only by
+   * the extension path; a normal sale leaves it undefined.
+   */
+  extendsBookingUid?: string | null;
   amountTotal: number;
   addOns: { addOnId: number; quantity: number; unitPrice: number; lineTotal: number; vatRate: number }[];
 }
@@ -41,6 +46,22 @@ export interface CreateOrderInput {
   amountTotal: number;
   currency: string;
   holdExpiresAt: Date;
+  /**
+   * Trailing cleaning-gap slots to release before this order's own are written,
+   * inside the same transaction.
+   *
+   * Only an extension sets this. Two bookings can never touch, because every
+   * booking reserves its gap as real slot rows — and a continuation of the same
+   * exhibitor's meeting in the same room has to touch. The gap is handed on
+   * rather than waived: these rows go, and the extension reserves its own gap
+   * past its new end. Deleting them in the same transaction as the insert is
+   * what stops a crash between the two leaving the run with no gap at all.
+   *
+   * Scoped to the named booking's OWN rows at or after `from`: a uid is not a
+   * permission to delete slots, and the rows before that point are the meeting
+   * itself, already paid for.
+   */
+  releaseBufferAfter?: { bookingUid: string; from: Date };
   rooms: OrderRoomInput[];
   /**
    * Decides, INSIDE the create transaction and under this buyer's lock, which
@@ -132,6 +153,16 @@ export class Ne26OrderRepository {
           select: { uid: true },
         });
 
+        if (input.releaseBufferAfter) {
+          const { bookingUid, from } = input.releaseBufferAfter;
+          await tx.resourceSlot.deleteMany({
+            where: {
+              booking: { uid: bookingUid },
+              slotStart: { gte: from },
+            },
+          });
+        }
+
         for (const room of input.rooms) {
           // Reclaim abandoned holds covering these slots. Same reasoning as the
           // single-room path: an expired PENDING hold no longer protects its
@@ -178,6 +209,7 @@ export class Ne26OrderRepository {
               currency: input.currency,
               status: ResourceBookingStatus.PENDING,
               holdExpiresAt: input.holdExpiresAt,
+              extendsBookingUid: room.extendsBookingUid ?? null,
             },
             select: { id: true, uid: true },
           });
