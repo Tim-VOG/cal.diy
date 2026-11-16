@@ -273,6 +273,7 @@ export default async function AdminOrderPage({
             }
             openMarks={schedule.flatMap((day) => day.openSlotStartsUtc.map((d) => d.getTime()))}
             bufferMinutes={roomSettings.bufferMinutes}
+            startStepMinutes={roomSettings.slotGranularityMinutes}
             hasCancelled={rooms.some((b) => b.status === "CANCELLED")}
           />
 

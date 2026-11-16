@@ -428,6 +428,75 @@ export class ResourceBookingRepository {
     });
   }
 
+  /**
+   * A booking an admin is about to move, with what decides whether it may be.
+   *
+   * Whether anything was sold ONTO it is asked separately, by
+   * findContinuationsOf: `extendsBookingUid` is a plain column rather than a
+   * relation, and adding a foreign key to it the night before the event buys
+   * nothing a second query does not.
+   */
+  findForMove(uid: string) {
+    return this.prismaClient.resourceBooking.findUnique({
+      where: { uid },
+      select: {
+        uid: true,
+        status: true,
+        isBlock: true,
+        startTime: true,
+        endTime: true,
+        durationMinutes: true,
+        bookerEmail: true,
+        bookerName: true,
+        extendsBookingUid: true,
+        resourceId: true,
+        resource: { select: { name: true, venueName: true } },
+        order: { select: { uid: true, invoiceNumber: true } },
+      },
+    });
+  }
+
+  /**
+   * Put a booking at a different time, in the same room, for the same length.
+   *
+   * One transaction: the old quarter-hours go, the new ones are written, and
+   * the row is restated. If anybody else holds the target the insert fails on
+   * the unique index and the whole thing rolls back — the booking stays
+   * exactly where it was, which is the only acceptable outcome for a move that
+   * cannot happen.
+   *
+   * No money is touched here. Same room and same length means the same price,
+   * so there is nothing to charge, refund or re-invoice; the document is
+   * redrawn separately because only the line describing the slot changed.
+   */
+  async moveBookingSlots(input: {
+    uid: string;
+    startTime: Date;
+    endTime: Date;
+    slotStarts: Date[];
+  }): Promise<void> {
+    await this.prismaClient.$transaction(async (tx) => {
+      const booking = await tx.resourceBooking.findUnique({
+        where: { uid: input.uid },
+        select: { id: true, resourceId: true },
+      });
+      if (!booking) throw new ErrorWithCode(ErrorCode.NotFound, "That booking no longer exists.");
+
+      await tx.resourceSlot.deleteMany({ where: { bookingId: booking.id } });
+      await tx.resourceSlot.createMany({
+        data: input.slotStarts.map((slotStart) => ({
+          resourceId: booking.resourceId,
+          slotStart,
+          bookingId: booking.id,
+        })),
+      });
+      await tx.resourceBooking.update({
+        where: { id: booking.id },
+        data: { startTime: input.startTime, endTime: input.endTime },
+      });
+    });
+  }
+
   findExtensionParent(uid: string) {
     return this.prismaClient.resourceBooking.findUnique({
       where: { uid },

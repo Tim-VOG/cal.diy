@@ -2,7 +2,7 @@
 
 import { describeExtension } from "@calcom/features/ne26-rooms/lib/bookingExtension";
 import { trpc } from "@calcom/trpc/react";
-import { Clock3 } from "lucide-react";
+import { Clock3, MoveRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { fmtDay, fmtTime } from "../../format";
@@ -76,6 +76,7 @@ export default function PlanAndExtraTime({
   extendable,
   openMarks,
   bufferMinutes,
+  startStepMinutes,
   hasCancelled,
 }: {
   days: PlanDay[];
@@ -84,14 +85,23 @@ export default function PlanAndExtraTime({
   extendable: ExtendableRoom[];
   openMarks: number[];
   bufferMinutes: number;
+  /** The step between start times an admin may choose — 60 at this event. */
+  startStepMinutes: number;
   hasCancelled: boolean;
 }): JSX.Element {
   const router = useRouter();
   const [uid, setUid] = useState(extendable[0]?.uid ?? "");
   const [direction, setDirection] = useState<"before" | "after">("after");
   const [durationHours, setDurationHours] = useState<1 | 2 | 3>(1);
+  // Which form the band is previewing. Two proposals drawn at once would be
+  // two dashed blocks and no way to tell which button belongs to which.
+  const [mode, setMode] = useState<"extend" | "move">("extend");
+  const [moveUid, setMoveUid] = useState(extendable[0]?.uid ?? "");
+  const [moveStart, setMoveStart] = useState("");
+  const [notify, setNotify] = useState(true);
 
   const extend = trpc.viewer.rooms.extendBooking.useMutation({ onSuccess: () => router.refresh() });
+  const move = trpc.viewer.rooms.moveBooking.useMutation({ onSuccess: () => router.refresh() });
 
   const openSet = useMemo(() => new Set(openMarks), [openMarks]);
   const selected = extendable.find((r) => r.uid === uid) ?? extendable[0];
@@ -116,6 +126,46 @@ export default function PlanAndExtraTime({
     }
     return runs;
   }, [selected]);
+
+  /** The start times an admin may choose, by day, at the event's own step. */
+  const startOptions = useMemo(() => {
+    const step = Math.max(15, startStepMinutes) * 60 * 1000;
+    const marks = [...openMarks].sort((a, b) => a - b);
+    return marks.filter((m) => {
+      const day = days.find((d) => m >= d.openMs && m < d.closeMs);
+      return day ? (m - day.openMs) % step === 0 : false;
+    });
+  }, [openMarks, days, startStepMinutes]);
+
+  const moving = extendable.find((r) => r.uid === moveUid) ?? extendable[0];
+
+  /** Where the move would land, and whether anybody else is already there. */
+  const movePreview = useMemo(() => {
+    if (!moving || !moveStart) return null;
+    const startMs = new Date(moveStart).getTime();
+    const lengthMs = moving.endMs - moving.startMs;
+    const endMs = startMs + lengthMs;
+    // Its OWN hours do not count against it — including the cleaning gap it
+    // currently holds, which travels with it.
+    const ownUntil = moving.endMs + Math.max(0, bufferMinutes) * 60 * 1000;
+    const taken = new Set(moving.takenMs.filter((m) => m < moving.startMs || m >= ownUntil));
+    let ok = startMs > Date.now();
+    let reason = ok ? "" : "That time has already passed.";
+    for (let m = startMs; m < endMs + Math.max(0, bufferMinutes) * 60 * 1000 && ok; m += 900_000) {
+      if (!openSet.has(m) && m < endMs) {
+        ok = false;
+        reason = "That time falls outside the event opening hours.";
+      } else if (taken.has(m)) {
+        ok = false;
+        reason = "Those hours are already taken in this room.";
+      }
+    }
+    if (startMs === moving.startMs) {
+      ok = false;
+      reason = "That is where the booking already is.";
+    }
+    return { ok, reason, span: { startMs, endMs } };
+  }, [moving, moveStart, bufferMinutes, openSet]);
 
   /** What the current choice would do — drawn on the band, and why it cannot. */
   const preview = useMemo(() => {
@@ -175,8 +225,11 @@ export default function PlanAndExtraTime({
             const hours = Math.round(span / HOUR_MS);
             const onDay = rooms.filter((b) => b.endMs > open && b.startMs < close);
             const extraOnDay = continuations.filter((b) => b.endMs > open && b.startMs < close);
+            const proposal = mode === "move" ? movePreview : preview;
             const previewOnDay =
-              preview?.span && preview.span.endMs > open && preview.span.startMs < close ? preview : null;
+              proposal?.span && proposal.span.endMs > open && proposal.span.startMs < close
+                ? proposal
+                : null;
             const place = (startMs: number, endMs: number) => ({
               left: `${((Math.max(startMs, open) - open) / span) * 100}%`,
               width: `calc(${((Math.min(endMs, close) - Math.max(startMs, open)) / span) * 100}% - 2px)`,
@@ -226,8 +279,11 @@ export default function PlanAndExtraTime({
                             : `Cannot be reserved — ${previewOnDay.reason}`
                         }>
                         <span className="truncate font-semibold tabular-nums">
-                          {previewOnDay.ok ? "+" : "✕ "}
-                          {durationHours}h · {fmtTime(new Date(previewOnDay.span.startMs).toISOString())}–
+                          {previewOnDay.ok ? (mode === "move" ? "→ " : "+") : "✕ "}
+                          {mode === "move"
+                            ? ""
+                            : `${durationHours}h · `}
+                          {fmtTime(new Date(previewOnDay.span.startMs).toISOString())}–
                           {fmtTime(new Date(previewOnDay.span.endMs).toISOString())}
                         </span>
                       </span>
@@ -344,7 +400,10 @@ export default function PlanAndExtraTime({
             {extendable.length > 1 ? (
               <label className="text-sm sm:col-span-3">
                 <span className="font-medium text-gray-700">Room</span>
-                <select className={field} value={uid} onChange={(e) => setUid(e.target.value)}>
+                <select className={field} value={uid} onChange={(e) => {
+                    setMode("extend");
+                    setUid(e.target.value);
+                  }}>
                   {extendable.map((r) => (
                     <option key={r.uid} value={r.uid}>
                       {r.name} · {r.whenLabel}
@@ -359,7 +418,10 @@ export default function PlanAndExtraTime({
               <select
                 className={field}
                 value={direction}
-                onChange={(e) => setDirection(e.target.value as "before" | "after")}>
+                onChange={(e) => {
+                  setMode("extend");
+                  setDirection(e.target.value as "before" | "after");
+                }}>
                 <option value="after">Runs later — same start</option>
                 <option value="before">Starts earlier — same end</option>
               </select>
@@ -370,7 +432,10 @@ export default function PlanAndExtraTime({
               <select
                 className={field}
                 value={durationHours}
-                onChange={(e) => setDurationHours(Number(e.target.value) as 1 | 2 | 3)}>
+                onChange={(e) => {
+                  setMode("extend");
+                  setDurationHours(Number(e.target.value) as 1 | 2 | 3);
+                }}>
                 {([1, 2, 3] as const).map((h) => (
                   <option key={h} value={h}>
                     {h} hour{h > 1 ? "s" : ""}
@@ -397,7 +462,7 @@ export default function PlanAndExtraTime({
             </p>
           ) : null}
 
-          {preview && !preview.ok ? (
+          {mode === "extend" && preview && !preview.ok ? (
             <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-amber-800 text-sm">{preview.reason}</p>
           ) : null}
           {extend.error ? <p className="mt-3 text-red-600 text-sm">{extend.error.message}</p> : null}
@@ -429,6 +494,120 @@ export default function PlanAndExtraTime({
                 className="mt-1 block break-all text-[#000643] text-xs underline hover:opacity-80">
                 {extend.data.checkoutUrl}
               </a>
+            </div>
+          ) : null}
+        </Section>
+      ) : null}
+
+      {extendable.length > 0 ? (
+        <Section title="Move a booking">
+          <h3 className="flex items-center gap-2 font-semibold text-[#000643] text-base">
+            <MoveRight className="h-4 w-4 shrink-0" aria-hidden />
+            Same room, same length, different time
+          </h3>
+          <p className="mt-1 text-gray-600 text-sm">
+            For an exhibitor who asks to shift their meeting. Nothing is charged and nothing is refunded —
+            the price has not changed, so there is no credit note and no second invoice. The issued invoice
+            is redrawn under its own number so it says the new time.
+          </p>
+
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {extendable.length > 1 ? (
+              <label className="text-sm sm:col-span-3">
+                <span className="font-medium text-gray-700">Booking</span>
+                <select
+                  className={field}
+                  value={moveUid}
+                  onChange={(e) => {
+                    setMode("move");
+                    setMoveUid(e.target.value);
+                  }}>
+                  {extendable.map((r) => (
+                    <option key={r.uid} value={r.uid}>
+                      {r.name} · {r.whenLabel}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+
+            <label className="text-sm sm:col-span-2">
+              <span className="font-medium text-gray-700">New start (Istanbul)</span>
+              <select
+                className={field}
+                value={moveStart}
+                onChange={(e) => {
+                  setMode("move");
+                  setMoveStart(e.target.value);
+                }}>
+                <option value="">Choose a time…</option>
+                {startOptions.map((ms) => (
+                  <option key={ms} value={new Date(ms).toISOString()}>
+                    {fmtDay(new Date(ms).toISOString())} · {fmtTime(new Date(ms).toISOString())}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="flex items-end">
+              <button
+                type="button"
+                disabled={move.isPending || !moveStart || !movePreview?.ok}
+                onClick={() => move.mutate({ uid: moveUid, newStartUtc: moveStart, notify })}
+                className="w-full rounded-lg bg-[#000643] px-4 py-2 font-semibold text-sm text-white transition hover:opacity-90 disabled:opacity-40">
+                {move.isPending ? "Moving…" : "Move it"}
+              </button>
+            </div>
+          </div>
+
+          <label className="mt-3 flex items-center gap-2 text-gray-600 text-sm">
+            <input
+              type="checkbox"
+              checked={notify}
+              onChange={(e) => setNotify(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            {/* On by default: a meeting that moved without a word is how
+                somebody turns up at the old time. Off is for the exhibitor
+                standing at the counter who has just asked for it. */}
+            Email the exhibitor the new time
+          </label>
+
+          {extendable.length === 1 ? (
+            <p className="mt-2 text-gray-400 text-xs">
+              {extendable[0].name} · {extendable[0].whenLabel}
+            </p>
+          ) : null}
+
+          {mode === "move" && movePreview && !movePreview.ok ? (
+            <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-amber-800 text-sm">
+              {movePreview.reason}
+            </p>
+          ) : null}
+          {move.error ? <p className="mt-3 text-red-600 text-sm">{move.error.message}</p> : null}
+
+          {move.data ? (
+            <div className="mt-4 rounded-lg bg-gray-50 px-4 py-3 text-sm">
+              <p className="font-semibold text-[#000643]">{move.data.roomName}</p>
+              <p className="mt-1 text-gray-600">
+                {move.data.fromLabel} → <strong>{move.data.toLabel}</strong>
+              </p>
+              <p className="mt-2 text-gray-600">
+                {move.data.invoiceRedrawn
+                  ? "The invoice was redrawn under its own number."
+                  : "No invoice to redraw."}{" "}
+                {move.data.emailed ? (
+                  <>
+                    Told <strong>{move.data.bookerEmail}</strong>.
+                  </>
+                ) : notify ? (
+                  <span className="text-amber-700">
+                    The email could not be sent — tell them yourself. The move itself is done.
+                  </span>
+                ) : (
+                  "The exhibitor was not told."
+                )}
+              </p>
             </div>
           ) : null}
         </Section>

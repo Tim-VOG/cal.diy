@@ -278,6 +278,66 @@ export async function sendExtensionPaymentEmail(input: {
 }
 
 /**
+ * Tell the exhibitor their meeting has moved.
+ *
+ * Sent when the desk shifts a booking at their request, so it is a
+ * confirmation rather than news: it leads with the new time and keeps the old
+ * one beside it, because somebody who asked for 14:00 still needs to see that
+ * what moved is the 11:00 they had, not a second booking they now owe for.
+ *
+ * It says plainly that nothing was charged. A message about a booking changing
+ * is exactly where a reader starts looking for a new invoice.
+ */
+export async function sendBookingMovedEmail(input: {
+  to: string;
+  bookerName: string;
+  roomName: string;
+  /** Where it was, e.g. "Tue, 17 Nov 2026, 11:00-12:00 TRT". */
+  fromLabel: string;
+  /** Where it is now, in the same form. */
+  toLabel: string;
+  bookingsUrl: string;
+}): Promise<void> {
+  const { transport, from } = transportOrThrow();
+
+  const name = escapeHtml(input.bookerName);
+  const room = escapeHtml(input.roomName);
+  const subject = `Your meeting in ${input.roomName} has moved to ${input.toLabel}`;
+
+  const text =
+    `Hi ${input.bookerName},\n\n` +
+    `As agreed, your meeting in ${input.roomName} has been moved.\n\n` +
+    `Was: ${input.fromLabel}\n` +
+    `Now: ${input.toLabel}\n\n` +
+    `Nothing has been charged and nothing is owed — it is the same booking at a different time, and your invoice is unchanged.\n\n` +
+    `Your bookings: ${input.bookingsUrl}\n\n` +
+    `NATO Edge 26 — Meeting Rooms`;
+
+  const html = emailShell(
+    `<p style="margin:0 0 14px">Hi ${name},</p>` +
+      `<p style="margin:0 0 14px">As agreed, your meeting in <strong>${room}</strong> has been moved.</p>` +
+      card(
+        `${roomHeading(input.roomName, input.toLabel)}<div style="margin:12px 0 0">${factRows([
+          { label: "Was", value: input.fromLabel },
+          { label: "Now", value: input.toLabel, strong: true },
+        ])}</div>`
+      ) +
+      `<p style="margin:14px 0">Nothing has been charged and nothing is owed — it is the same booking at a different time, and your invoice is unchanged.</p>` +
+      button("See your bookings", input.bookingsUrl) +
+      signOff("17–19 November 2026 · Fuar İzmir, Türkiye · all times in TRT")
+  );
+
+  await transport.sendMail({
+    from,
+    // NE26 test mode: redirect to a single inbox while testing (env-gated).
+    to: process.env.NE26_EMAIL_REDIRECT_TO || input.to,
+    subject,
+    text,
+    html,
+  });
+}
+
+/**
  * Tell the buyer their hold is gone.
  *
  * A declined card or an abandoned checkout released the rooms in silence: the

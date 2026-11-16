@@ -7,6 +7,7 @@ import { ZChangeBookerEmailInputSchema, ZChangeMyEmailInputSchema } from "./acco
 import { ZCorrectBillingInputSchema } from "./correctBilling.schema";
 import { ZCreateBlockInputSchema } from "./createBlock.schema";
 import { ZExtendBookingInputSchema } from "./extendBooking.schema";
+import { ZMoveBookingInputSchema } from "./moveBooking.schema";
 import { ZCreateBookingInputSchema, ZCreateOrderInputSchema } from "./createBooking.schema";
 import {
   ZDeskCancellationRequestInputSchema,
@@ -941,6 +942,62 @@ export const roomsRouter = router({
     });
 
     return { ...extension, emailed };
+  }),
+
+  /**
+   * Shift an existing booking to a different time, same room, same length.
+   *
+   * Admin-only, at the exhibitor's request. No money moves: the price is
+   * unchanged, so there is no credit note and no second invoice — the issued
+   * one is redrawn under its own number because only the line describing the
+   * slot was wrong.
+   */
+  moveBooking: ne26AdminProcedure.input(ZMoveBookingInputSchema).mutation(async ({ ctx, input }) => {
+    const { moveBooking } = await import("@calcom/features/ne26-rooms/services/MoveBookingService");
+    const { getNe26StaffRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26StaffRepository.container"
+    );
+    const { WEBAPP_URL } = await import("@calcom/lib/constants");
+
+    const moved = await moveBooking({
+      bookingUid: input.uid,
+      newStartUtc: new Date(input.newStartUtc),
+    });
+
+    // The move has happened by here. A failed mail is reported, never thrown:
+    // undoing a booking the exhibitor has already been told about by phone
+    // would be worse than an email that did not arrive.
+    let emailed = false;
+    if (input.notify) {
+      const { sendBookingMovedEmail } = await import("@calcom/features/ne26-rooms/lib/mailer");
+      try {
+        await sendBookingMovedEmail({
+          to: moved.bookerEmail,
+          bookerName: moved.bookerName,
+          roomName: moved.roomName,
+          fromLabel: moved.fromLabel,
+          toLabel: moved.toLabel,
+          bookingsUrl: `${WEBAPP_URL}/rooms/bookings`,
+        });
+        emailed = true;
+      } catch (error) {
+        console.error("[ne26] booking moved email failed", error);
+      }
+    }
+
+    await getNe26StaffRepository().recordAction({
+      actorUserId: ctx.user.id,
+      actorEmail: ctx.user.email,
+      actorRole: "ADMIN",
+      action: "booking.move",
+      targetType: "booking",
+      targetId: input.uid,
+      detail: `${moved.roomName}: ${moved.fromLabel} → ${moved.toLabel}${
+        moved.invoiceRedrawn ? " · invoice redrawn" : ""
+      }${input.notify ? (emailed ? " · exhibitor told" : " · email FAILED") : " · exhibitor not told"}`,
+    });
+
+    return { ...moved, emailed };
   }),
 
   createBlock: ne26AdminProcedure.input(ZCreateBlockInputSchema).mutation(async ({ input }) => {

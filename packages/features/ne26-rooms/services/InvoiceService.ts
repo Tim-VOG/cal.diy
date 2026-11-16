@@ -181,6 +181,48 @@ export class InvoiceService {
    * behind it accepts any uid an admin sends, and the button that reaches it
    * exists to repair orders that are already broken.
    */
+  /**
+   * Redraw an invoice that has already been issued, under its own number.
+   *
+   * For a booking whose TIME changed — moved at the exhibitor's request —
+   * where the amount, the VAT and the number are all untouched and only the
+   * line describing the slot is now wrong. That is not a credit-note
+   * situation: nothing taxable changed, and raising one would say a sale was
+   * reversed when it was not. One document, still true.
+   *
+   * The VAT is read FROZEN off the order rather than resolved again. A rate or
+   * a rule changed in the settings since must never reach back into a document
+   * already in somebody's accounts — which is exactly why those three columns
+   * are stored on the order in the first place.
+   *
+   * The issue date is kept too. The document was raised that day; moving a
+   * meeting does not re-date it.
+   */
+  async redrawInvoice(uid: string): Promise<boolean> {
+    const order = await this.deps.ne26OrderRepository.findByUid(uid);
+    if (!order?.invoiceNumber || !order.invoiceIssuedAt) return false;
+
+    const issuer = await this.deps.invoiceSettingsRepository.get();
+    const model = buildInvoiceModel(
+      {
+        currency: order.currency,
+        roomVatRate: order.roomVatRate ?? ROOM_VAT_RATE_BP,
+        rooms: this.invoiceRooms(order),
+      },
+      { zeroRated: order.vatZeroRated, mention: order.vatMention }
+    );
+    const billTo = await this.resolveBillTo(order);
+    const pdf = await renderInvoicePdf(
+      model,
+      this.documentMeta(order, "invoice", order.invoiceNumber, order.invoiceIssuedAt, billTo),
+      issuer
+    );
+    // Overwrites in place: same uid, same path, same number. Nothing is
+    // allocated, so this can be run again without spending a number.
+    await saveInvoicePdf(uid, pdf);
+    return true;
+  }
+
   async issueInvoice(uid: string): Promise<void> {
     const order = await this.deps.ne26OrderRepository.findByUid(uid);
     if (!order || order.status !== ResourceBookingStatus.CONFIRMED || order.invoiceNumber) return;
