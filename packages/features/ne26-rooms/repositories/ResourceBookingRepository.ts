@@ -381,6 +381,36 @@ export class ResourceBookingRepository {
    * an exhibitor is charged, so it reads the room's prices and the buyer's
    * billing details straight from the row being continued, and nothing else.
    */
+  /**
+   * Continuations sold on any of these bookings — extra time on the same room,
+   * back to back, each sitting on its own order.
+   *
+   * The order page draws them on its plan even though it does not charge for
+   * them: the band is about what the room is doing, and a meeting shown ending
+   * at 10:00 when the exhibitor is in the room until 11:00 tells the desk the
+   * wrong thing.
+   */
+  findContinuationsOf(bookingUids: string[]) {
+    if (bookingUids.length === 0) return Promise.resolve([]);
+    return this.prismaClient.resourceBooking.findMany({
+      where: { extendsBookingUid: { in: bookingUids } },
+      orderBy: { startTime: "asc" },
+      select: {
+        uid: true,
+        status: true,
+        startTime: true,
+        endTime: true,
+        durationMinutes: true,
+        amountTotal: true,
+        currency: true,
+        holdExpiresAt: true,
+        extendsBookingUid: true,
+        orderUid: true,
+        resource: { select: { name: true } },
+      },
+    });
+  }
+
   findExtensionParent(uid: string) {
     return this.prismaClient.resourceBooking.findUnique({
       where: { uid },

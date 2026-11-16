@@ -3,6 +3,7 @@ import { getNe26BillingProfileRepository } from "@calcom/features/ne26-rooms/di/
 import { getNe26OrderRepository } from "@calcom/features/ne26-rooms/di/Ne26OrderRepository.container";
 import { resolveBillTo, splitContactName } from "@calcom/features/ne26-rooms/lib/billingCorrection";
 import { getNe26RoomSettingsRepository } from "@calcom/features/ne26-rooms/di/Ne26RoomSettingsRepository.container";
+import { getResourceBookingRepository } from "@calcom/features/ne26-rooms/di/ResourceBookingRepository.container";
 import { buildEventSchedule, SLOT_GRANULARITY_MS } from "@calcom/features/ne26-rooms/lib/eventSchedule";
 import { availableOrderActions } from "@calcom/features/ne26-rooms/lib/orderActions";
 import { orderRef } from "@calcom/features/ne26-rooms/lib/orderRef";
@@ -81,6 +82,11 @@ export default async function AdminOrderPage({
   if (!order) notFound();
 
   const rooms = order.bookings;
+  // Extra time sold on these rooms. It belongs to other orders and is not
+  // charged here — it is drawn on the plan because the band says what the room
+  // is doing, and a meeting shown ending at 10:00 when the exhibitor is in the
+  // room until 11:00 tells the desk the wrong thing.
+  const continuations = await getResourceBookingRepository().findContinuationsOf(rooms.map((b) => b.uid));
   // Which credit note took each room off sale, for the list below.
   const creditedRooms = new Map(
     creditNotes.flatMap((note) => note.bookings.map((b) => [b.uid, note.number] as const))
@@ -225,15 +231,43 @@ export default async function AdminOrderPage({
                 const onDay = rooms.filter(
                   (b) => b.endTime.getTime() > open && b.startTime.getTime() < close
                 );
+                const extraOnDay = continuations.filter(
+                  (b) => b.endTime.getTime() > open && b.startTime.getTime() < close
+                );
                 return (
-                  <div key={day.date} className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-3">
-                    <span className="text-gray-600 text-xs">{fmtDay(new Date(open).toISOString())}</span>
+                  <div key={day.date} className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-3">
+                    <span className="pt-2 text-gray-600 text-xs">{fmtDay(new Date(open).toISOString())}</span>
+                    <div>
                     <div
                       className="relative h-9 rounded-md border border-gray-100 bg-gray-50"
                       style={{
                         backgroundImage: "linear-gradient(to right, #e8eaf0 1px, transparent 1px)",
                         backgroundSize: `calc(100% / ${hours}) 100%`,
                       }}>
+                      {/* Extra time first, so a room block always wins the
+                          overlap: the continuation is context, not the subject
+                          of this page. */}
+                      {extraOnDay.map((b) => {
+                        const left = ((Math.max(b.startTime.getTime(), open) - open) / span) * 100;
+                        const width =
+                          ((Math.min(b.endTime.getTime(), close) - Math.max(b.startTime.getTime(), open)) /
+                            span) *
+                          100;
+                        return (
+                          <span
+                            key={b.uid}
+                            className="absolute top-1 bottom-1 overflow-hidden rounded border border-gray-300 border-dashed bg-gray-100 px-1.5 text-[11px] text-gray-500 leading-[26px]"
+                            style={{ left: `${left}%`, width: `calc(${width}% - 2px)` }}
+                            title={`Extra time · ${fmtTime(b.startTime.toISOString())}–${fmtTime(
+                              b.endTime.toISOString()
+                            )} · ${b.status === "PENDING" ? "awaiting payment" : "paid"}`}>
+                            <span className="truncate">
+                              +{b.durationMinutes / 60}h · {fmtTime(b.startTime.toISOString())}–
+                              {fmtTime(b.endTime.toISOString())}
+                            </span>
+                          </span>
+                        );
+                      })}
                       {onDay.map((b) => {
                         const left = ((Math.max(b.startTime.getTime(), open) - open) / span) * 100;
                         const width =
@@ -255,16 +289,50 @@ export default async function AdminOrderPage({
                               border: `1px solid ${freed ? "#d1d5db" : held ? "#f5c46b" : "#c9cde8"}`,
                             }}
                             title={`${b.resource.name} · ${fmtTime(b.startTime.toISOString())}–${fmtTime(b.endTime.toISOString())}`}>
-                            <span className="truncate font-semibold">{b.resource.name}</span>
-                            {freed ? " · freed" : ` · ${fmtTime(b.startTime.toISOString())}`}
+                            {/* Hours first, name second. A one-hour block is
+                                about sixty pixels wide, so whatever comes
+                                second is truncated — and the time is the thing
+                                being looked up. */}
+                            <span className="font-semibold tabular-nums">
+                              {fmtTime(b.startTime.toISOString())}–{fmtTime(b.endTime.toISOString())}
+                            </span>
+                            {freed ? " · freed" : ` · ${b.resource.name}`}
                           </span>
                         );
                       })}
+                    </div>
+                    {/* An hour scale under the band. Without it the blocks sit
+                        on an unlabelled grid and the only way to read a time is
+                        to hover one. */}
+                    <div className="relative mt-0.5 h-3.5">
+                      {Array.from({ length: hours + 1 }, (_, i) => {
+                        const mark = new Date(open + i * 3_600_000);
+                        const isLast = i === hours;
+                        return (
+                          <span
+                            key={i}
+                            className="absolute text-[10px] text-gray-400 tabular-nums"
+                            style={
+                              isLast
+                                ? { right: 0 }
+                                : { left: `${(i / hours) * 100}%`, transform: i === 0 ? "none" : "translateX(-50%)" }
+                            }>
+                            {fmtTime(mark.toISOString())}
+                          </span>
+                        );
+                      })}
+                    </div>
                     </div>
                   </div>
                 );
               })}
             </div>
+            {continuations.length > 0 ? (
+              <p className="mt-2 text-gray-500 text-xs">
+                Dashed grey is extra time sold on these rooms. It sits on its own order and is invoiced
+                separately — this order does not charge for it.
+              </p>
+            ) : null}
             {rooms.some((b) => b.status === "CANCELLED") ? (
               <p className="mt-2 text-gray-500 text-xs">
                 Freed rooms went back on sale when the order was cancelled or credited.

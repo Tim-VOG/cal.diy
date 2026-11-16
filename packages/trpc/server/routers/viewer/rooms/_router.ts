@@ -917,7 +917,11 @@ export const roomsRouter = router({
         amountLabel: formatMoney(extension.amountTotal, extension.currency),
         payUrl: extension.checkoutUrl,
       });
-    } catch {
+    } catch (error) {
+      // Logged, not swallowed: without this the only sign of a misconfigured
+      // SMTP relay is a line in the admin saying the mail did not go, with
+      // nothing anywhere saying why.
+      console.error("[ne26] extension payment email failed", error);
       emailed = false;
     }
 
