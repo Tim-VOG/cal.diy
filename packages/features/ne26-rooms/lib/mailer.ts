@@ -213,6 +213,71 @@ export async function sendHoldReminderEmail(input: {
 }
 
 /**
+ * The payment link for extra time an exhibitor asked for at the desk.
+ *
+ * Unlike every other payment mail, nobody is standing at a screen when this is
+ * sent: an admin has agreed to let a meeting start earlier or run later, and
+ * the exhibitor reads about it afterwards. So it says what was agreed before it
+ * says what to do — the time, the room, the price — and it does not run a
+ * countdown, because the room is theirs until the booking would begin rather
+ * than for the usual half hour.
+ *
+ * It does say the link itself can go stale: Stripe closes a payment page after
+ * a day, and somebody who opens this on the morning of the event needs to know
+ * who to ask rather than assume the booking fell through.
+ */
+export async function sendExtensionPaymentEmail(input: {
+  to: string;
+  bookerName: string;
+  roomName: string;
+  /** The continuation's own window, e.g. "17 Nov, 13:00–14:00". */
+  slotLabel: string;
+  /** The meeting it continues, in the same form. */
+  parentSlotLabel: string;
+  amountLabel: string;
+  payUrl: string;
+}): Promise<void> {
+  const { transport, from } = transportOrThrow();
+
+  const name = escapeHtml(input.bookerName);
+  const room = escapeHtml(input.roomName);
+  const subject = `Your extra time in ${input.roomName} — payment link`;
+
+  const text =
+    `Hi ${input.bookerName},\n\n` +
+    `As agreed at the welcome desk, we have put aside ${input.slotLabel} in ${input.roomName}, ` +
+    `continuing your meeting of ${input.parentSlotLabel}.\n\n` +
+    `Amount: ${input.amountLabel}\n\n` +
+    `The room is held for you until that time begins. Pay here:\n${input.payUrl}\n\n` +
+    `The payment page itself closes after 24 hours — if it has, ask at the welcome desk and we will send a new one.\n\n` +
+    `NATO Edge 26 — Meeting Rooms`;
+
+  const html = emailShell(
+    `<p style="margin:0 0 14px">Hi ${name},</p>` +
+      `<p style="margin:0 0 14px">As agreed at the welcome desk, we have put aside extra time in <strong>${room}</strong>, continuing your meeting.</p>` +
+      card(
+        `${roomHeading(input.roomName, input.slotLabel)}<div style="margin:12px 0 0">${factRows([
+          { label: "Continuing", value: input.parentSlotLabel },
+          { label: "Amount", value: input.amountLabel, strong: true },
+        ])}</div>`
+      ) +
+      `<p style="margin:14px 0">The room is held for you until that time begins — there is no countdown to beat.</p>` +
+      button("Pay for the extra time", input.payUrl) +
+      `<p style="margin:14px 0 0;color:#6b7280;font-size:13px">The payment page closes after 24 hours. If it has, ask at the welcome desk and we will send a new one.</p>` +
+      signOff("17–19 November 2026 · Fuar İzmir, Türkiye · all times in TRT")
+  );
+
+  await transport.sendMail({
+    from,
+    // NE26 test mode: redirect to a single inbox while testing (env-gated).
+    to: process.env.NE26_EMAIL_REDIRECT_TO || input.to,
+    subject,
+    text,
+    html,
+  });
+}
+
+/**
  * Tell the buyer their hold is gone.
  *
  * A declined card or an abandoned checkout released the rooms in silence: the

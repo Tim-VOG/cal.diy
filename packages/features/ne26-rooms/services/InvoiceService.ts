@@ -120,6 +120,10 @@ export class InvoiceService {
     return bookings.map((b) => ({
       amountTotal: b.amountTotal,
       roomName: b.resource.name,
+      // Extra time sold on a meeting that already has its own invoice. Saying
+      // so is the difference between two documents that look like a duplicate
+      // and two that read as one meeting.
+      continuesEarlierBooking: Boolean(b.extendsBookingUid),
       durationMinutes: b.durationMinutes,
       slotLabel: formatSlotRange(b.startTime, b.endTime),
       addOns: this.paidLines(order, b).map((a) => ({

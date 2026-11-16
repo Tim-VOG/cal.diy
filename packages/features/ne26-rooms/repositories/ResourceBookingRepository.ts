@@ -373,6 +373,37 @@ export class ResourceBookingRepository {
   }
 
   /** A single booking with everything the admin detail view shows. */
+  /**
+   * The booking a continuation would be attached to, with everything needed to
+   * price and bill it.
+   *
+   * Its own query rather than one of the screen-shaped ones: this decides what
+   * an exhibitor is charged, so it reads the room's prices and the buyer's
+   * billing details straight from the row being continued, and nothing else.
+   */
+  findExtensionParent(uid: string) {
+    return this.prismaClient.resourceBooking.findUnique({
+      where: { uid },
+      select: {
+        uid: true,
+        status: true,
+        isBlock: true,
+        startTime: true,
+        endTime: true,
+        bookerUserId: true,
+        bookerEmail: true,
+        bookerName: true,
+        bookerCountry: true,
+        bookerVatNumber: true,
+        resourceId: true,
+        resource: {
+          select: { name: true, venueName: true, price1h: true, price2h: true, price3h: true, currency: true },
+        },
+        order: { select: { uid: true, bookerPoNumber: true, bookerInternalReference: true } },
+      },
+    });
+  }
+
   findByUidForAdmin(uid: string) {
     return this.prismaClient.resourceBooking.findUnique({
       where: { uid },

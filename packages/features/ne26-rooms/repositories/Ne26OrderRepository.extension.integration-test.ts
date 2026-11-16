@@ -1,15 +1,16 @@
 import { prisma } from "@calcom/prisma";
 import { ResourceBookingStatus } from "@calcom/prisma/enums";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { planExtension } from "../lib/bookingExtension";
 import { getNe26OrderRepository } from "../di/Ne26OrderRepository.container";
+import { planExtension } from "../lib/bookingExtension";
 
 /**
- * The cleaning gap is real slot rows, not a calculation, so handing it from one
- * booking to its continuation is a database operation and has to be proved as
- * one. The unit tests for planExtension prove the arithmetic; these prove that
- * the rows end up where the arithmetic said, that the paid meeting is untouched
- * on the way, and that the no-double-booking index still refuses an outsider.
+ * The cleaning gap is real slot rows, not a calculation, so a continuation
+ * getting past it is a database question and has to be proved as one. The unit
+ * tests cover the arithmetic; these cover the rows — that the meeting's gap is
+ * never disturbed, that the room stays covered end to end, that the unique
+ * index still refuses an outsider, and that cancelling the continuation leaves
+ * the paid meeting exactly as it was.
  */
 const orders = getNe26OrderRepository();
 const STAMP = Date.now();
@@ -33,13 +34,11 @@ const buyer = { email: `ext-${STAMP}@test.com`, name: "Exhibitor" };
 async function paidParent() {
   const marks: Date[] = [];
   for (let ms = at(11).getTime(); ms < at(13).getTime(); ms += 15 * 60 * 1000) marks.push(new Date(ms));
-  const bufferMarks = [at(13)];
-
   const order = await orders.createWithRooms({
     bookerUserId: userId,
     bookerEmail: buyer.email,
     bookerName: buyer.name,
-    amountTotal: 65000,
+    amountTotal: 54000,
     currency: "EUR",
     holdExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
     rooms: [
@@ -48,18 +47,58 @@ async function paidParent() {
         startTime: at(11),
         endTime: at(13),
         durationMinutes: 120,
-        slotStarts: [...marks, ...bufferMarks],
-        amountTotal: 65000,
+        // Its own hours plus the quarter-hour of cleaning after them.
+        slotStarts: [...marks, at(13)],
+        amountTotal: 54000,
         addOns: [],
       },
     ],
   });
-  await orders.confirmPaid(order!.uid, null);
-  const booking = await prisma.resourceBooking.findFirstOrThrow({
-    where: { orderUid: order!.uid },
+  await orders.confirmPaid(order?.uid as string, null);
+  return prisma.resourceBooking.findFirstOrThrow({
+    where: { orderUid: order?.uid },
     select: { uid: true, id: true, startTime: true, endTime: true },
   });
-  return booking;
+}
+
+async function continueAfter(parent: { uid: string; startTime: Date; endTime: Date }, hours: 1 | 2 | 3 = 1) {
+  const plan = planExtension({
+    parent,
+    direction: "after",
+    durationHours: hours,
+    bufferMinutes: BUFFER_MINUTES,
+    openSlotMs: OPEN,
+  });
+  const order = await orders.createWithRooms({
+    bookerUserId: userId,
+    bookerEmail: buyer.email,
+    bookerName: buyer.name,
+    amountTotal: 30000,
+    currency: "EUR",
+    holdExpiresAt: plan.startTime,
+    rooms: [
+      {
+        resourceId,
+        startTime: plan.startTime,
+        endTime: plan.endTime,
+        durationMinutes: plan.durationMinutes,
+        slotStarts: [...plan.slotStarts, ...plan.bufferSlots],
+        extendsBookingUid: parent.uid,
+        amountTotal: 30000,
+        addOns: [],
+      },
+    ],
+  });
+  return { plan, order };
+}
+
+/** Quarter-hours held in the room, whoever holds them. */
+async function heldMarks(): Promise<number[]> {
+  const rows = await prisma.resourceSlot.findMany({
+    where: { resourceId },
+    select: { slotStart: true },
+  });
+  return rows.map((r) => r.slotStart.getTime()).sort();
 }
 
 describe("createWithRooms, continuing a booking", () => {
@@ -98,129 +137,64 @@ describe("createWithRooms, continuing a booking", () => {
     if (userId !== undefined) await prisma.user.deleteMany({ where: { id: userId } });
   });
 
-  it("lets the continuation take the hour the gap was sitting on", async () => {
+  it("is sold from the minute the meeting ended", async () => {
     const parent = await paidParent();
-    const plan = planExtension({
-      parent,
-      direction: "after",
-      durationHours: 1,
-      bufferMinutes: BUFFER_MINUTES,
-      openSlotMs: OPEN,
-    });
-
-    const order = await orders.createWithRooms({
-      bookerUserId: userId,
-      bookerEmail: buyer.email,
-      bookerName: buyer.name,
-      amountTotal: 30000,
-      currency: "EUR",
-      holdExpiresAt: at(11),
-      releaseBufferAfter: { bookingUid: parent.uid, from: plan.releasesParentBufferFrom as Date },
-      rooms: [
-        {
-          resourceId,
-          startTime: plan.startTime,
-          endTime: plan.endTime,
-          durationMinutes: plan.durationMinutes,
-          slotStarts: [...plan.slotStarts, ...plan.bufferSlots],
-          extendsBookingUid: parent.uid,
-          amountTotal: 30000,
-          addOns: [],
-        },
-      ],
-    });
-
+    const { order } = await continueAfter(parent);
     expect(order?.bookings).toHaveLength(1);
     expect(order?.bookings[0].startTime.toISOString()).toBe(at(13).toISOString());
+    expect(order?.bookings[0].endTime.toISOString()).toBe(at(14).toISOString());
+  });
+
+  it("leaves the meeting's cleaning gap owned by the meeting", async () => {
+    const parent = await paidParent();
+    await continueAfter(parent);
+    const gap = await prisma.resourceSlot.findFirstOrThrow({
+      where: { resourceId, slotStart: at(13) },
+      select: { bookingId: true },
+    });
+    expect(gap.bookingId).toBe(parent.id);
+  });
+
+  it("covers the room end to end, with nothing left for anyone else", async () => {
+    const parent = await paidParent();
+    await continueAfter(parent);
+    // 11:00 through 14:00 inclusive: the meeting, its gap, the continuation and
+    // the continuation's own gap, with no quarter-hour missing in between.
+    const expected: number[] = [];
+    for (let ms = at(11).getTime(); ms <= at(14).getTime(); ms += 15 * 60 * 1000) expected.push(ms);
+    expect(await heldMarks()).toEqual(expected);
   });
 
   it("records what the continuation continues", async () => {
     const parent = await paidParent();
-    const plan = planExtension({
-      parent,
-      direction: "after",
-      durationHours: 1,
-      bufferMinutes: BUFFER_MINUTES,
-      openSlotMs: OPEN,
-    });
-    const order = await orders.createWithRooms({
-      bookerUserId: userId,
-      bookerEmail: buyer.email,
-      bookerName: buyer.name,
-      amountTotal: 30000,
-      currency: "EUR",
-      holdExpiresAt: at(11),
-      releaseBufferAfter: { bookingUid: parent.uid, from: plan.releasesParentBufferFrom as Date },
-      rooms: [
-        {
-          resourceId,
-          startTime: plan.startTime,
-          endTime: plan.endTime,
-          durationMinutes: plan.durationMinutes,
-          slotStarts: [...plan.slotStarts, ...plan.bufferSlots],
-          extendsBookingUid: parent.uid,
-          amountTotal: 30000,
-          addOns: [],
-        },
-      ],
-    });
+    const { order } = await continueAfter(parent);
     const written = await prisma.resourceBooking.findFirstOrThrow({
-      where: { orderUid: order!.uid },
+      where: { orderUid: order?.uid },
       select: { extendsBookingUid: true },
     });
     expect(written.extendsBookingUid).toBe(parent.uid);
   });
 
-  it("never touches the paid meeting's own hours", async () => {
+  it("cancelling it leaves the paid meeting exactly as it was", async () => {
+    // This is why the meeting's gap is never claimed in the first place. Were
+    // it released and handed over, this cancellation would leave a paid meeting
+    // with no cleaning gap, and a stranger could book flush against it.
     const parent = await paidParent();
-    const before = await prisma.resourceSlot.count({
-      where: { bookingId: parent.id, slotStart: { lt: parent.endTime } },
-    });
-    const plan = planExtension({
-      parent,
-      direction: "after",
-      durationHours: 1,
-      bufferMinutes: BUFFER_MINUTES,
-      openSlotMs: OPEN,
-    });
-    await orders.createWithRooms({
-      bookerUserId: userId,
-      bookerEmail: buyer.email,
-      bookerName: buyer.name,
-      amountTotal: 30000,
-      currency: "EUR",
-      holdExpiresAt: at(11),
-      releaseBufferAfter: { bookingUid: parent.uid, from: plan.releasesParentBufferFrom as Date },
-      rooms: [
-        {
-          resourceId,
-          startTime: plan.startTime,
-          endTime: plan.endTime,
-          durationMinutes: plan.durationMinutes,
-          slotStarts: [...plan.slotStarts, ...plan.bufferSlots],
-          extendsBookingUid: parent.uid,
-          amountTotal: 30000,
-          addOns: [],
-        },
-      ],
-    });
+    const before = await heldMarks();
+    const { order } = await continueAfter(parent);
+    await orders.cancelPending(order?.uid as string);
 
-    const after = await prisma.resourceSlot.count({
-      where: { bookingId: parent.id, slotStart: { lt: parent.endTime } },
-    });
-    expect(after).toBe(before);
-    // And the meeting itself is still paid and whole.
+    expect(await heldMarks()).toEqual(before);
     const still = await prisma.resourceBooking.findUniqueOrThrow({
       where: { uid: parent.uid },
-      select: { status: true, startTime: true, endTime: true },
+      select: { status: true, endTime: true },
     });
     expect(still.status).toBe(ResourceBookingStatus.CONFIRMED);
     expect(still.endTime.toISOString()).toBe(at(13).toISOString());
   });
 
-  it("still refuses an outsider holding the hour, and leaves the gap in place", async () => {
+  it("is refused when somebody else already holds the hour", async () => {
     const parent = await paidParent();
-    // Somebody else books 13:15, inside the hour the continuation wants.
     const outsider = await prisma.resourceBooking.create({
       data: {
         resourceId,
@@ -239,41 +213,11 @@ describe("createWithRooms, continuing a booking", () => {
       data: { resourceId, slotStart: at(13.25), bookingId: outsider.id },
     });
 
-    const plan = planExtension({
-      parent,
-      direction: "after",
-      durationHours: 1,
-      bufferMinutes: BUFFER_MINUTES,
-      openSlotMs: OPEN,
-    });
-    await expect(
-      orders.createWithRooms({
-        bookerUserId: userId,
-        bookerEmail: buyer.email,
-        bookerName: buyer.name,
-        amountTotal: 30000,
-        currency: "EUR",
-        holdExpiresAt: at(11),
-        releaseBufferAfter: { bookingUid: parent.uid, from: plan.releasesParentBufferFrom as Date },
-        rooms: [
-          {
-            resourceId,
-            startTime: plan.startTime,
-            endTime: plan.endTime,
-            durationMinutes: plan.durationMinutes,
-            slotStarts: [...plan.slotStarts, ...plan.bufferSlots],
-            extendsBookingUid: parent.uid,
-            amountTotal: 30000,
-            addOns: [],
-          },
-        ],
-      })
-    ).rejects.toThrow();
+    await expect(continueAfter(parent)).rejects.toThrow();
 
-    // The rollback matters more than the refusal: a released gap that is not
-    // replaced would leave the paid meeting able to be booked flush against.
+    // And the meeting still has its gap: the refusal cost it nothing.
     const gap = await prisma.resourceSlot.count({
-      where: { bookingId: parent.id, slotStart: { gte: parent.endTime } },
+      where: { resourceId, slotStart: at(13), bookingId: parent.id },
     });
     expect(gap).toBe(1);
   });

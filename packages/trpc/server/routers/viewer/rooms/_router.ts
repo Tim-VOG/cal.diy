@@ -6,6 +6,7 @@ import { ZBookingUidInputSchema } from "./bookingUid.schema";
 import { ZChangeBookerEmailInputSchema, ZChangeMyEmailInputSchema } from "./accountEmail.schema";
 import { ZCorrectBillingInputSchema } from "./correctBilling.schema";
 import { ZCreateBlockInputSchema } from "./createBlock.schema";
+import { ZExtendBookingInputSchema } from "./extendBooking.schema";
 import { ZCreateBookingInputSchema, ZCreateOrderInputSchema } from "./createBooking.schema";
 import {
   ZDeskCancellationRequestInputSchema,
@@ -871,6 +872,73 @@ export const roomsRouter = router({
   }),
 
   // Admin-only: block a room on a slot (rejected if it overlaps a booking).
+  /**
+   * Sell an exhibitor more time on a room they already have, back to back.
+   *
+   * Admin-only and on their request. It creates a SECOND booking priced at the
+   * ordinary package rate for its own length — room prices are per duration and
+   * not proportional, so there is no price for "a fourth hour" — and emails the
+   * payment link, because nobody is at a screen when this is agreed. The
+   * invoice follows from the payment exactly as it does for any other sale.
+   *
+   * Deliberately outside the rooms-per-day cap: this is not another room, it is
+   * more time on one already paid for, and refusing it would force an admin to
+   * raise the cap for everybody to grant one exhibitor an extra hour.
+   */
+  extendBooking: ne26AdminProcedure.input(ZExtendBookingInputSchema).mutation(async ({ ctx, input }) => {
+    const { createBookingExtension } = await import(
+      "@calcom/features/ne26-rooms/services/BookingExtensionService"
+    );
+    const { getNe26StaffRepository } = await import(
+      "@calcom/features/ne26-rooms/di/Ne26StaffRepository.container"
+    );
+    const { WEBAPP_URL } = await import("@calcom/lib/constants");
+    const extension = await createBookingExtension({
+      parentBookingUid: input.uid,
+      direction: input.direction,
+      durationHours: input.durationHours,
+      webappUrl: WEBAPP_URL,
+    });
+
+    const { formatMoney } = await import("@calcom/features/ne26-rooms/lib/teamNotification");
+    const { sendExtensionPaymentEmail } = await import("@calcom/features/ne26-rooms/lib/mailer");
+    // The booking exists and the room is held whatever happens to the mail. A
+    // failed send is reported so the desk can read the link off the booking
+    // page and pass it on, rather than silently leaving an exhibitor waiting
+    // for a message that never comes.
+    let emailed = true;
+    try {
+      await sendExtensionPaymentEmail({
+        to: extension.bookerEmail,
+        bookerName: extension.bookerName,
+        roomName: extension.roomName,
+        slotLabel: extension.slotLabel,
+        parentSlotLabel: extension.parentSlotLabel,
+        amountLabel: formatMoney(extension.amountTotal, extension.currency),
+        payUrl: extension.checkoutUrl,
+      });
+    } catch {
+      emailed = false;
+    }
+
+    await getNe26StaffRepository().recordAction({
+      actorUserId: ctx.user.id,
+      actorEmail: ctx.user.email,
+      actorRole: "ADMIN",
+      action: "booking.extend",
+      targetType: "booking",
+      targetId: input.uid,
+      detail: `${input.direction === "before" ? "Earlier start" : "Later finish"}: ${
+        input.durationHours
+      }h in ${extension.roomName}, ${extension.slotLabel} — ${formatMoney(
+        extension.amountTotal,
+        extension.currency
+      )}, awaiting payment`,
+    });
+
+    return { ...extension, emailed };
+  }),
+
   createBlock: ne26AdminProcedure.input(ZCreateBlockInputSchema).mutation(async ({ input }) => {
     const { getResourceBookingService } = await import(
       "@calcom/features/ne26-rooms/di/ResourceBookingService.container"

@@ -29,11 +29,29 @@ describe("planExtension", () => {
       expect(plan.endTime.toISOString()).toBe(at(14).toISOString());
     });
 
-    it("takes over the gap the meeting was holding", () => {
-      expect(plan.releasesParentBufferFrom?.toISOString()).toBe(at(13).toISOString());
-      // Which is also the extension's first slot: without the hand-over the
-      // insert would collide with the parent's own buffer row.
-      expect(plan.slotStarts[0].toISOString()).toBe(at(13).toISOString());
+    it("leaves the meeting's gap exactly where it is and starts after it", () => {
+      // 13:00-13:15 stays the meeting's own cleaning gap. Claiming it would
+      // collide with the row that is already there — and releasing it would
+      // leave the paid meeting with no gap the moment this continuation went
+      // away.
+      expect(plan.slotStarts[0].toISOString()).toBe(at(13, 15).toISOString());
+      expect(plan.slotStarts.map((d) => d.toISOString())).not.toContain(at(13).toISOString());
+    });
+
+    it("still begins, for the exhibitor, where the meeting ended", () => {
+      // What is sold, shown and invoiced is the full hour from 13:00. Only the
+      // slot bookkeeping starts later.
+      expect(plan.startTime.toISOString()).toBe(at(13).toISOString());
+      expect(plan.durationMinutes).toBe(60);
+    });
+
+    it("covers the room end to end between the two bookings", () => {
+      // The meeting's gap rows cover 13:00-13:15 and these cover the rest, so
+      // there is no quarter-hour in between that anyone else could take.
+      const covered = plan.slotStarts.map((d) => d.getTime());
+      for (let ms = at(13, 15).getTime(); ms < at(14).getTime(); ms += 15 * 60 * 1000) {
+        expect(covered).toContain(ms);
+      }
     });
 
     it("reserves a fresh gap after the new end", () => {
@@ -66,8 +84,11 @@ describe("planExtension", () => {
       expect(plan.bufferSlots).toEqual([]);
     });
 
-    it("leaves the meeting's own gap alone", () => {
-      expect(plan.releasesParentBufferFrom).toBeNull();
+    it("claims every quarter-hour it occupies", () => {
+      // Nothing of the parent's covers this side, so the continuation holds its
+      // whole range itself.
+      expect(plan.slotStarts).toHaveLength(8);
+      expect(plan.slotStarts[0].toISOString()).toBe(at(9).toISOString());
     });
   });
 
@@ -95,7 +116,9 @@ describe("planExtension", () => {
     ).toThrow(/opening hours/i);
   });
 
-  it("holds the whole run when the gap is switched off", () => {
+  it("claims its first quarter-hour when the gap is switched off", () => {
+    // With no gap there is nothing of the parent's in the way, so the
+    // continuation holds its range from the first minute.
     const plan = planExtension({
       parent,
       direction: "after",
@@ -104,8 +127,28 @@ describe("planExtension", () => {
       openSlotMs: OPEN,
     });
     expect(plan.bufferSlots).toEqual([]);
-    // Still a hand-over instruction: harmless with no gap to release, and it
-    // keeps the write path identical whatever the admin has set.
-    expect(plan.releasesParentBufferFrom?.toISOString()).toBe(at(13).toISOString());
+    expect(plan.slotStarts[0].toISOString()).toBe(at(13).toISOString());
+    expect(plan.slotStarts).toHaveLength(4);
+  });
+
+  it("never claims a quarter-hour the meeting's gap already holds", () => {
+    // The property that matters, at every gap length an admin can set: the
+    // continuation and the meeting can never both want the same row.
+    for (const bufferMinutes of [0, 15, 30, 45, 60]) {
+      const plan = planExtension({
+        parent,
+        direction: "after",
+        durationHours: 2,
+        bufferMinutes,
+        openSlotMs: OPEN,
+      });
+      const gapRows: number[] = [];
+      for (let i = 0; i < bufferMinutes / 15; i++) {
+        gapRows.push(at(13).getTime() + i * 15 * 60 * 1000);
+      }
+      for (const row of gapRows) {
+        expect(plan.slotStarts.map((d) => d.getTime())).not.toContain(row);
+      }
+    }
   });
 });

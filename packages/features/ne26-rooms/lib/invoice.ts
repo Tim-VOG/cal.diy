@@ -40,6 +40,11 @@ export interface InvoiceRoom {
   /** HT (excl. VAT) total for this room = its rental HT + its add-on HT lines. */
   amountTotal: number;
   roomName: string;
+/**
+   * Whether this rental is extra time continuing a meeting that was invoiced
+   * separately. False or absent for an ordinary booking.
+   */
+  continuesEarlierBooking?: boolean;
   durationMinutes: number;
   /** "Tue, 17 Nov 2026, 09:00-10:00 TRT" — printed under the line. */
   slotLabel?: string;
@@ -93,7 +98,14 @@ export function buildInvoiceModel(input: InvoiceInput, vat?: VatTreatmentInput):
     if (chargesRental) {
       lines.push(
         lineFor(
-          `${room.roomName} — meeting room rental (${room.durationMinutes / 60}h)`,
+          room.continuesEarlierBooking
+            ? // Said on the line itself rather than in a note under the total:
+              // this is a second invoice for the same room on the same day, and
+              // finance has to tell the two apart at a glance. The line already
+              // prints this booking's own window underneath, so the pair reads
+              // as one meeting split across two documents.
+              `${room.roomName} — meeting room rental (${room.durationMinutes / 60}h), continuing an earlier booking`
+            : `${room.roomName} — meeting room rental (${room.durationMinutes / 60}h)`,
           room.amountTotal - addOnsHt,
           input.roomVatRate ?? ROOM_VAT_RATE_BP,
           // When the room was actually booked for. It used to sit in a highlighted

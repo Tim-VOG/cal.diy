@@ -311,8 +311,15 @@ export async function resumeOrderCheckout(input: {
   // nothing to alert anyone, because the payment itself succeeds.
   const now = new Date();
   const sessionExpiry = new Date(checkoutExpiresAtSeconds(order.holdExpiresAt, now) * 1000);
+  // A continuation of a meeting is exempt from the ceiling. The ceiling exists
+  // to stop a buyer parking a room all event by pressing "resume" every half
+  // hour; a continuation was created by an admin on the exhibitor's request,
+  // is held until it would begin rather than for 35 minutes, and its link is
+  // emailed instead of opened in front of us — so reissuing it is the normal
+  // way it gets paid, not an abuse of it.
+  const isContinuation = order.bookings.some((b) => b.extendsBookingUid);
   const ceiling = new Date(order.createdAt.getTime() + MAX_HOLD_LIFETIME_MINUTES * 60_000);
-  if (sessionExpiry > ceiling) {
+  if (!isContinuation && sessionExpiry > ceiling) {
     throw new ErrorWithCode(
       ErrorCode.BadRequest,
       "These rooms have been held for as long as we can hold them. Release them and book again — they are still on sale."

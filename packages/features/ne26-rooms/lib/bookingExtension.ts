@@ -15,44 +15,55 @@ export interface ExtensionParent {
 }
 
 export interface ExtensionPlan {
+  /** What the exhibitor gets, and what the invoice says. */
   startTime: Date;
   endTime: Date;
   durationMinutes: number;
-  /** The quarter-hours the extension occupies. */
+  /**
+   * The quarter-hours this booking claims for itself.
+   *
+   * Running later, this does NOT include the minutes the parent's cleaning gap
+   * already covers — see the note on planExtension.
+   */
   slotStarts: Date[];
   /**
-   * The cleaning gap the extension reserves after itself. Empty when extending
-   * BEFORE: what follows is the exhibitor's own meeting, not a turnover.
+   * The cleaning gap the continuation reserves after itself. Empty when
+   * extending BEFORE: what follows is the exhibitor's own meeting, not a
+   * turnover.
    */
   bufferSlots: Date[];
-  /**
-   * Quarter-hours currently held as the parent's trailing cleaning gap, which
-   * the extension takes over. Empty when extending BEFORE, where the parent's
-   * own gap is untouched and still sits after the whole run.
-   */
-  releasesParentBufferFrom: Date | null;
 }
 
 /**
- * Where a continuation of `parent` falls, and what it does to the cleaning gap.
+ * Where a continuation of `parent` falls, and how it gets past the cleaning gap.
  *
- * The gap is the only hard part. Every booking reserves `bufferMinutes` after
+ * The gap is the whole difficulty. Every booking reserves `bufferMinutes` after
  * itself as real slot rows, so two bookings can never touch — which is exactly
- * what a continuation has to do. Treating that as a reason to refuse would be
- * reading the rule wrong: the gap exists for the turnover between DIFFERENT
- * occupants, and the same exhibitor staying on in the same room turns nothing
- * over.
+ * what a continuation must do. Refusing on those grounds would be reading the
+ * rule wrong: the gap covers the turnover between DIFFERENT occupants, and an
+ * exhibitor staying on in the same room turns nothing over.
  *
- * So the gap is handed on rather than waived. Extending AFTER, the parent's
- * trailing slots are released and the extension reserves its own gap past its
- * new end. Extending BEFORE, the extension reserves no trailing gap at all —
- * the parent's meeting begins the moment it ends — and the parent's own gap
- * still closes the run. Either way the invariant holds: fifteen free minutes
- * after the last booking of the run, before anybody else can start.
+ * Running later, the continuation therefore starts its SLOTS after the parent's
+ * gap instead of releasing it. The booking still begins when the meeting ended
+ * — that is what is sold, shown and invoiced — but the first quarter-hours stay
+ * owned by the meeting itself. Nobody else can take them either way, since the
+ * parent holds them, and the room is covered end to end.
  *
- * Nothing here touches the unique index on (resourceId, slotStart). If somebody
- * else holds the hour being claimed, the insert fails, which is the intended
- * outcome and the reason this returns a plan rather than writing anything.
+ * That is deliberate, and the alternative is worse. Releasing the parent's rows
+ * and claiming them would leave the meeting with no gap at all the moment the
+ * continuation went away — an admin cancelling it, a lapsed hold, a failed
+ * Stripe call — and a stranger could then book flush against a paid meeting.
+ * Restoring the gap on each of those paths is a promise to remember it on every
+ * future one. Never taking it is a promise that keeps itself.
+ *
+ * Starting earlier needs none of this: the continuation reserves no trailing
+ * gap, because the meeting begins the moment it ends, and the meeting's own gap
+ * still closes the run.
+ *
+ * Either way the invariant is unchanged: `bufferMinutes` free after the last
+ * booking of the run before anybody else can start. Nothing here touches the
+ * unique index on (resourceId, slotStart) — this returns a plan and writes
+ * nothing, so whoever actually holds the hour still decides.
  */
 export function planExtension(input: {
   parent: ExtensionParent;
@@ -71,9 +82,11 @@ export function planExtension(input: {
 
   // Throws on a duration or a boundary the slot model does not allow, which is
   // the same gate every sale goes through.
-  const slotStarts = getAtomicSlotStarts(startTime, durationMinutes);
+  const allMarks = getAtomicSlotStarts(startTime, durationMinutes);
 
-  for (const slot of slotStarts) {
+  // Checked across the WHOLE range, including the minutes the parent's gap
+  // covers: the exhibitor is in the room for those too.
+  for (const slot of allMarks) {
     if (!input.openSlotMs.has(slot.getTime())) {
       throw new ErrorWithCode(
         ErrorCode.BadRequest,
@@ -84,16 +97,17 @@ export function planExtension(input: {
     }
   }
 
+  const parentGapEndsAt =
+    input.direction === "after"
+      ? input.parent.endTime.getTime() + Math.max(0, input.bufferMinutes) * MS_PER_MINUTE
+      : Number.NEGATIVE_INFINITY;
+
   return {
     startTime,
     endTime,
     durationMinutes,
-    slotStarts,
+    slotStarts: allMarks.filter((m) => m.getTime() >= parentGapEndsAt),
     bufferSlots:
       input.direction === "after" ? getBufferSlotStarts(startTime, durationMinutes, input.bufferMinutes) : [],
-    // Extending after, the parent's gap starts exactly where the extension
-    // does, so the rows to release are the parent's own slots at or after its
-    // end. Extending before, nothing of the parent's is released.
-    releasesParentBufferFrom: input.direction === "after" ? new Date(input.parent.endTime.getTime()) : null,
   };
 }

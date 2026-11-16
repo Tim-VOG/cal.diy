@@ -18,6 +18,7 @@ import { displayStatus, fmtDay, fmtMoment, fmtMoney, fmtTime } from "../../forma
 import { requireNotDeskMode } from "../../requireNotDeskMode";
 import { HATCH, StatusPill } from "../../ui";
 import BillToEditor from "./BillToEditor";
+import ExtendBooking from "./ExtendBooking";
 import HoldCountdownText from "./HoldCountdownText";
 
 export const metadata: Metadata = {
@@ -341,6 +342,23 @@ export default async function AdminOrderPage({
               </div>
             )}
           </Section>
+
+          {/* Extra time is sold on a room that is already paid for, so it is
+              offered only once the order is confirmed — and only on rooms that
+              have not been credited back. */}
+          {order.status === "CONFIRMED" ? (
+            <ExtendBooking
+              rooms={rooms
+                .filter((b) => b.status !== "CANCELLED")
+                .map((b) => ({
+                  uid: b.uid,
+                  name: b.resource.name,
+                  whenLabel: `${fmtDay(b.startTime.toISOString())} · ${fmtTime(
+                    b.startTime.toISOString()
+                  )}–${fmtTime(b.endTime.toISOString())}`,
+                }))}
+            />
+          ) : null}
 
           <div className="grid gap-5 md:grid-cols-2">
             <Section title="Booker">

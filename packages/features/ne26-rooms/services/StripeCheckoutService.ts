@@ -58,6 +58,12 @@ const CHECKOUT_BUSINESS_NAME = {
 
 /** Stripe rejects a Checkout session expiring sooner than this. */
 const STRIPE_MIN_SESSION_LIFETIME_SECONDS = 30 * 60;
+/**
+ * Stripe refuses a session expiring more than 24 hours out. Five minutes of
+ * margin, because the value is computed here and the API call happens after a
+ * round trip or two.
+ */
+const STRIPE_MAX_SESSION_LIFETIME_SECONDS = 24 * 60 * 60 - 5 * 60;
 
 export interface CreateCheckoutSessionInput {
   /** The order this payment settles. One payment can cover several rooms. */
@@ -88,12 +94,19 @@ export interface CreateCheckoutSessionInput {
  * fail the booking. The clamp can only make the session outlive the hold by
  * seconds, and a payment landing in that sliver is safe — the reclaim DELETE
  * re-checks the hold state, so it can no longer remove a paid booking.
+ *
+ * Clamped DOWN to Stripe's 24-hour ceiling too, which an ordinary 35-minute
+ * hold never comes near. A continuation of a meeting does: it is held until it
+ * would begin, which can be days away, and passing that straight to Stripe
+ * would have the API refuse the session outright. The link expiring before the
+ * room does is the right way round — the room stays theirs, and an admin
+ * reissues the link.
  */
 export function checkoutExpiresAtSeconds(holdExpiresAt: Date, now: Date): number {
   const nowSeconds = Math.floor(now.getTime() / 1000);
-  return Math.max(
-    Math.floor(holdExpiresAt.getTime() / 1000),
-    nowSeconds + STRIPE_MIN_SESSION_LIFETIME_SECONDS
+  return Math.min(
+    Math.max(Math.floor(holdExpiresAt.getTime() / 1000), nowSeconds + STRIPE_MIN_SESSION_LIFETIME_SECONDS),
+    nowSeconds + STRIPE_MAX_SESSION_LIFETIME_SECONDS
   );
 }
 
