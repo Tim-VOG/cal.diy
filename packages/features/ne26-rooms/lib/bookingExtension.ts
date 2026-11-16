@@ -72,7 +72,41 @@ export function planExtension(input: {
   bufferMinutes: number;
   /** Slot marks the event is open on, as epoch ms. */
   openSlotMs: ReadonlySet<number>;
+  /** Treated as already past; a continuation cannot start behind the clock. */
+  now?: Date;
 }): ExtensionPlan {
+  const outcome = describeExtension(input);
+  if (!outcome.ok) throw new ErrorWithCode(ErrorCode.BadRequest, outcome.reason);
+  return outcome.plan;
+}
+
+export type ExtensionOutcome =
+  | { ok: true; plan: ExtensionPlan }
+  | { ok: false; reason: string; plan?: ExtensionPlan };
+
+/**
+ * The same decision as planExtension, without throwing — so a screen can offer
+ * only what would actually work.
+ *
+ * The admin screen used to let a hostess pick a direction and a length that
+ * could not possibly be sold, and say so only once the write had failed: with
+ * a room booked back to back all day, every choice refused and nothing on the
+ * page hinted at why. Given `takenSlotMs` it also answers whether the hours
+ * are free, which is a question only the screen asks — the server lets the
+ * unique index answer it, because between asking and writing somebody else can
+ * buy the room.
+ */
+export function describeExtension(input: {
+  parent: ExtensionParent;
+  direction: ExtensionDirection;
+  durationHours: DurationHours;
+  bufferMinutes: number;
+  openSlotMs: ReadonlySet<number>;
+  /** Quarter-hours already held in this room, when the caller knows them. */
+  takenSlotMs?: ReadonlySet<number>;
+  /** Treated as already past; a continuation cannot start behind the clock. */
+  now?: Date;
+}): ExtensionOutcome {
   const durationMinutes = input.durationHours * 60;
   const startTime =
     input.direction === "after"
@@ -88,12 +122,13 @@ export function planExtension(input: {
   // covers: the exhibitor is in the room for those too.
   for (const slot of allMarks) {
     if (!input.openSlotMs.has(slot.getTime())) {
-      throw new ErrorWithCode(
-        ErrorCode.BadRequest,
-        input.direction === "before"
-          ? "Starting that much earlier falls outside the event opening hours."
-          : "Running that much later falls outside the event opening hours."
-      );
+      return {
+        ok: false,
+        reason:
+          input.direction === "before"
+            ? "Starting that much earlier falls outside the event opening hours."
+            : "Running that much later falls outside the event opening hours.",
+      };
     }
   }
 
@@ -102,7 +137,7 @@ export function planExtension(input: {
       ? input.parent.endTime.getTime() + Math.max(0, input.bufferMinutes) * MS_PER_MINUTE
       : Number.NEGATIVE_INFINITY;
 
-  return {
+  const plan: ExtensionPlan = {
     startTime,
     endTime,
     durationMinutes,
@@ -110,4 +145,30 @@ export function planExtension(input: {
     bufferSlots:
       input.direction === "after" ? getBufferSlotStarts(startTime, durationMinutes, input.bufferMinutes) : [],
   };
+
+  const now = input.now;
+  if (now && startTime.getTime() <= now.getTime()) {
+    return {
+      ok: false,
+      plan,
+      reason:
+        input.direction === "before"
+          ? "That meeting has already started, so it cannot be made to start earlier."
+          : "That time has already passed.",
+    };
+  }
+
+  // Only when the caller knows the room. The server does not pass this: the
+  // unique index is what decides, and anything read before the write is a
+  // guess that a concurrent buyer can invalidate.
+  const taken = input.takenSlotMs;
+  if (taken) {
+    for (const mark of [...plan.slotStarts, ...plan.bufferSlots]) {
+      if (taken.has(mark.getTime())) {
+        return { ok: false, plan, reason: "Those hours are already taken in this room." };
+      }
+    }
+  }
+
+  return { ok: true, plan };
 }

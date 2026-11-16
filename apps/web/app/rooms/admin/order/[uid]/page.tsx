@@ -19,7 +19,7 @@ import { displayStatus, fmtDay, fmtMoment, fmtMoney, fmtTime } from "../../forma
 import { requireNotDeskMode } from "../../requireNotDeskMode";
 import { HATCH, StatusPill } from "../../ui";
 import BillToEditor from "./BillToEditor";
-import ExtendBooking from "./ExtendBooking";
+import PlanAndExtraTime from "./PlanAndExtraTime";
 import HoldCountdownText from "./HoldCountdownText";
 
 export const metadata: Metadata = {
@@ -87,6 +87,12 @@ export default async function AdminOrderPage({
   // is doing, and a meeting shown ending at 10:00 when the exhibitor is in the
   // room until 11:00 tells the desk the wrong thing.
   const continuations = await getResourceBookingRepository().findContinuationsOf(rooms.map((b) => b.uid));
+  // What those rooms already hold, so the plan can show a free hour at a glance
+  // and the extra-time form can refuse a clash before trying to write one.
+  const takenByRoom = await getResourceBookingRepository().findActiveSlotStartsForRooms(
+    Array.from(new Set(rooms.map((b) => b.resourceId))),
+    new Date()
+  );
   // Which credit note took each room off sale, for the list below.
   const creditedRooms = new Map(
     creditNotes.flatMap((note) => note.bookings.map((b) => [b.uid, note.number] as const))
@@ -219,126 +225,56 @@ export default async function AdminOrderPage({
 
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="grid min-w-0 gap-5">
-          <Section title="On the plan — what this order holds across the three days">
-            <div className="grid gap-2">
-              {schedule.map((day) => {
-                const open = day.openSlotStartsUtc[0]?.getTime() ?? 0;
-                const close =
+          {/* The plan and the extra-time form share a selection: the length
+              being chosen is drawn on the band, over the room's occupancy, so
+              a clash is visible before the button is pressed rather than as a
+              refusal after it. Rooms follow below — the plan answers "when",
+              the table answers "what was charged". */}
+          <PlanAndExtraTime
+            days={schedule.map((day) => {
+              const open = day.openSlotStartsUtc[0]?.getTime() ?? 0;
+              return {
+                date: day.date,
+                openMs: open,
+                closeMs:
                   (day.openSlotStartsUtc[day.openSlotStartsUtc.length - 1]?.getTime() ?? open) +
-                  SLOT_GRANULARITY_MS;
-                const span = Math.max(1, close - open);
-                const hours = Math.round(span / 3_600_000);
-                const onDay = rooms.filter(
-                  (b) => b.endTime.getTime() > open && b.startTime.getTime() < close
-                );
-                const extraOnDay = continuations.filter(
-                  (b) => b.endTime.getTime() > open && b.startTime.getTime() < close
-                );
-                return (
-                  <div key={day.date} className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-3">
-                    <span className="pt-2 text-gray-600 text-xs">{fmtDay(new Date(open).toISOString())}</span>
-                    <div>
-                    <div
-                      className="relative h-9 rounded-md border border-gray-100 bg-gray-50"
-                      style={{
-                        backgroundImage: "linear-gradient(to right, #e8eaf0 1px, transparent 1px)",
-                        backgroundSize: `calc(100% / ${hours}) 100%`,
-                      }}>
-                      {/* Extra time first, so a room block always wins the
-                          overlap: the continuation is context, not the subject
-                          of this page. */}
-                      {extraOnDay.map((b) => {
-                        const left = ((Math.max(b.startTime.getTime(), open) - open) / span) * 100;
-                        const width =
-                          ((Math.min(b.endTime.getTime(), close) - Math.max(b.startTime.getTime(), open)) /
-                            span) *
-                          100;
-                        return (
-                          <span
-                            key={b.uid}
-                            className="absolute top-1 bottom-1 overflow-hidden rounded border border-gray-300 border-dashed bg-gray-100 px-1.5 text-[11px] text-gray-500 leading-[26px]"
-                            style={{ left: `${left}%`, width: `calc(${width}% - 2px)` }}
-                            title={`Extra time · ${fmtTime(b.startTime.toISOString())}–${fmtTime(
-                              b.endTime.toISOString()
-                            )} · ${b.status === "PENDING" ? "awaiting payment" : "paid"}`}>
-                            <span className="truncate">
-                              +{b.durationMinutes / 60}h · {fmtTime(b.startTime.toISOString())}–
-                              {fmtTime(b.endTime.toISOString())}
-                            </span>
-                          </span>
-                        );
-                      })}
-                      {onDay.map((b) => {
-                        const left = ((Math.max(b.startTime.getTime(), open) - open) / span) * 100;
-                        const width =
-                          ((Math.min(b.endTime.getTime(), close) - Math.max(b.startTime.getTime(), open)) /
-                            span) *
-                          100;
-                        const freed = b.status === "CANCELLED";
-                        const held = b.status === "PENDING";
-                        return (
-                          <span
-                            key={b.uid}
-                            className={`absolute top-1 bottom-1 overflow-hidden rounded px-1.5 text-[11px] leading-[26px] ${
-                              freed ? "text-gray-500" : held ? "text-amber-950" : "text-[#000643]"
-                            }`}
-                            style={{
-                              left: `${left}%`,
-                              width: `calc(${width}% - 2px)`,
-                              background: freed ? HATCH.blocked : held ? HATCH.held : "#e9ebf7",
-                              border: `1px solid ${freed ? "#d1d5db" : held ? "#f5c46b" : "#c9cde8"}`,
-                            }}
-                            title={`${b.resource.name} · ${fmtTime(b.startTime.toISOString())}–${fmtTime(b.endTime.toISOString())}`}>
-                            {/* Hours first, name second. A one-hour block is
-                                about sixty pixels wide, so whatever comes
-                                second is truncated — and the time is the thing
-                                being looked up. */}
-                            <span className="font-semibold tabular-nums">
-                              {fmtTime(b.startTime.toISOString())}–{fmtTime(b.endTime.toISOString())}
-                            </span>
-                            {freed ? " · freed" : ` · ${b.resource.name}`}
-                          </span>
-                        );
-                      })}
-                    </div>
-                    {/* An hour scale under the band. Without it the blocks sit
-                        on an unlabelled grid and the only way to read a time is
-                        to hover one. */}
-                    <div className="relative mt-0.5 h-3.5">
-                      {Array.from({ length: hours + 1 }, (_, i) => {
-                        const mark = new Date(open + i * 3_600_000);
-                        const isLast = i === hours;
-                        return (
-                          <span
-                            key={i}
-                            className="absolute text-[10px] text-gray-400 tabular-nums"
-                            style={
-                              isLast
-                                ? { right: 0 }
-                                : { left: `${(i / hours) * 100}%`, transform: i === 0 ? "none" : "translateX(-50%)" }
-                            }>
-                            {fmtTime(mark.toISOString())}
-                          </span>
-                        );
-                      })}
-                    </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {continuations.length > 0 ? (
-              <p className="mt-2 text-gray-500 text-xs">
-                Dashed grey is extra time sold on these rooms. It sits on its own order and is invoiced
-                separately — this order does not charge for it.
-              </p>
-            ) : null}
-            {rooms.some((b) => b.status === "CANCELLED") ? (
-              <p className="mt-2 text-gray-500 text-xs">
-                Freed rooms went back on sale when the order was cancelled or credited.
-              </p>
-            ) : null}
-          </Section>
+                  SLOT_GRANULARITY_MS,
+              };
+            })}
+            rooms={rooms.map((b) => ({
+              uid: b.uid,
+              name: b.resource.name,
+              startMs: b.startTime.getTime(),
+              endMs: b.endTime.getTime(),
+              status: b.status,
+            }))}
+            continuations={continuations.map((b) => ({
+              uid: b.uid,
+              startMs: b.startTime.getTime(),
+              endMs: b.endTime.getTime(),
+              durationMinutes: b.durationMinutes,
+              status: b.status,
+            }))}
+            extendable={
+              order.status === "CONFIRMED"
+                ? rooms
+                    .filter((b) => b.status !== "CANCELLED")
+                    .map((b) => ({
+                      uid: b.uid,
+                      name: b.resource.name,
+                      whenLabel: `${fmtDay(b.startTime.toISOString())} · ${fmtTime(
+                        b.startTime.toISOString()
+                      )}–${fmtTime(b.endTime.toISOString())}`,
+                      startMs: b.startTime.getTime(),
+                      endMs: b.endTime.getTime(),
+                      takenMs: (takenByRoom.get(b.resourceId) ?? []).map((d) => d.getTime()),
+                    }))
+                : []
+            }
+            openMarks={schedule.flatMap((day) => day.openSlotStartsUtc.map((d) => d.getTime()))}
+            bufferMinutes={roomSettings.bufferMinutes}
+            hasCancelled={rooms.some((b) => b.status === "CANCELLED")}
+          />
 
           <Section title={`Rooms (${rooms.length})`}>
             {rooms.length === 0 ? (
@@ -411,22 +347,6 @@ export default async function AdminOrderPage({
             )}
           </Section>
 
-          {/* Extra time is sold on a room that is already paid for, so it is
-              offered only once the order is confirmed — and only on rooms that
-              have not been credited back. */}
-          {order.status === "CONFIRMED" ? (
-            <ExtendBooking
-              rooms={rooms
-                .filter((b) => b.status !== "CANCELLED")
-                .map((b) => ({
-                  uid: b.uid,
-                  name: b.resource.name,
-                  whenLabel: `${fmtDay(b.startTime.toISOString())} · ${fmtTime(
-                    b.startTime.toISOString()
-                  )}–${fmtTime(b.endTime.toISOString())}`,
-                }))}
-            />
-          ) : null}
 
           <div className="grid gap-5 md:grid-cols-2">
             <Section title="Booker">

@@ -82,23 +82,18 @@ export async function createBookingExtension(input: CreateExtensionInput): Promi
 
   const settings = await getNe26RoomSettingsRepository().get();
   const openSlotMs = buildOpenSlotMs(buildEventSchedule(settings.eventDays));
+  const now = new Date();
+  // Deliberately WITHOUT takenSlotMs: whether the hours are free is the unique
+  // index's to answer, at the moment of writing. Reading it here would be a
+  // guess a concurrent buyer can invalidate between the read and the write.
   const plan = planExtension({
     parent: { uid: parent.uid, startTime: parent.startTime, endTime: parent.endTime },
     direction: input.direction,
     durationHours: input.durationHours,
     bufferMinutes: settings.bufferMinutes,
     openSlotMs,
+    now,
   });
-
-  const now = new Date();
-  if (plan.startTime.getTime() <= now.getTime()) {
-    throw new ErrorWithCode(
-      ErrorCode.BadRequest,
-      input.direction === "before"
-        ? "That meeting has already started, so it cannot be made to start earlier."
-        : "That time has already passed."
-    );
-  }
 
   // The ordinary package price for the continuation's own length. Same
   // expression as a normal sale, read from the same columns.
