@@ -26,6 +26,9 @@ const BOOKING: Item[] = [
 
 const ADMIN: Item[] = [
   { href: "/rooms/admin", label: "Bookings", Icon: CalendarRange },
+  // Second, not last: booking for an exhibitor who phoned in is a daily act
+  // during the event, not a setting.
+  { href: "/rooms/admin/book", label: "Book for an exhibitor", Icon: CalendarPlus },
   { href: "/rooms/admin/bookers", label: "Bookers", Icon: UsersRound },
   { href: "/rooms/admin/rooms", label: "Rooms", Icon: LayoutGrid },
   { href: "/rooms/admin/addons", label: "Add-ons", Icon: UtensilsCrossed },

@@ -37,6 +37,8 @@ export interface StartOrderCheckoutInput {
   webappUrl: string;
   cancelPath: string;
   successPath?: string;
+  /** See CreateOrderRequest.adminOnRequest: firm, and outside the daily cap. */
+  adminOnRequest?: boolean;
 }
 
 /**
@@ -129,6 +131,7 @@ export async function startOrderCheckout(input: StartOrderCheckoutInput) {
   };
 
   const { order, checkoutLines } = await new Ne26OrderService().createOrder({
+    adminOnRequest: input.adminOnRequest,
     buyer: {
       userId: input.buyer.userId,
       email: input.buyer.email,
@@ -202,7 +205,14 @@ export async function startOrderCheckout(input: StartOrderCheckoutInput) {
       lines: [...checkoutLines, ...vatLines],
       customerEmail: input.buyer.email,
       customerId,
-      holdExpiresAt: order.holdExpiresAt as Date,
+      // A firm order has no deadline of its own, so its payment page gets the
+      // longest life Stripe allows.
+      holdExpiresAt: new Date(
+        checkoutExpiresAtSeconds(
+          order.holdExpiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000),
+          new Date()
+        ) * 1000
+      ),
       successUrl: `${input.webappUrl}${input.successPath ?? `/rooms/booked/${order.uid}`}`,
       cancelUrl: `${input.webappUrl}${input.cancelPath}`,
     });

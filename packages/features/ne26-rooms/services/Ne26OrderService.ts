@@ -75,6 +75,17 @@ export interface OrderRoomSelection {
 }
 
 export interface CreateOrderRequest {
+  /**
+   * An admin placing this order for an exhibitor who asked for it.
+   *
+   * Two things follow, and they follow together because they are the same
+   * fact. The booking is FIRM — no deadline, nothing releases it for want of
+   * payment, because the exhibitor asked for the room and owes it whether or
+   * not they turn up. And the rooms-per-day cap does not apply: that rule
+   * exists to stop an exhibitor quietly taking more than their share through
+   * the public site, and an admin is the control it was protecting.
+   */
+  adminOnRequest?: boolean;
   buyer: { userId: number | null; email: string; name: string };
   billing?: {
     country?: string | null;
@@ -165,9 +176,11 @@ export class Ne26OrderService {
       // orders on one day are not a basket being revised, and guessing which of
       // the two it is would either drop a room they still wanted or sell past
       // the cap.
-      for (const day of Object.keys(basketRoomsPerDay)) {
-        if ((paidRoomsPerDay[day] ?? 0) + (basketRoomsPerDay[day] ?? 0) > roomsPerDayCap) {
-          throw new ErrorWithCode(ErrorCode.BadRequest, tooManyRoomsPerDayMessage(roomsPerDayCap));
+      if (!input.adminOnRequest) {
+        for (const day of Object.keys(basketRoomsPerDay)) {
+          if ((paidRoomsPerDay[day] ?? 0) + (basketRoomsPerDay[day] ?? 0) > roomsPerDayCap) {
+            throw new ErrorWithCode(ErrorCode.BadRequest, tooManyRoomsPerDayMessage(roomsPerDayCap));
+          }
         }
       }
 
@@ -239,7 +252,7 @@ export class Ne26OrderService {
     for (const room of rooms) {
       const day = eventDateOf(room.startTime);
       const inDay = (roomsPerDayInThisOrder[day] ?? 0) + 1;
-      if (inDay > roomsPerDayCap) {
+      if (inDay > roomsPerDayCap && !input.adminOnRequest) {
         throw new ErrorWithCode(ErrorCode.BadRequest, tooManyRoomsPerDayMessage(roomsPerDayCap));
       }
       roomsPerDayInThisOrder[day] = inDay;
@@ -258,7 +271,9 @@ export class Ne26OrderService {
       bookerInternalReference: input.billing?.internalReference ?? null,
       amountTotal,
       currency,
-      holdExpiresAt: new Date(now.getTime() + HOLD_MINUTES * MS_PER_MINUTE),
+      holdExpiresAt: input.adminOnRequest
+        ? null
+        : new Date(now.getTime() + HOLD_MINUTES * MS_PER_MINUTE),
       planUnderLock,
       rooms: rooms.map((r) => ({
         resourceId: r.resourceId,

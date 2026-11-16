@@ -8,6 +8,7 @@ import { ZCorrectBillingInputSchema } from "./correctBilling.schema";
 import { ZCreateBlockInputSchema } from "./createBlock.schema";
 import { ZExtendBookingInputSchema } from "./extendBooking.schema";
 import { ZMoveBookingInputSchema } from "./moveBooking.schema";
+import { ZAdminCreateBookingInputSchema } from "./adminCreateBooking.schema";
 import { ZCreateBookingInputSchema, ZCreateOrderInputSchema } from "./createBooking.schema";
 import {
   ZDeskCancellationRequestInputSchema,
@@ -999,6 +1000,104 @@ export const roomsRouter = router({
 
     return { ...moved, emailed };
   }),
+
+  /**
+   * Book a room for an exhibitor who asked for it, and email them the link.
+   *
+   * The counter sells to whoever is standing there and takes the card on the
+   * spot. This is the other half: a request that arrives by phone or mail,
+   * where nobody is at a screen. So the booking is FIRM — the exhibitor asked
+   * for the room and owes it whether or not they turn up, and nothing releases
+   * it for want of payment — and the payment link goes out by email.
+   *
+   * Outside the rooms-per-day cap, for the same reason the extra-time path is:
+   * that rule stops an exhibitor quietly taking more than their share through
+   * the public site, and an admin is the control it was protecting.
+   */
+  adminCreateBooking: ne26AdminProcedure
+    .input(ZAdminCreateBookingInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { startOrderCheckout } = await import(
+        "@calcom/features/ne26-rooms/services/startOrderCheckout"
+      );
+      const { getNe26StaffRepository } = await import(
+        "@calcom/features/ne26-rooms/di/Ne26StaffRepository.container"
+      );
+      const { WEBAPP_URL } = await import("@calcom/lib/constants");
+
+      // Bill their account when they have one, so this booking lines up with
+      // their saved details and the rest of their orders.
+      const existing = await getNe26StaffRepository().findUserByEmail(input.exhibitorEmail);
+
+      const booking = await startOrderCheckout({
+        adminOnRequest: true,
+        buyer: existing
+          ? { userId: existing.id, email: existing.email, name: existing.name }
+          : { userId: null, email: input.exhibitorEmail, name: input.exhibitorName },
+        rooms: [
+          { slug: input.slug, startUtc: new Date(input.startUtc), durationHours: input.durationHours },
+        ],
+        billing: {
+          country: input.country,
+          vatNumber: input.vatNumber ?? null,
+          poNumber: input.poNumber ?? null,
+          internalReference: input.internalReference ?? null,
+        },
+        webappUrl: WEBAPP_URL,
+        cancelPath: "/rooms/admin",
+      });
+
+      const room = booking.bookings[0];
+      const { formatMoney, formatSlotRange } = await import(
+        "@calcom/features/ne26-rooms/lib/teamNotification"
+      );
+      const slotLabel = room ? formatSlotRange(room.startTime, room.endTime) : "";
+      const amountLabel = formatMoney(booking.amountTotal, booking.currency);
+
+      // The booking stands whatever happens to the mail. A failure is reported
+      // so the link can be read off this screen and passed on, rather than
+      // leaving an exhibitor waiting for a message that never comes.
+      let emailed = true;
+      try {
+        const { sendAdminBookingPaymentEmail } = await import(
+          "@calcom/features/ne26-rooms/lib/mailer"
+        );
+        await sendAdminBookingPaymentEmail({
+          to: input.exhibitorEmail,
+          bookerName: input.exhibitorName,
+          roomName: room?.resource.name ?? "",
+          slotLabel,
+          amountLabel,
+          payUrl: booking.checkoutUrl,
+        });
+      } catch (error) {
+        console.error("[ne26] admin booking payment email failed", error);
+        emailed = false;
+      }
+
+      await getNe26StaffRepository().recordAction({
+        actorUserId: ctx.user.id,
+        actorEmail: ctx.user.email,
+        actorRole: "ADMIN",
+        action: "booking.create.onbehalf",
+        targetType: "booking",
+        targetId: room?.uid ?? booking.uid,
+        detail: `For ${input.exhibitorName} <${input.exhibitorEmail}> — ${
+          room?.resource.name ?? ""
+        }, ${slotLabel}, ${amountLabel}, firm and awaiting payment`,
+      });
+
+      return {
+        orderUid: booking.uid,
+        bookingUid: room?.uid ?? booking.uid,
+        checkoutUrl: booking.checkoutUrl,
+        roomName: room?.resource.name ?? "",
+        slotLabel,
+        amountLabel,
+        exhibitorEmail: input.exhibitorEmail,
+        emailed,
+      };
+    }),
 
   createBlock: ne26AdminProcedure.input(ZCreateBlockInputSchema).mutation(async ({ input }) => {
     const { getResourceBookingService } = await import(

@@ -278,6 +278,61 @@ export async function sendExtensionPaymentEmail(input: {
 }
 
 /**
+ * The payment link for a room an exhibitor asked us to book for them.
+ *
+ * The counter takes the card on the spot; this is for a request that arrived
+ * by phone or mail, where nobody is at a screen. It confirms what was put
+ * aside before it asks for money, and it does not run a countdown: the room is
+ * theirs because they asked for it, and nothing releases it for want of
+ * payment.
+ */
+export async function sendAdminBookingPaymentEmail(input: {
+  to: string;
+  bookerName: string;
+  roomName: string;
+  slotLabel: string;
+  amountLabel: string;
+  payUrl: string;
+}): Promise<void> {
+  const { transport, from } = transportOrThrow();
+
+  const name = escapeHtml(input.bookerName);
+  const room = escapeHtml(input.roomName);
+  const subject = `${input.roomName} is booked for you — payment link`;
+
+  const text =
+    `Hi ${input.bookerName},\n\n` +
+    `As requested, we have booked ${input.roomName} for you on ${input.slotLabel}.\n\n` +
+    `Amount: ${input.amountLabel}\n\n` +
+    `The room is yours — there is no deadline to beat. Pay here:\n${input.payUrl}\n\n` +
+    `The payment page itself closes after 24 hours; if it has, reply to this message and we will send a new one.\n\n` +
+    `NATO Edge 26 — Meeting Rooms`;
+
+  const html = emailShell(
+    `<p style="margin:0 0 14px">Hi ${name},</p>` +
+      `<p style="margin:0 0 14px">As requested, we have booked <strong>${room}</strong> for you.</p>` +
+      card(
+        `${roomHeading(input.roomName, input.slotLabel)}<div style="margin:12px 0 0">${factRows([
+          { label: "Amount", value: input.amountLabel, strong: true },
+        ])}</div>`
+      ) +
+      `<p style="margin:14px 0">The room is yours. There is no countdown — we have put it aside because you asked for it.</p>` +
+      button("Pay for the room", input.payUrl) +
+      `<p style="margin:14px 0 0;color:#6b7280;font-size:13px">The payment page closes after 24 hours. If it has, reply to this message and we will send a new one.</p>` +
+      signOff("17–19 November 2026 · Fuar İzmir, Türkiye · all times in TRT")
+  );
+
+  await transport.sendMail({
+    from,
+    // NE26 test mode: redirect to a single inbox while testing (env-gated).
+    to: process.env.NE26_EMAIL_REDIRECT_TO || input.to,
+    subject,
+    text,
+    html,
+  });
+}
+
+/**
  * Tell the exhibitor their meeting has moved.
  *
  * Sent when the desk shifts a booking at their request, so it is a
