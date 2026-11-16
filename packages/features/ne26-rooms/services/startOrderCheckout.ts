@@ -245,13 +245,16 @@ export async function resumeOrderCheckout(input: {
 }): Promise<{ checkoutUrl: string }> {
   const orders = getNe26OrderRepository();
   const order = await orders.findByUid(input.orderUid);
-  if (!order || order.status !== "PENDING" || !order.holdExpiresAt) {
+  // A null deadline is FIRM, not missing: an admin made this at the
+  // exhibitor's request and nothing releases it for want of payment. Reissuing
+  // its link is the normal way it gets paid, so it must not be refused here.
+  if (!order || order.status !== "PENDING") {
     throw new ErrorWithCode(ErrorCode.NotFound, "That order is no longer awaiting payment.");
   }
   if (!input.asStaff && order.bookerUserId !== (input.buyerUserId ?? null)) {
     throw new ErrorWithCode(ErrorCode.NotFound, "That order is no longer awaiting payment.");
   }
-  if (order.holdExpiresAt.getTime() <= Date.now()) {
+  if (order.holdExpiresAt && order.holdExpiresAt.getTime() <= Date.now()) {
     throw new ErrorWithCode(
       ErrorCode.BadRequest,
       "That hold has expired and the rooms are back on sale. Please book again."
@@ -310,14 +313,23 @@ export async function resumeOrderCheckout(input: {
   // the first buyer's card is charged for rooms that are no longer theirs — with
   // nothing to alert anyone, because the payment itself succeeds.
   const now = new Date();
-  const sessionExpiry = new Date(checkoutExpiresAtSeconds(order.holdExpiresAt, now) * 1000);
+  // A firm order has no deadline of its own, so its link gets the longest life
+  // Stripe allows; the clamp inside checkoutExpiresAtSeconds does the rest.
+  const sessionExpiry = new Date(
+    checkoutExpiresAtSeconds(
+      order.holdExpiresAt ?? new Date(now.getTime() + 24 * 60 * 60 * 1000),
+      now
+    ) * 1000
+  );
   // A continuation of a meeting is exempt from the ceiling. The ceiling exists
   // to stop a buyer parking a room all event by pressing "resume" every half
   // hour; a continuation was created by an admin on the exhibitor's request,
   // is held until it would begin rather than for 35 minutes, and its link is
   // emailed instead of opened in front of us — so reissuing it is the normal
   // way it gets paid, not an abuse of it.
-  const isContinuation = order.bookings.some((b) => b.extendsBookingUid);
+  // A firm order is exempt too, for the same reason: it was never a buyer
+  // parking a room, and reissuing its link is how it gets paid.
+  const isContinuation = order.bookings.some((b) => b.extendsBookingUid) || !order.holdExpiresAt;
   const ceiling = new Date(order.createdAt.getTime() + MAX_HOLD_LIFETIME_MINUTES * 60_000);
   if (!isContinuation && sessionExpiry > ceiling) {
     throw new ErrorWithCode(
@@ -327,7 +339,11 @@ export async function resumeOrderCheckout(input: {
   }
   // Extended BEFORE the session exists, so the hold can never be the shorter of
   // the two, whatever happens next.
-  await orders.extendHold(order.uid, sessionExpiry);
+  //
+  // Skipped entirely for a firm order: it has no deadline, and writing one here
+  // would quietly turn "the room is theirs" into "the room is theirs until this
+  // payment page closes" — the exact lapse this kind of booking exists to avoid.
+  if (order.holdExpiresAt) await orders.extendHold(order.uid, sessionExpiry);
 
   const checkout = await getStripeCheckoutService().createCheckoutSession({
     orderUid: order.uid,

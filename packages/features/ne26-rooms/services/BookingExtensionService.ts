@@ -59,11 +59,12 @@ export interface CreatedExtension {
  * time on one they have already paid for, and refusing it would force an admin
  * to raise the cap for everybody just to grant one exhibitor an extra hour.
  *
- * There is no 35-minute clock. The hold runs until the booking itself starts,
- * because the payment link is emailed rather than opened in front of us, and a
- * link that outlives what it pays for is how somebody gets charged for a room
- * that went back on sale. If nobody pays by the time it would have begun, it
- * lapses on its own; before that, an admin can cancel it.
+ * There is no clock at all. An admin only does this at the exhibitor's express
+ * request, so the booking is firm: the room is theirs and the money is owed
+ * whether or not they turn up. Nothing releases it for want of payment — an
+ * admin cancels it if it has to go. The payment link is emailed rather than
+ * opened in front of us, and Stripe closes a payment page after a day, so the
+ * link is reissued from the order page when somebody comes back to it late.
  */
 export async function createBookingExtension(input: CreateExtensionInput): Promise<CreatedExtension> {
   const bookings = getResourceBookingRepository();
@@ -115,7 +116,13 @@ export async function createBookingExtension(input: CreateExtensionInput): Promi
     bookerInternalReference: parent.order?.bookerInternalReference ?? null,
     amountTotal,
     currency,
-    holdExpiresAt: plan.startTime,
+    // FIRM: no deadline at all. An admin only does this at the exhibitor's
+    // express request, so the room is theirs and the money is owed whether or
+    // not they turn up — releasing it for want of payment would sell a room
+    // somebody asked for out from under them. A null deadline is what every
+    // "does this still hold its slot" query reads as held; only a deadline in
+    // the past frees a room.
+    holdExpiresAt: null,
     rooms: [
       {
         resourceId: parent.resourceId,
@@ -177,11 +184,13 @@ export async function createBookingExtension(input: CreateExtensionInput): Promi
       lines,
       customerEmail: parent.bookerEmail,
       customerId,
-      // Stripe caps a session at 24 hours, so a continuation booked further
-      // ahead than that gets a link that expires long before the room does.
-      // That is the right way round: the room stays theirs, and an admin
-      // reissues the link from the booking page.
-      holdExpiresAt: new Date(checkoutExpiresAtSeconds(plan.startTime, now) * 1000),
+      // Stripe caps a session at 24 hours and the booking has no deadline of
+      // its own, so the link gets the longest life Stripe allows. The link
+      // expiring long before the room does is the right way round: the room
+      // stays theirs, and an admin reissues the link from the order page.
+      holdExpiresAt: new Date(
+        checkoutExpiresAtSeconds(new Date(now.getTime() + 24 * 60 * 60 * 1000), now) * 1000
+      ),
       successUrl: `${input.webappUrl}/rooms/booked/${order.uid}`,
       cancelUrl: `${input.webappUrl}/rooms/admin/${parent.uid}`,
     });

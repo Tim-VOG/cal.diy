@@ -123,7 +123,11 @@ export default function BookingRow({
             {booking.holdExpiresAt ? (
               <TimeLeft iso={iso(booking.holdExpiresAt) as string} />
             ) : (
-              "the room is not theirs yet"
+              // No deadline means FIRM, not "about to go": an admin made this
+              // at the exhibitor's request, the room is theirs and the money is
+              // owed. Saying the opposite would have a hostess hand it to
+              // somebody else.
+              "the room is theirs, payment still due"
             )}
           </span>
         ) : booking.addOns.length ? (

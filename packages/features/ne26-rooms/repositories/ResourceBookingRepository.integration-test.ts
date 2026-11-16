@@ -293,8 +293,13 @@ describe("ResourceBookingRepository — the welcome desk", () => {
     expect(row.checkedInByEmail).toBeNull();
   });
 
-  it("keeps unpaid holds out of the desk's day view", async () => {
-    await booking(new Date("2026-11-19T11:00:00.000Z"));
+  it("keeps LAPSED holds out of the desk's day view", async () => {
+    // An expired deadline, not a missing one. A missing deadline now means the
+    // opposite — see the next test — and this used to lean on the two being
+    // the same thing.
+    await booking(new Date("2026-11-19T11:00:00.000Z"), {
+      holdExpiresAt: new Date(Date.now() - 60_000),
+    });
     const confirmed = await booking(new Date("2026-11-19T12:00:00.000Z"), {
       status: "CONFIRMED",
       holdExpiresAt: null,
@@ -306,5 +311,19 @@ describe("ResourceBookingRepository — the welcome desk", () => {
     );
     const mine = rows.filter((r) => r.resource.name === "TEST Desk Room");
     expect(mine.map((r) => r.uid)).toEqual([confirmed]);
+  });
+
+  it("shows an unpaid booking that has no deadline — it is firm, not lapsed", async () => {
+    // What an admin creates at an exhibitor's express request. The room is
+    // theirs and the money is owed, so the counter has to see it; hiding it is
+    // how it gets sold to somebody else.
+    const firm = await booking(new Date("2026-11-19T13:00:00.000Z"), { holdExpiresAt: null });
+
+    const rows = await repo.findForDesk(
+      new Date("2026-11-18T22:00:00.000Z"),
+      new Date("2026-11-19T22:00:00.000Z")
+    );
+    const mine = rows.filter((r) => r.resource.name === "TEST Desk Room");
+    expect(mine.map((r) => r.uid)).toEqual([firm]);
   });
 });

@@ -145,6 +145,20 @@ export class ResourceBookingRepository {
    * pending ones whose hold has not yet expired. An expired pending hold frees
    * its slots for display (the row stays until cleanup but no longer blocks).
    */
+  /*
+   * A null hold deadline is FIRM, not expired.
+   *
+   * It marks a booking an admin made at the exhibitor's express request: the
+   * room is theirs and the money is owed whether or not they turn up, so
+   * nothing releases it for want of payment. Only a deadline in the PAST frees
+   * a room. Every query that asks "does this booking still hold its slot"
+   * therefore reads `holdExpiresAt: null OR in the future`.
+   *
+   * The queries that deliberately do NOT: the hold reminders and the
+   * countdown, which exist to warn about a deadline that a firm booking has
+   * not got, and the caps on unpaid baskets, which exist to stop a buyer
+   * parking inventory — something they cannot do through an admin.
+   */
   async findActiveSlotStarts(resourceId: number, now: Date): Promise<Date[]> {
     const slots = await this.prismaClient.resourceSlot.findMany({
       where: {
@@ -152,7 +166,7 @@ export class ResourceBookingRepository {
         booking: {
           OR: [
             { status: ResourceBookingStatus.CONFIRMED },
-            { status: ResourceBookingStatus.PENDING, holdExpiresAt: { gt: now } },
+            { status: ResourceBookingStatus.PENDING, OR: [{ holdExpiresAt: null }, { holdExpiresAt: { gt: now } }] },
           ],
         },
       },
@@ -215,7 +229,7 @@ export class ResourceBookingRepository {
         booking: {
           OR: [
             { status: ResourceBookingStatus.CONFIRMED },
-            { status: ResourceBookingStatus.PENDING, holdExpiresAt: { gt: now } },
+            { status: ResourceBookingStatus.PENDING, OR: [{ holdExpiresAt: null }, { holdExpiresAt: { gt: now } }] },
           ],
         },
       },
@@ -527,7 +541,7 @@ export class ResourceBookingRepository {
         isBlock: false,
         OR: [
           { status: ResourceBookingStatus.CONFIRMED },
-          { status: ResourceBookingStatus.PENDING, holdExpiresAt: { gt: now } },
+          { status: ResourceBookingStatus.PENDING, OR: [{ holdExpiresAt: null }, { holdExpiresAt: { gt: now } }] },
         ],
         startTime: { lt: toUtc },
         endTime: { gt: fromUtc },
@@ -575,7 +589,7 @@ export class ResourceBookingRepository {
         endTime: { gt: fromUtc },
         OR: [
           { status: ResourceBookingStatus.CONFIRMED },
-          { status: ResourceBookingStatus.PENDING, holdExpiresAt: { gt: now } },
+          { status: ResourceBookingStatus.PENDING, OR: [{ holdExpiresAt: null }, { holdExpiresAt: { gt: now } }] },
         ],
       },
       orderBy: [{ startTime: "asc" }],
@@ -628,7 +642,7 @@ export class ResourceBookingRepository {
           {
             OR: [
               { status: ResourceBookingStatus.CONFIRMED },
-              { status: ResourceBookingStatus.PENDING, holdExpiresAt: { gt: now } },
+              { status: ResourceBookingStatus.PENDING, OR: [{ holdExpiresAt: null }, { holdExpiresAt: { gt: now } }] },
             ],
           },
         ],

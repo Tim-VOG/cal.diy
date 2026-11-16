@@ -336,7 +336,8 @@ export default function PlanAndExtraTime({
           </h3>
           <p className="mt-1 text-gray-600 text-sm">
             Charged at the normal price for its own length. It becomes a second booking with its own invoice,
-            and the payment link is emailed to the exhibitor. The choice is drawn on the plan above.
+            and the payment link is emailed to the exhibitor. The room is held firm — no deadline — so only
+            do this at their express request. The choice is drawn on the plan above.
           </p>
 
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -408,7 +409,7 @@ export default function PlanAndExtraTime({
               </p>
               <p className="mt-1 text-gray-600">
                 {(extend.data.amountTotal / 100).toFixed(2)} {extend.data.currency} excl. VAT. The room is
-                held until that time begins — there is no countdown.
+                theirs — no deadline, nothing releases it. Cancel the order if it has to go.
               </p>
               <p className="mt-2 text-gray-600">
                 {extend.data.emailed ? (

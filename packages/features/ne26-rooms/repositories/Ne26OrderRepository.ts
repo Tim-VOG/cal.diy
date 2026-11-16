@@ -45,7 +45,15 @@ export interface CreateOrderInput {
   bookerInternalReference?: string | null;
   amountTotal: number;
   currency: string;
-  holdExpiresAt: Date;
+  /**
+   * When the rooms go back on sale if nobody pays.
+   *
+   * NULL means firm: a booking an admin made at the exhibitor's express
+   * request, owed whether or not they turn up, which nothing releases for want
+   * of payment. Every query asking whether a booking still holds its slot
+   * accepts it, and the sweeper matches only a deadline in the past.
+   */
+  holdExpiresAt: Date | null;
   rooms: OrderRoomInput[];
   /**
    * Decides, INSIDE the create transaction and under this buyer's lock, which
@@ -1126,7 +1134,7 @@ export class Ne26OrderRepository {
           {
             OR: [
               { status: ResourceBookingStatus.CONFIRMED },
-              { status: ResourceBookingStatus.PENDING, holdExpiresAt: { gt: now } },
+              { status: ResourceBookingStatus.PENDING, OR: [{ holdExpiresAt: null }, { holdExpiresAt: { gt: now } }] },
             ],
           },
         ],

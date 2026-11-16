@@ -219,8 +219,8 @@ export async function sendHoldReminderEmail(input: {
  * sent: an admin has agreed to let a meeting start earlier or run later, and
  * the exhibitor reads about it afterwards. So it says what was agreed before it
  * says what to do — the time, the room, the price — and it does not run a
- * countdown, because the room is theirs until the booking would begin rather
- * than for the usual half hour.
+ * countdown: the room is theirs, firm, because an admin only does this at
+ * their express request.
  *
  * It does say the link itself can go stale: Stripe closes a payment page after
  * a day, and somebody who opens this on the morning of the event needs to know
@@ -248,7 +248,7 @@ export async function sendExtensionPaymentEmail(input: {
     `As agreed at the welcome desk, we have put aside ${input.slotLabel} in ${input.roomName}, ` +
     `continuing your meeting of ${input.parentSlotLabel}.\n\n` +
     `Amount: ${input.amountLabel}\n\n` +
-    `The room is held for you until that time begins. Pay here:\n${input.payUrl}\n\n` +
+    `The room is yours — there is no deadline to beat. Pay here:\n${input.payUrl}\n\n` +
     `The payment page itself closes after 24 hours — if it has, ask at the welcome desk and we will send a new one.\n\n` +
     `NATO Edge 26 — Meeting Rooms`;
 
@@ -261,7 +261,7 @@ export async function sendExtensionPaymentEmail(input: {
           { label: "Amount", value: input.amountLabel, strong: true },
         ])}</div>`
       ) +
-      `<p style="margin:14px 0">The room is held for you until that time begins — there is no countdown to beat.</p>` +
+      `<p style="margin:14px 0">The room is yours. There is no countdown — we have put the time aside because you asked for it.</p>` +
       button("Pay for the extra time", input.payUrl) +
       `<p style="margin:14px 0 0;color:#6b7280;font-size:13px">The payment page closes after 24 hours. If it has, ask at the welcome desk and we will send a new one.</p>` +
       signOff("17–19 November 2026 · Fuar İzmir, Türkiye · all times in TRT")
